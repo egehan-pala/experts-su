@@ -1,0 +1,100 @@
+# Node.js / Next.js
+node_modules/
+.next/
+out/
+build/
+.DS_Store
+*.pem
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.vercel
+.turbo
+.swc/
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+**/.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+.python-version
+*.pytest_cache/
+.coverage
+htmlcov/
+.tox/
+
+# FastAPI
+*.log
+logs/
+media/
+
+# Database
+*.sqlite3
+*.db
+
+# Docker
+.docker/
+docker-compose.override.yml
+
+# Jupyter Notebook
+.ipynb_checkpoints
+*.ipynb
+
+# MyPy cache
+.mypy_cache/
+
+# Coverage reports
+coverage/
+.coverage
+coverage.xml
+*.cover
+
+# API documentation
+docs/_build/
+site/
+
+# IDE specific files
+.idea/
+.vscode/
+*.swp
+*.swo
+*.swn
+.DS_Store
+
+# Temp files
+*.tmp
+*.bak
+*.swp
+*~
+
+# System Files
+.DS_Store
+Thumbs.db
