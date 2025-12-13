@@ -82,23 +82,19 @@ class OpenAlexClient:
         Parameters
         ----------
         since: Optional[str]
-            Optional ISO date (YYYY-MM-DD). When provided, only authors
-            updated on or after this date will be returned. Note that this
-            filter requires premium access; without a premium key the API will
-            ignore this parameter.
+            Optional ISO date (YYYY-MM-DD). Note: This parameter is only honoured
+            with a premium API key. Without premium access, all authors will be
+            returned regardless of this parameter.
         """
-        filter_param = f"institutions.ror:{self._ror_id}"
+        filter_param = f"last_known_institutions.ror:{self._ror_id}"
         params: Dict[str, str | int | None] = {
             "filter": filter_param,
             "per-page": self._settings.batch_size,
             "cursor": "*",
         }
-        # When a since date is provided we add the from_updated_date filter. This
-        # filter is only honoured for premium API keys; when absent it will be
-        # ignored. Keeping it here allows incremental syncs when premium access
-        # is available. See: https://docs.openalex.org/how-to-use-the-api/filter-entity-lists
-        if since:
-            params["from_updated_date"] = since
+        # Note: from_updated_date is a premium feature and will be ignored
+        # without a premium API key. For now, we fetch all authors.
+        # To use incremental syncs, you would need a premium OpenAlex API key.
         while True:
             data = await self._get("/authors", params)
             results = data.get("results", [])
@@ -131,8 +127,7 @@ class OpenAlexClient:
             "per-page": self._settings.batch_size,
             "cursor": "*",
         }
-        if since:
-            params["from_updated_date"] = since
+        # Note: from_updated_date would require premium API key
         while True:
             data = await self._get("/works", params)
             results = data.get("results", [])

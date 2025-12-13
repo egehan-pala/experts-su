@@ -37,7 +37,7 @@ def _normalize_name(name: str) -> str:
     return re.sub(r"[^a-z0-9]", "", name.lower())
 
 
-async def clean(db: Database) -> Tuple[
+async def clean(db: Database, min_year: int = 0) -> Tuple[
     List[Dict[str, Optional[str]]],  # authors
     List[Dict[str, Optional[str | int]]],  # publications
     List[Dict[str, str]],  # author_publications
@@ -47,6 +47,15 @@ async def clean(db: Database) -> Tuple[
     List[Dict[str, int | str]],  # coauthor edges
 ]:
     """Clean and deduplicate staged data.
+
+    Parameters
+    ----------
+    db: Database
+        Connected database client.
+    min_year: int
+        Optional minimum year to include. Authors must have affiliation activity
+        in or after this year, and publications must be published in or after
+        this year.
 
     Returns
     -------
@@ -64,6 +73,17 @@ async def clean(db: Database) -> Tuple[
         payload = json.loads(row["payload"])
         try:
             author = OAAuthor.parse_obj(payload)
+            # Filter authors by activity year if min_year is set
+            if min_year > 0:
+                affiliations = getattr(author, "affiliations", [])
+                has_recent = False
+                for aff in affiliations:
+                    years = aff.get("years", [])
+                    if years and any(y >= min_year for y in years):
+                        has_recent = True
+                        break
+                if not has_recent:
+                    continue  # Skip author
             authors.append(author)
         except Exception as exc:
             logger.error({"message": "Invalid author payload", "error": str(exc)})
@@ -105,6 +125,9 @@ async def clean(db: Database) -> Tuple[
         payload = json.loads(row["payload"])
         try:
             work = OAWork.parse_obj(payload)
+            # Filter publications by year
+            if min_year > 0 and (work.publication_year is None or work.publication_year < min_year):
+                continue
             works.append(work)
         except Exception as exc:
             logger.error({"message": "Invalid work payload", "error": str(exc)})
