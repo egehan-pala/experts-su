@@ -56,6 +56,12 @@ htmlcov/
 logs/
 media/
 
+# ETL Data Exports (testing, large JSON files)
+data_exports/
+data_exports_test/
+services/*/data_exports/
+services/*/data_exports_test/
+
 # Database
 *.sqlite3
 *.db

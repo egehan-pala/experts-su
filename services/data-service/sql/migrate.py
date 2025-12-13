@@ -11,6 +11,13 @@ from __future__ import annotations
 import os
 import glob
 import psycopg2
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
+
+import os
+import glob
+import psycopg2
 
 
 def run_migrations() -> None:
@@ -20,6 +27,7 @@ def run_migrations() -> None:
         f for f in glob.glob(os.path.join(migration_dir, "*.sql")) if os.path.isfile(f)
     )
     # Connect to database using environment variables
+    print(f"Connecting to DB at {os.environ.get('DB_HOST')}:{os.environ.get('DB_PORT')} as {os.environ.get('DB_USER')}")
     conn = psycopg2.connect(
         host=os.environ.get("DB_HOST"),
         port=os.environ.get("DB_PORT", 5432),

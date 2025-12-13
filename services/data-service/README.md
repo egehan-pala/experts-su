@@ -55,48 +55,129 @@ services/data-service/
 
 2. **Configure your environment**
 
-   Copy `.env.example` to `.env` and fill in your OpenAlex and database
-   credentials. The important variables are:
+   Copy `.env.example` to `.env` and fill in your OpenAlex credentials:
 
    - `OPENALEX_ROR_ID`: the ROR identifier for Sabancı University or your target
-     institution.
-   - `DB_*`: host, port, database name, user and password for your
-     Supabase/PostgreSQL instance.
-   - `OPENALEX_MAILTO`: optional email for the OpenAlex polite pool.
+     institution (default: `https://ror.org/049asqa32`)
+   - `OPENALEX_MAILTO`: optional email for the OpenAlex polite pool
+   - Database credentials are **optional** for testing (see below)
 
-3. **Apply database migrations**
+3. **Test the OpenAlex API connection** (no database needed)
 
    ```bash
-   make migrate
+   make test-api
    ```
 
-4. **Run the ETL pipeline**
+   This fetches 5 sample authors to verify the API works.
 
-   To collect, clean and load data since the default date (configured in
-   `SINCE_DEFAULT`):
+4. **Collect author data from OpenAlex**
+
+   Option A: Collect ALL authors (no filters)
+   ```bash
+   make collect-all
+   ```
+
+   Option B: Collect with filters (reduces storage usage)
+   ```bash
+   make collect-filtered        # Min 50 citations
+   make collect-strict          # Min 100 citations + h-index 5
+   ```
+
+   Custom filters:
+   ```bash
+   python3 -m data_service.cli collect-all --min-citations 50 --min-works 10
+   ```
+
+   Data is saved to `data_exports/TIMESTAMP/` as JSON files.
+
+5. **When ready: Connect to database and run full pipeline**
+
+   Update `.env` with Supabase credentials, then uncomment database operations in `src/data_service/etl/loaders.py`, then:
 
    ```bash
    make run-full
    ```
 
-   To perform only the collection stage and specify a custom `since` date:
-
-   ```bash
-   python -m data_service.cli collect --since 2024-01-01
-   ```
-
 ## CLI usage
 
-The service is controlled via a Typer CLI. The top‑level commands are:
+The service is controlled via a Typer CLI. Available commands:
 
-* `collect`: fetch authors and works from OpenAlex and store them in staging tables.
-* `clean`: normalise staged data, deduplicate records and prepare them for loading.
-* `load`: upsert normalised records into production tables, compute metrics and
-  co‑author networks.
-* `full-run`: execute the entire pipeline (collect → clean → load).
-* `migrate`: apply SQL migrations to the configured database.
+### Testing & Data Collection (No Database Required)
 
-Run `python -m data_service.cli --help` for detailed options.
+* `test-api`: Test OpenAlex API without database. Fetches 5 sample authors.
+  ```bash
+  make test-api
+  python3 -m data_service.cli test-api
+  ```
+
+* `collect-all`: Fetch ALL authors from OpenAlex. Saves to `data_exports/` as JSON.
+  ```bash
+  make collect-all
+  python3 -m data_service.cli collect-all
+  ```
+
+* `collect-all` with filters: Reduce data size by filtering authors.
+  ```bash
+  # Only researchers with 50+ citations
+  python3 -m data_service.cli collect-all --min-citations 50
+
+  # Only researchers with 10+ works and h-index 5+
+  python3 -m data_service.cli collect-all --min-works 10 --min-h-index 5
+
+  # Only researchers with ORCID
+  python3 -m data_service.cli collect-all --has-orcid
+
+  # Strict: 100+ citations and h-index 5+
+  python3 -m data_service.cli collect-all --min-citations 100 --min-h-index 5
+  ```
+
+### Full Pipeline (Requires Database)
+
+* `collect`: Fetch authors and works from OpenAlex and store in staging tables.
+  ```bash
+  python3 -m data_service.cli collect
+  python3 -m data_service.cli collect --since 2024-01-01
+  ```
+
+* `clean`: Normalise staged data, deduplicate records and prepare for loading.
+  ```bash
+  python3 -m data_service.cli clean
+  ```
+
+* `load`: Load cleaned data (currently saves locally as JSON, skipping Supabase).
+  ```bash
+  python3 -m data_service.cli load
+  ```
+
+* `full-run`: Execute entire pipeline (collect → clean → load).
+  ```bash
+  make run-full
+  python3 -m data_service.cli full-run
+  ```
+
+### Database & Maintenance
+
+* `migrate`: Apply SQL migrations to the database.
+  ```bash
+  make migrate
+  ```
+
+* `lint`: Check code style with Ruff and Black.
+  ```bash
+  make lint
+  ```
+
+* `format`: Auto-format code with Black.
+  ```bash
+  make format
+  ```
+
+* `test`: Run unit tests.
+  ```bash
+  make test
+  ```
+
+Run `python3 -m data_service.cli --help` for detailed options.
 
 ## ETL workflow
 
@@ -118,16 +199,54 @@ The ETL pipeline follows these phases:
     └─────────────┘
 ```
 
-## Troubleshooting & rate limiting
+## Important Notes
+
+### Current Status (Development Mode)
+
+* **Database operations are commented out** to preserve free tier tokens. Data is
+  saved locally as JSON files instead.
+* **To enable Supabase uploads**: Uncomment the `await db.*` calls in
+  `src/data_service/etl/loaders.py` after configuring database credentials.
+* **Data exports** are saved to `data_exports/` and are ignored by Git (see `.gitignore`).
+
+### Data Filtering for Storage Efficiency
+
+Use filtering to reduce data size and focus on active researchers:
+
+```bash
+# Reduce to ~70% of original size
+python3 -m data_service.cli collect-all --min-citations 50
+
+# Reduce to ~30% of original size (strict filter)
+python3 -m data_service.cli collect-all --min-citations 100 --min-h-index 5
+```
+
+See [FILTER_GUIDE.md](../../FILTER_GUIDE.md) for detailed filtering options.
+
+## Troubleshooting & Rate Limiting
 
 * **429 Too Many Requests**: The OpenAlex API enforces 10 requests per second and
   100k requests per day. Adjust `OPENALEX_RATE_LIMIT_PER_MIN` in your `.env`
   to slow down requests or split large syncs across multiple days.
 * **Connection failures**: The HTTP client uses exponential backoff with
   jitter courtesy of `tenacity`. Persistent failures will raise an exception.
-* **Long initial syncs**: An institution can have many authors and works.
-  Consider backfilling via the OpenAlex snapshot and reserving the API for
-  incremental updates.
+* **No data exported**: Verify your `OPENALEX_ROR_ID` is correct and the institution
+  has researchers in OpenAlex.
+* **Module not found**: Run `make setup` to install the package in editable mode.
+* **API parameter errors**: The free OpenAlex API doesn't support `from_updated_date`.
+  Use filtering options instead for incremental syncs.
+
+## Architecture Changes
+
+This version of the data-service has been modified for development:
+
+1. **Supabase operations commented out** - Safe to test without database
+2. **Local JSON export** - All collected/cleaned data saved to `data_exports/`
+3. **Filtering support** - Reduce dataset size with citation/h-index/work count filters
+4. **Timestamped exports** - Each run creates a new directory with metadata
+
+To restore full database functionality, update `.env` with valid credentials and
+uncomment database calls in `loaders.py`.
 
 ## License
 
