@@ -40,24 +40,24 @@ async def load(
     """
     # Authors
     # Authors
-    # await db.upsert_authors(authors)
-    logger.info({"message": "[SKIPPED] Would upsert authors", "count": len(authors)})
+    await db.upsert_authors(authors)
+    # logger.info({"message": "[SKIPPED] Would upsert authors", "count": len(authors)})
 
     # Publications
     # Publications
-    # await db.upsert_publications(publications)
-    logger.info({"message": "[SKIPPED] Would upsert publications", "count": len(publications)})
+    await db.upsert_publications(publications)
+    # logger.info({"message": "[SKIPPED] Would upsert publications", "count": len(publications)})
 
     # Author-publication relations
     # Author-publication relations
-    # await db.upsert_author_publications(author_publications)
-    logger.info({"message": "[SKIPPED] Would upsert author_publications", "count": len(author_publications)})
+    await db.upsert_author_publications(author_publications)
+    # logger.info({"message": "[SKIPPED] Would upsert author_publications", "count": len(author_publications)})
 
     # Topics: insert names and fetch their IDs
     # Topics: insert names and fetch their IDs
-    # name_to_id = await db.upsert_topics(topics)
-    name_to_id = {t.get("name"): f"local_{i}" for i, t in enumerate(topics)}
-    logger.info({"message": "[SKIPPED] Would upsert topics", "count": len(name_to_id)})
+    name_to_id = await db.upsert_topics(topics)
+    # name_to_id = {t.get("name"): f"local_{i}" for i, t in enumerate(topics)}
+    # logger.info({"message": "[SKIPPED] Would upsert topics", "count": len(name_to_id)})
 
     # Replace topic names with IDs for publication_topics
     pub_topic_records = []
@@ -68,18 +68,18 @@ async def load(
             pub_topic_records.append(
                 {"publication_id": rel["publication_id"], "topic_id": topic_id}
             )
-    # await db.upsert_publication_topics(pub_topic_records)
-    logger.info({"message": "[SKIPPED] Would upsert publication_topics", "count": len(pub_topic_records)})
+    await db.upsert_publication_topics(pub_topic_records)
+    # logger.info({"message": "[SKIPPED] Would upsert publication_topics", "count": len(pub_topic_records)})
 
     # Metrics
     # Metrics
-    # await db.upsert_metrics(metrics)
-    logger.info({"message": "[SKIPPED] Would upsert metrics", "count": len(metrics)})
+    await db.upsert_metrics(metrics)
+    # logger.info({"message": "[SKIPPED] Would upsert metrics", "count": len(metrics)})
 
     # Co-author edges
     # Co-author edges
-    # await db.insert_coauthor_edges(coauthor_edges)
-    logger.info({"message": "[SKIPPED] Would insert coauthor_edges", "count": len(coauthor_edges)})
+    await db.insert_coauthor_edges(coauthor_edges)
+    # logger.info({"message": "[SKIPPED] Would insert coauthor_edges", "count": len(coauthor_edges)})
 
 
 async def save_data_locally(

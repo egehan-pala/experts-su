@@ -83,7 +83,8 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
                         has_recent = True
                         break
                 if not has_recent:
-                    continue  # Skip author
+                    # continue  # Skip author
+                    pass
             authors.append(author)
         except Exception as exc:
             logger.error({"message": "Invalid author payload", "error": str(exc)})
@@ -156,6 +157,9 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
 
     topics_norm = [{"name": name} for name in topics_set.keys()]
 
+    valid_author_ids = {rec["id"] for rec in authors_norm}
+    valid_publication_ids = {rec["id"] for rec in publications_norm}
+
     # Author-publication relations
     author_publications_norm: List[Dict[str, str]] = []
     for row in stg_relations:
@@ -163,7 +167,10 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
         aid = payload.get("author_id")
         wid = payload.get("work_id")
         if aid and wid:
-            author_publications_norm.append({"author_id": aid.split("/")[-1], "publication_id": wid.split("/")[-1]})
+            aid_clean = aid.split("/")[-1]
+            wid_clean = wid.split("/")[-1]
+            if aid_clean in valid_author_ids and wid_clean in valid_publication_ids:
+                author_publications_norm.append({"author_id": aid_clean, "publication_id": wid_clean})
 
     # Compute metrics: publications and citations per author per year
     metrics: Dict[Tuple[str, int], Dict[str, int]] = {}
