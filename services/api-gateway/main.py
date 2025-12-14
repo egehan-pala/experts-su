@@ -1,0 +1,124 @@
+from fastapi import FastAPI, HTTPException, Query
+from fastapi.middleware.cors import CORSMiddleware
+import asyncpg
+import os
+from dotenv import load_dotenv
+from typing import List, Optional
+from pydantic import BaseModel
+
+load_dotenv()
+
+app = FastAPI(title="Experts@SU API", version="1.0.0")
+
+# CORS
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Database
+DB_DSN = f"postgresql://{os.getenv('DB_USER', 'postgres')}:{os.getenv('DB_PASSWORD', 'password')}@{os.getenv('DB_HOST', 'localhost')}:{os.getenv('DB_PORT', '5432')}/{os.getenv('DB_NAME', 'experts_su')}"
+
+class Database:
+    def __init__(self):
+        self.pool = None
+
+    async def connect(self):
+        self.pool = await asyncpg.create_pool(DB_DSN)
+
+    async def disconnect(self):
+        if self.pool:
+            await self.pool.close()
+
+db = Database()
+
+@app.on_event("startup")
+async def startup():
+    await db.connect()
+
+@app.on_event("shutdown")
+async def shutdown():
+    await db.disconnect()
+
+# Models
+class Author(BaseModel):
+    id: str
+    name: str
+    dept: Optional[str] = None
+    orcid: Optional[str] = None
+    pub_count: Optional[int] = 0
+
+class Publication(BaseModel):
+    id: str
+    title: str
+    year: Optional[int]
+    citations: Optional[int]
+    venue: Optional[str]
+
+# Endpoints
+@app.get("/")
+async def root():
+    return {"message": "Experts@SU API is running"}
+
+@app.get("/authors/search", response_model=List[Author])
+async def search_authors(q: str = Query(..., min_length=2)):
+    """Search authors by name."""
+    query = """
+        SELECT id, name, dept, orcid 
+        FROM authors 
+        WHERE name ILIKE $1 
+        ORDER BY name 
+        LIMIT 20
+    """
+    rows = await db.pool.fetch(query, f"%{q}%")
+    return [Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid']) for r in rows]
+
+@app.get("/authors/{author_id}", response_model=Author)
+async def get_author(author_id: str):
+    """Get author details."""
+    query = "SELECT id, name, dept, orcid FROM authors WHERE id = $1"
+    row = await db.pool.fetchrow(query, author_id)
+    if not row:
+        raise HTTPException(status_code=404, detail="Author not found")
+    return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'])
+
+@app.get("/authors/{author_id}/publications", response_model=List[Publication])
+async def get_author_publications(author_id: str):
+    """Get publications for an author."""
+    query = """
+        SELECT p.id, p.title, p.year, p.citations, p.venue
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id = $1
+        ORDER BY p.year DESC, p.citations DESC
+        LIMIT 100
+    """
+    rows = await db.pool.fetch(query, author_id)
+    return [
+        Publication(id=r['id'], title=r['title'], year=r['year'], citations=r['citations'], venue=r['venue'])
+        for r in rows
+    ]
+
+@app.get("/stats/top-authors", response_model=List[Author])
+async def get_top_authors():
+    """Get top authors by total citations (calculated from stored metrics or on fly)."""
+    # Simply using author_metrics_yearly view if populated, or aggregate
+    # For now, let's just return a list from 'authors' as placeholder or do a join
+    # Since we didn't confirm metrics loading fully, let's query raw counts if possible.
+    # We'll try to join with metrics table if it exists.
+    query = """
+        SELECT a.id, a.name, a.dept, a.orcid, SUM(amy.citations_year) as total_cites
+        FROM authors a
+        LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
+        GROUP BY a.id, a.name, a.dept, a.orcid
+        ORDER BY total_cites DESC NULLS LAST
+        LIMIT 10
+    """
+    rows = await db.pool.fetch(query)
+    return [
+         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], pub_count=r['total_cites'] or 0) 
+         for r in rows
+    ]

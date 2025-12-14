@@ -1,0 +1,179 @@
+:root {
+  /* Sabanci Colors */
+  --su-blue: #002855;
+  --su-blue-light: #003d80;
+  --su-gold: #fbbf24;
+
+  --background: #ffffff;
+  --foreground: #111111;
+  --muted: #6b7280;
+
+  --border-color: #e4e4e7;
+
+  /* Typography */
+  --font-serif: 'Georgia', 'Times New Roman', serif;
+  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+
+  /* Animations */
+  --transition-fast: 0.2s ease;
+  --transition-smooth: 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+  overflow-x: hidden;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+}
+
+h1,
+h2,
+h3,
+h4 {
+  font-family: var(--font-serif);
+  font-weight: 700;
+  color: var(--su-blue);
+  /* Default headings to blue for elegance */
+  line-height: 1.2;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+  transition: color var(--transition-fast);
+}
+
+a:hover {
+  color: var(--su-blue-light);
+}
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+/* Card Styles matching Reference */
+.su-card {
+  background: white;
+  border: 1px solid transparent;
+  transition: transform var(--transition-smooth), box-shadow var(--transition-smooth);
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  position: relative;
+  overflow: hidden;
+  cursor: pointer;
+}
+
+.su-card:hover {
+  transform: translateY(-5px);
+  box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+}
+
+.su-card-image {
+  aspect-ratio: 16/9;
+  background-color: #f3f4f6;
+  position: relative;
+  overflow: hidden;
+}
+
+.su-card-image img {
+  object-fit: cover;
+  width: 100%;
+  height: 100%;
+  transition: transform 0.6s ease;
+}
+
+.su-card:hover .su-card-image img {
+  transform: scale(1.05);
+}
+
+.su-card-content {
+  padding: 1.5rem 0;
+  /* Minimal padding, mostly vertical */
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+}
+
+.su-card-title {
+  font-size: 1.5rem;
+  margin-bottom: 0.75rem;
+  color: #111;
+  font-family: var(--font-serif);
+  line-height: 1.3;
+}
+
+.su-card-desc {
+  font-size: 0.95rem;
+  color: var(--muted);
+  line-height: 1.6;
+  margin-bottom: 1.5rem;
+  font-weight: 300;
+}
+
+/* The Blue Arrow Button */
+.su-arrow-btn {
+  width: 32px;
+  height: 32px;
+  background: var(--su-blue);
+  border-radius: 50%;
+  border: none;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: white;
+  margin-top: auto;
+  transition: background var(--transition-fast), transform var(--transition-fast);
+}
+
+.su-card:hover .su-arrow-btn {
+  background: var(--su-blue-light);
+  transform: translateX(5px);
+}
+
+/* Footer Styles */
+.footer-link {
+  color: white;
+  text-decoration: none;
+  opacity: 0.9;
+  transition: opacity 0.2s;
+}
+
+.footer-link:hover {
+  opacity: 1;
+  text-decoration: underline;
+}
+
+.social-icon {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 40px;
+  height: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.3);
+  border-radius: 50%;
+  color: white;
+  transition: all 0.2s;
+}
+
+.social-icon:hover {
+  background-color: white;
+  color: #002855;
+  border-color: white;
+}
