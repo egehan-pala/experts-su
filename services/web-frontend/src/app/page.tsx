@@ -9,6 +9,7 @@ interface Author {
   name: string;
   dept: string | null;
   orcid: string | null;
+  pub_count: number;
 }
 
 export default function Home() {
@@ -18,10 +19,10 @@ export default function Home() {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch('http://localhost:8000/authors/search?q=a')
+    fetch('http://localhost:8000/stats/top-authors')
       .then((res) => res.json())
       .then((data) => {
-        setTopAuthors(data.slice(0, 6)); // 2 columns, so even number looks best
+        setTopAuthors(data);
         setLoading(false);
       })
       .catch((err) => console.error(err));
@@ -113,10 +114,10 @@ export default function Home() {
                     {author.name}
                   </h3>
                   <p className="su-card-desc">
-                    {author.dept || 'Faculty of Engineering and Natural Sciences'}
+                    {author.dept || 'Faculty of Engineering'}
                     <br />
-                    <span style={{ fontSize: '0.85rem', opacity: 0.8, marginTop: '0.5rem', display: 'inline-block' }}>
-                      Expertise: Artificial Intelligence, Data Science, Machine Learning
+                    <span style={{ fontSize: '0.85rem', opacity: 0.8, marginTop: '0.5rem', display: 'inline-block', color: '#002855', fontWeight: 600 }}>
+                      {author.pub_count} Publications
                     </span>
                   </p>
 
