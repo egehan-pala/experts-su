@@ -57,6 +57,7 @@ class Publication(BaseModel):
     year: Optional[int]
     citations: Optional[int]
     venue: Optional[str]
+    pdf_url: Optional[str] = None
 
 # Endpoints
 @app.get("/")
@@ -97,28 +98,33 @@ async def get_author_publications(author_id: str):
         LIMIT 100
     """
     rows = await db.pool.fetch(query, author_id)
+    import urllib.parse
     return [
-        Publication(id=r['id'], title=r['title'], year=r['year'], citations=r['citations'], venue=r['venue'])
+        Publication(
+            id=r['id'], 
+            title=r['title'], 
+            year=r['year'], 
+            citations=r['citations'], 
+            venue=r['venue'],
+            # Simulating a mapped PDF URL. In a real scenario, this would come from the DB.
+            pdf_url=f"https://scholar.google.com/scholar?q={urllib.parse.quote(r['title'])}"
+        )
         for r in rows
     ]
 
 @app.get("/stats/top-authors", response_model=List[Author])
 async def get_top_authors():
-    """Get top authors by total citations (calculated from stored metrics or on fly)."""
-    # Simply using author_metrics_yearly view if populated, or aggregate
-    # For now, let's just return a list from 'authors' as placeholder or do a join
-    # Since we didn't confirm metrics loading fully, let's query raw counts if possible.
-    # We'll try to join with metrics table if it exists.
+    """Get top authors by total publications."""
     query = """
-        SELECT a.id, a.name, a.dept, a.orcid, SUM(amy.citations_year) as total_cites
+        SELECT a.id, a.name, a.dept, a.orcid, SUM(amy.pub_count) as total_pubs
         FROM authors a
         LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
         GROUP BY a.id, a.name, a.dept, a.orcid
-        ORDER BY total_cites DESC NULLS LAST
-        LIMIT 10
+        ORDER BY total_pubs DESC NULLS LAST
+        LIMIT 12
     """
     rows = await db.pool.fetch(query)
     return [
-         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], pub_count=r['total_cites'] or 0) 
+         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], pub_count=r['total_pubs'] or 0) 
          for r in rows
     ]

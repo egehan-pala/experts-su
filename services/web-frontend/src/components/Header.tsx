@@ -1,5 +1,6 @@
 import Image from 'next/image';
 import Link from 'next/link';
+import SearchBar from './SearchBar';
 
 export default function Header() {
     const currentDate = new Date().toLocaleDateString('en-US', {
@@ -81,11 +82,8 @@ export default function Header() {
 
                     {/* Right Icons */}
                     <div style={{ display: 'flex', gap: '1rem', color: 'white' }}>
-                        {/* Search Icon Placeholder */}
-                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="11" cy="11" r="8"></circle>
-                            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
-                        </svg>
+                        {/* Search Bar */}
+                        <SearchBar />
                         {/* Menu Icon Placeholder */}
                         <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                             <line x1="3" y1="12" x2="21" y2="12"></line>
