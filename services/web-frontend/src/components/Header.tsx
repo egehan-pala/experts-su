@@ -29,16 +29,18 @@ export default function Header() {
 
                         {/* Title */}
                         <h1 style={{
-                            fontSize: '1.15rem',
+                            fontSize: '1.1rem',
                             margin: 0,
-                            fontFamily: "'Helvetica Neue', Helvetica, Arial, sans-serif",
+                            fontFamily: 'var(--font-sans)',
                             fontWeight: 500,
                             color: 'white',
-                            letterSpacing: '0',
+                            letterSpacing: '-2px',
                             textTransform: 'uppercase',
                             lineHeight: 1
                         }}>
-                            Faculty Experts
+                            Faculty
+                            <br />
+                            Experts
                         </h1>
                     </div>
 

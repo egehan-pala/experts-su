@@ -92,12 +92,13 @@ export default function Home() {
         <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
           <div style={{ display: 'inline-block' }}>
             <h2 style={{
-              fontSize: '2.5rem',
-              color: '#002855',
+              fontSize: '2rem',
+              color: '#002777',
               marginBottom: '0.5rem',
               lineHeight: 1,
-              letterSpacing: '0.05em',
-              fontWeight: 800,
+              letterSpacing: '0.001em',
+              fontWeight: 700,
+              fontFamily: 'var(--font-sans)',
               textTransform: 'uppercase'
             }}>
               Faculty Experts
@@ -105,7 +106,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '2rem' }}>
+        <div className="experts-grid">
           {loading ? (
             <p>Loading directory...</p>
           ) : (
