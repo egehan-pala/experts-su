@@ -9,6 +9,8 @@ interface Author {
     dept: string | null;
     orcid: string | null;
     image_url?: string | null;
+    email?: string | null;
+    phone?: string | null;
 }
 
 interface Publication {
@@ -106,8 +108,16 @@ export default function ProfilePage() {
                             <div style={{ display: 'flex', gap: '2rem', borderTop: '1px solid #d4d4d8', paddingTop: '1.5rem', marginTop: '1rem' }}>
                                 <div>
                                     <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>Email</span>
-                                    <a href="#" style={{ color: '#002855', textDecoration: 'underline' }}>{author.name.split(' ')[0].toLowerCase()}@sabanciuniv.edu</a>
+                                    <a href={`mailto:${author.email}`} style={{ color: '#002855', textDecoration: 'underline' }}>
+                                        {author.email || 'N/A'}
+                                    </a>
                                 </div>
+                                {author.phone && (
+                                    <div>
+                                        <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>Phone</span>
+                                        <span style={{ color: '#111' }}>{author.phone}</span>
+                                    </div>
+                                )}
                                 <div>
                                     <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>ORCID</span>
                                     <span style={{ fontFamily: 'monospace', color: '#111' }}>{author.orcid || 'N/A'}</span>

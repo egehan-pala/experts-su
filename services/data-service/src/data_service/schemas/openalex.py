@@ -63,6 +63,8 @@ class OAWork(BaseModel):
     publication_year: Optional[int] = None
     type: Optional[str] = None
     cited_by_count: Optional[int] = None
+    best_oa_location: Optional[Dict[str, Any]] = None
+    primary_location: Optional[Dict[str, Any]] = None
     host_venue: Optional[Dict[str, Any]] = None
     authorships: List[OAAuthorship] = []
     concepts: List[OAConcept] = []

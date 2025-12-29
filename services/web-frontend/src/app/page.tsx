@@ -11,6 +11,8 @@ interface Author {
   orcid: string | null;
   pub_count: number;
   image_url?: string | null;
+  email?: string | null;
+  phone?: string | null;
 }
 
 export default function Home() {
@@ -103,7 +105,7 @@ export default function Home() {
           </div>
         </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '3rem' }}>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '2rem' }}>
           {loading ? (
             <p>Loading directory...</p>
           ) : (
@@ -137,7 +139,6 @@ export default function Home() {
                     color: '#9ca3af',
                     background: '#eaebed'
                   }}>
-                    {/* Try to simulate a person image or just use an icon if no image */}
                     <svg width="64" height="64" viewBox="0 0 24 24" fill="currentColor" style={{ opacity: 0.5 }}>
                       <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
                     </svg>
@@ -149,20 +150,33 @@ export default function Home() {
                   <h3 className="su-card-title">
                     {author.name}
                   </h3>
-                  <p className="su-card-desc">
+
+                  {/* Title / Role */}
+                  <p style={{ fontWeight: 800, fontSize: '0.95rem', color: '#111', marginBottom: '1rem', lineHeight: 1.4 }}>
                     {author.dept || 'Faculty Member'}
-                    <br />
-                    <span style={{ fontSize: '0.85rem', opacity: 0.8, marginTop: '0.5rem', display: 'inline-block', color: '#002855', fontWeight: 600 }}>
-                      {author.pub_count} Publications
-                    </span>
                   </p>
 
-                  <div className="su-arrow-btn">
-                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <line x1="12" y1="19" x2="12" y2="5"></line>
-                      <polyline points="5 12 12 5 19 12"></polyline>
-                    </svg>
+                  {/* Contact Info */}
+                  <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', width: '100%', marginBottom: '1.5rem' }}>
+                    {author.phone && (
+                      <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.9rem', color: '#333' }}>
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+                          <path d="M20.01 15.38c-1.23 0-2.42-.2-3.53-.56a.977.977 0 00-1.01.24l-2.2 2.2a15.161 15.161 0 01-6.59-6.59l2.2-2.21c.28-.26.36-.65.25-1.01A11.36 11.36 0 018.59 3.99c0-.55-.45-1-1-1h-3.5c-.55 0-1 .45-1 1C3.09 13.01 11.99 21.91 21 21.91c.55 0 1-.45 1-1v-3.5c0-.55-.45-1-1-1zM20.01 15.38z" />
+                        </svg>
+                        <span>{author.phone}</span>
+                      </div>
+                    )}
+
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', fontSize: '0.9rem', color: '#333' }}>
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="currentColor" style={{ flexShrink: 0 }}>
+                        <path d="M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4l-8 5-8-5V6l8 5 8-5v2z" />
+                      </svg>
+                      <span style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {author.email || `${author.name.split(' ')[0].toLowerCase()}@sabanciuniv.edu`}
+                      </span>
+                    </div>
                   </div>
+
                 </div>
               </div>
             ))

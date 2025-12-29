@@ -59,9 +59,14 @@ async def load(
     # name_to_id = {t.get("name"): f"local_{i}" for i, t in enumerate(topics)}
     # logger.info({"message": "[SKIPPED] Would upsert topics", "count": len(name_to_id)})
 
+    # Create a set of valid publication IDs
+    valid_pub_ids = {p["id"] for p in publications}
+
     # Replace topic names with IDs for publication_topics
     pub_topic_records = []
     for rel in publication_topics:
+        if rel["publication_id"] not in valid_pub_ids:
+            continue
         topic_name = rel["topic_name"]
         topic_id = name_to_id.get(topic_name)
         if topic_id:
