@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=Crimson+Text:ital,wght@0,400;0,600;0,700;1,400&family=Roboto:wght@300;400;500;700&display=swap');
+
 :root {
   /* Sabanci Colors */
   --su-blue: #002855;
@@ -11,8 +13,8 @@
   --border-color: #e4e4e7;
 
   /* Typography */
-  --font-serif: 'Georgia', 'Times New Roman', serif;
-  --font-sans: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  --font-serif: 'Crimson Text', serif;
+  --font-sans: 'Roboto', sans-serif;
 
   /* Animations */
   --transition-fast: 0.2s ease;
@@ -44,7 +46,7 @@ h1,
 h2,
 h3,
 h4 {
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   font-weight: 700;
   color: var(--su-blue);
   /* Default headings to blue for elegance */
@@ -90,9 +92,28 @@ h4 {
   transform: translateX(-50%);
 }
 
-.nav-link:hover::after {
+
+/* Standardized Grid Layout - Responsive 3 Columns */
+.experts-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
   width: 100%;
 }
+
+@media (min-width: 640px) {
+  .experts-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (min-width: 1024px) {
+  .experts-grid {
+    grid-template-columns: repeat(4, 1fr);
+    /* Enforce 4 cards per row on desktop */
+  }
+}
+
 
 a {
   color: inherit;
@@ -150,7 +171,7 @@ a:hover {
 }
 
 .su-card-content {
-  padding: 1.5rem;
+  padding: 1rem;
   flex: 1;
   display: flex;
   flex-direction: column;
@@ -159,20 +180,20 @@ a:hover {
 }
 
 .su-card-title {
-  font-size: 1.25rem;
-  margin-bottom: 0.5rem;
+  font-size: 1.05rem;
+  margin-bottom: 0.25rem;
   color: #111;
-  font-family: var(--font-serif);
+  font-family: var(--font-sans);
   line-height: 1.3;
-  font-weight: 800;
+  font-weight: 700;
 }
 
 .su-card-desc {
-  font-size: 0.95rem;
+  font-size: 0.85rem;
   color: var(--muted);
-  line-height: 1.6;
-  margin-bottom: 1.5rem;
-  font-weight: 300;
+  line-height: 1.5;
+  margin-bottom: 1rem;
+  font-weight: 400;
 }
 
 /* The Blue Arrow Button */
