@@ -129,6 +129,11 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
             # Filter publications by year
             if min_year > 0 and (work.publication_year is None or work.publication_year < min_year):
                 continue
+            
+            # Filter out theses/dissertations
+            if work.type == "dissertation":
+                continue
+
             works.append(work)
         except Exception as exc:
             logger.error({"message": "Invalid work payload", "error": str(exc)})

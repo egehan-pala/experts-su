@@ -149,11 +149,11 @@ class Database:
     async def upsert_authors(self, authors: Iterable[Dict[str, Any]]) -> None:
         """Upsert normalised author records into the authors table."""
         query = (
-            "INSERT INTO authors (id, orcid, name, dept, email, ror_id, created_at, updated_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) "
+            "INSERT INTO authors (id, orcid, name, dept, email, ror_id, image_url, created_at, updated_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) "
             "ON CONFLICT (id) DO UPDATE SET "
             "orcid = EXCLUDED.orcid, name = EXCLUDED.name, dept = EXCLUDED.dept, "
-            "email = EXCLUDED.email, ror_id = EXCLUDED.ror_id, updated_at = NOW()"
+            "email = EXCLUDED.email, ror_id = EXCLUDED.ror_id, image_url = EXCLUDED.image_url, updated_at = NOW()"
         )
         records = []
         for author in authors:
@@ -165,6 +165,7 @@ class Database:
                     author.get("dept"),
                     author.get("email"),
                     author.get("ror_id"),
+                    author.get("image_url"),
                 )
             )
         if not records:

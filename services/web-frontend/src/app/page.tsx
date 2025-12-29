@@ -10,6 +10,7 @@ interface Author {
   dept: string | null;
   orcid: string | null;
   pub_count: number;
+  image_url?: string | null;
 }
 
 export default function Home() {
@@ -91,11 +92,23 @@ export default function Home() {
               >
                 {/* Image Section */}
                 <div className="su-card-image">
-                  {/* Placeholder for Photo */}
+                  {author.image_url ? (
+                    <img
+                      src={author.image_url}
+                      alt={author.name}
+                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      onError={(e) => {
+                        (e.target as HTMLImageElement).style.display = 'none';
+                        (e.target as HTMLImageElement).nextElementSibling?.removeAttribute('style');
+                      }}
+                    />
+                  ) : null}
+
+                  {/* Placeholder for Photo (shown if no image or error) */}
                   <div style={{
                     width: '100%',
                     height: '100%',
-                    display: 'flex',
+                    display: author.image_url ? 'none' : 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     color: '#9ca3af',

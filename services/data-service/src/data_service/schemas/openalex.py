@@ -61,6 +61,7 @@ class OAWork(BaseModel):
     title: Optional[str] = None
     abstract: Optional[str] = None
     publication_year: Optional[int] = None
+    type: Optional[str] = None
     cited_by_count: Optional[int] = None
     host_venue: Optional[Dict[str, Any]] = None
     authorships: List[OAAuthorship] = []

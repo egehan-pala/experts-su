@@ -20,6 +20,7 @@ class AuthorRecord(BaseModel):
     dept: Optional[str] = None
     email: Optional[str] = None
     ror_id: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 class PublicationRecord(BaseModel):

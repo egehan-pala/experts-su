@@ -8,6 +8,7 @@ interface Author {
     name: string;
     dept: string | null;
     orcid: string | null;
+    image_url?: string | null;
 }
 
 interface Publication {
@@ -71,7 +72,26 @@ export default function ProfilePage() {
                             justifyContent: 'center',
                             color: '#a1a1aa'
                         }}>
-                            <svg width="80" height="80" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+                            {author.image_url ? (
+                                <img
+                                    src={author.image_url}
+                                    alt={author.name}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                        (e.target as HTMLImageElement).nextElementSibling?.removeAttribute('style');
+                                    }}
+                                />
+                            ) : null}
+                            <svg
+                                width="80"
+                                height="80"
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                style={{ display: author.image_url ? 'none' : 'block' }}
+                            >
+                                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                            </svg>
                         </div>
 
                         {/* Bio Info */}

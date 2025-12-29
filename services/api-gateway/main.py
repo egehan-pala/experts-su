@@ -49,6 +49,7 @@ class Author(BaseModel):
     name: str
     dept: Optional[str] = None
     orcid: Optional[str] = None
+    image_url: Optional[str] = None
     pub_count: Optional[int] = 0
 
 class Publication(BaseModel):
@@ -68,23 +69,23 @@ async def root():
 async def search_authors(q: str = Query(..., min_length=2)):
     """Search authors by name."""
     query = """
-        SELECT id, name, dept, orcid 
+        SELECT id, name, dept, orcid, image_url
         FROM authors 
         WHERE name ILIKE $1 
         ORDER BY name 
         LIMIT 20
     """
     rows = await db.pool.fetch(query, f"%{q}%")
-    return [Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid']) for r in rows]
+    return [Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url']) for r in rows]
 
 @app.get("/authors/{author_id}", response_model=Author)
 async def get_author(author_id: str):
     """Get author details."""
-    query = "SELECT id, name, dept, orcid FROM authors WHERE id = $1"
+    query = "SELECT id, name, dept, orcid, image_url FROM authors WHERE id = $1"
     row = await db.pool.fetchrow(query, author_id)
     if not row:
         raise HTTPException(status_code=404, detail="Author not found")
-    return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'])
+    return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'], image_url=row['image_url'])
 
 @app.get("/authors/{author_id}/publications", response_model=List[Publication])
 async def get_author_publications(author_id: str):
@@ -116,15 +117,15 @@ async def get_author_publications(author_id: str):
 async def get_top_authors():
     """Get top authors by total publications."""
     query = """
-        SELECT a.id, a.name, a.dept, a.orcid, SUM(amy.pub_count) as total_pubs
+        SELECT a.id, a.name, a.dept, a.orcid, a.image_url, SUM(amy.pub_count) as total_pubs
         FROM authors a
         LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
-        GROUP BY a.id, a.name, a.dept, a.orcid
+        GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url
         ORDER BY total_pubs DESC NULLS LAST
         LIMIT 12
     """
     rows = await db.pool.fetch(query)
     return [
-         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], pub_count=r['total_pubs'] or 0) 
+         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url'], pub_count=r['total_pubs'] or 0) 
          for r in rows
     ]
