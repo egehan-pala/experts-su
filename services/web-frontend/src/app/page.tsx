@@ -16,23 +16,40 @@ interface Author {
 export default function Home() {
   const router = useRouter();
   const [query, setQuery] = useState('');
-  const [topAuthors, setTopAuthors] = useState<Author[]>([]);
+  const [authors, setAuthors] = useState<Author[]>([]);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
+  const [totalPages, setTotalPages] = useState(1);
+  const limit = 12;
 
   useEffect(() => {
-    fetch('http://localhost:8000/stats/top-authors')
+    setLoading(true);
+    // Scroll to top of list when page changes, if reasonable
+    // window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    fetch(`http://localhost:8000/authors?page=${page}&limit=${limit}`)
       .then((res) => res.json())
       .then((data) => {
-        setTopAuthors(data);
+        setAuthors(data.data);
+        setTotalPages(data.meta.total_pages);
         setLoading(false);
       })
-      .catch((err) => console.error(err));
-  }, []);
+      .catch((err) => {
+        console.error(err);
+        setLoading(false);
+      });
+  }, [page]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
     if (query.trim()) {
       router.push(`/search?q=${encodeURIComponent(query)}`);
+    }
+  };
+
+  const goToPage = (newPage: number) => {
+    if (newPage >= 1 && newPage <= totalPages) {
+      setPage(newPage);
     }
   };
 
@@ -70,21 +87,27 @@ export default function Home() {
 
       {/* Featured Researchers Grid - Elegant Card Layout */}
       <div className="container" style={{ padding: '4rem 1.5rem' }}>
-        <h2 style={{
-          fontSize: '2rem',
-          marginBottom: '3rem',
-          borderLeft: '4px solid #002855',
-          paddingLeft: '1rem',
-          color: '#111'
-        }}>
-          Featured Experts
-        </h2>
+        <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+          <div style={{ display: 'inline-block' }}>
+            <h2 style={{
+              fontSize: '2.5rem',
+              color: '#002855',
+              marginBottom: '0.5rem',
+              lineHeight: 1,
+              letterSpacing: '0.05em',
+              fontWeight: 800,
+              textTransform: 'uppercase'
+            }}>
+              Faculty Experts
+            </h2>
+          </div>
+        </div>
 
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(350px, 1fr))', gap: '3rem' }}>
           {loading ? (
-            <p>Loading...</p>
+            <p>Loading directory...</p>
           ) : (
-            topAuthors.map((author) => (
+            authors.map((author) => (
               <div
                 key={author.id}
                 className="su-card"
@@ -127,7 +150,7 @@ export default function Home() {
                     {author.name}
                   </h3>
                   <p className="su-card-desc">
-                    {author.dept || 'Faculty of Engineering'}
+                    {author.dept || 'Faculty Member'}
                     <br />
                     <span style={{ fontSize: '0.85rem', opacity: 0.8, marginTop: '0.5rem', display: 'inline-block', color: '#002855', fontWeight: 600 }}>
                       {author.pub_count} Publications
@@ -136,8 +159,8 @@ export default function Home() {
 
                   <div className="su-arrow-btn">
                     <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                      <path d="M5 12h14"></path>
-                      <path d="M12 5l7 7-7 7"></path>
+                      <line x1="12" y1="19" x2="12" y2="5"></line>
+                      <polyline points="5 12 12 5 19 12"></polyline>
                     </svg>
                   </div>
                 </div>
@@ -145,6 +168,45 @@ export default function Home() {
             ))
           )}
         </div>
+
+        {/* Pagination Controls */}
+        {!loading && (
+          <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1.5rem', marginTop: '4rem' }}>
+            <button
+              onClick={() => goToPage(page - 1)}
+              disabled={page === 1}
+              style={{
+                padding: '0.75rem 1.5rem',
+                background: page === 1 ? '#e4e4e7' : '#002855',
+                color: page === 1 ? '#a1a1aa' : 'white',
+                border: 'none',
+                fontWeight: 600,
+                cursor: page === 1 ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Previous
+            </button>
+
+            <span style={{ fontSize: '1.1rem', fontWeight: 500 }}>
+              Page {page} of {totalPages}
+            </span>
+
+            <button
+              onClick={() => goToPage(page + 1)}
+              disabled={page === totalPages}
+              style={{
+                padding: '0.75rem 1.5rem',
+                background: page === totalPages ? '#e4e4e7' : '#002855',
+                color: page === totalPages ? '#a1a1aa' : 'white',
+                border: 'none',
+                fontWeight: 600,
+                cursor: page === totalPages ? 'not-allowed' : 'pointer'
+              }}
+            >
+              Next
+            </button>
+          </div>
+        )}
       </div>
     </main>
   );

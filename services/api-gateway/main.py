@@ -113,6 +113,48 @@ async def get_author_publications(author_id: str):
         for r in rows
     ]
 
+@app.get("/authors", response_model=dict)
+async def get_authors(page: int = Query(1, ge=1), limit: int = Query(12, ge=1, le=100)):
+    """Get all authors with pagination."""
+    offset = (page - 1) * limit
+    
+    # 1. Get total count
+    count_query = "SELECT COUNT(*) FROM authors"
+    total_count = await db.pool.fetchval(count_query)
+    
+    # 2. Get paginated data
+    # Sort order: 
+    # - Has Image (image_url IS NOT NULL) -> First
+    # - Publication Count (desc) -> Second
+    # - Alphabetical -> Third
+    query = """
+        SELECT a.id, a.name, a.dept, a.orcid, a.image_url, COALESCE(SUM(amy.pub_count), 0) as total_pubs
+        FROM authors a
+        LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
+        GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url
+        ORDER BY 
+            total_pubs DESC NULLS LAST,
+            (a.image_url IS NOT NULL) DESC,
+            a.name ASC
+        LIMIT $1 OFFSET $2
+    """
+    rows = await db.pool.fetch(query, limit, offset)
+    
+    authors = [
+         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url'], pub_count=r['total_pubs']) 
+         for r in rows
+    ]
+    
+    return {
+        "data": authors,
+        "meta": {
+            "page": page,
+            "limit": limit,
+            "total_items": total_count,
+            "total_pages": (total_count + limit - 1) // limit
+        }
+    }
+
 @app.get("/stats/top-authors", response_model=List[Author])
 async def get_top_authors():
     """Get top authors by total publications."""
