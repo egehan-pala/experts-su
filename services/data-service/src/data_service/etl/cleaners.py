@@ -22,6 +22,8 @@ from ..schemas.db import (
     TopicRecord,
     PublicationTopicRecord,
 )
+from ..scrapers.faculty import scrape_all_faculty
+import unicodedata
 from ..logging import get_logger
 
 
@@ -90,24 +92,52 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
             logger.error({"message": "Invalid author payload", "error": str(exc)})
 
     # Deduplicate authors by ORCID if available, otherwise normalised name
+    # --- FACULTY FILTERING & ENRICHMENT ---
+    try:
+        scraped_faculty = await scrape_all_faculty()
+    except Exception as exc:
+        logger.error(f"Failed to scrape faculty: {exc}")
+        scraped_faculty = []
+
+    def normalize_name_filter(n: str) -> str:
+        if not n: return ""
+        return unicodedata.normalize('NFKD', n).encode('ASCII', 'ignore').decode('utf-8').lower().replace(" ", "")
+
+    faculty_map = {normalize_name_filter(f["name"]): f for f in scraped_faculty}
+    # -------------------------------------
+
     dedup_map: Dict[str, AuthorRecord] = {}
     for author in authors:
+        # Check against allowlist
+        n_name = normalize_name_filter(author.display_name)
+        match = faculty_map.get(n_name)
+        
+        # If scraping succeeded, enforce the filter
+        if scraped_faculty and not match:
+            continue
+
         key = author.orcid or _normalize_name(author.display_name)
-        # Extract department and email from last_known_institution if available
+        # Extract department (prioritize scraped title)
         dept = None
-        if author.last_known_institution:
+        if match and match.get("title"):
+            dept = match.get("title")
+        elif author.last_known_institution:
             dept = author.last_known_institution.display_name
+        
         # Determine ror id from affiliation
         ror_id = None
         if author.last_known_institution:
             ror_id = author.last_known_institution.ror
+            
         rec = AuthorRecord(
             id=author.id.split("/")[-1],
             orcid=author.orcid,
             name=author.display_name,
             dept=dept,
-            email=None,
+            email=match.get("email") or None if match else None,
+            phone=match.get("phone") or None if match else None,
             ror_id=ror_id,
+            image_url=match.get("image_url") if match else None, 
         )
         existing = dedup_map.get(key)
         if existing is None:
@@ -116,7 +146,8 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
             # Prefer the record that has an ORCID or email
             if not existing.orcid and rec.orcid:
                 dedup_map[key] = rec
-            # Otherwise keep existing
+            # Validating if we have scraped data, we prioritize it (which we do by creating rec with it)
+            # If both have scraped data, existing logic holds.
 
     authors_norm: List[Dict[str, Optional[str]]] = [rec.dict() for rec in dedup_map.values()]
 
@@ -129,6 +160,11 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
             # Filter publications by year
             if min_year > 0 and (work.publication_year is None or work.publication_year < min_year):
                 continue
+            
+            # Filter out theses/dissertations
+            if work.type in ("dissertation", "thesis", "master thesis"):
+                continue
+
             works.append(work)
         except Exception as exc:
             logger.error({"message": "Invalid work payload", "error": str(exc)})
@@ -146,6 +182,12 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
             year=work.publication_year,
             venue=work.host_venue.get("display_name") if work.host_venue else None,
             citations=work.cited_by_count,
+            pdf_url=(
+                (work.best_oa_location and work.best_oa_location.get("pdf_url")) or
+                (work.best_oa_location and work.best_oa_location.get("landing_page_url")) or
+                (work.primary_location and work.primary_location.get("pdf_url")) or
+                (work.primary_location and work.primary_location.get("landing_page_url"))
+            ),
         )
         publications_norm.append(pub_rec.dict())
         # Extract concepts as topics
@@ -157,11 +199,16 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
 
     topics_norm = [{"name": name} for name in topics_set.keys()]
 
-    valid_author_ids = {rec["id"] for rec in authors_norm}
+    # Collect valid publication IDs
     valid_publication_ids = {rec["id"] for rec in publications_norm}
 
     # Author-publication relations
     author_publications_norm: List[Dict[str, str]] = []
+    active_author_ids = set()
+    
+    # First pass: collect all valid relations and active authors
+    valid_author_ids_pre = {rec["id"] for rec in authors_norm}
+    
     for row in stg_relations:
         payload = json.loads(row["payload"])
         aid = payload.get("author_id")
@@ -169,8 +216,20 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
         if aid and wid:
             aid_clean = aid.split("/")[-1]
             wid_clean = wid.split("/")[-1]
-            if aid_clean in valid_author_ids and wid_clean in valid_publication_ids:
+            if aid_clean in valid_author_ids_pre and wid_clean in valid_publication_ids:
                 author_publications_norm.append({"author_id": aid_clean, "publication_id": wid_clean})
+                active_author_ids.add(aid_clean)
+
+    # Filter publications: keep only those that have at least one valid author relation
+    # "nor its papers" -> if a paper belongs to no valid author, drop it.
+    valid_publication_ids_final = {rel["publication_id"] for rel in author_publications_norm}
+    publications_norm = [p for p in publications_norm if p["id"] in valid_publication_ids_final]
+
+    # Filter authors: keep only those with at least one publication
+    authors_norm = [a for a in authors_norm if a["id"] in active_author_ids]
+    
+    # Re-calculate valid author IDs for downstream checks (though we just filtered based on relations)
+    valid_author_ids = {rec["id"] for rec in authors_norm}
 
     # Compute metrics: publications and citations per author per year
     metrics: Dict[Tuple[str, int], Dict[str, int]] = {}

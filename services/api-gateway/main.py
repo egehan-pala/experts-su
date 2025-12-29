@@ -49,6 +49,9 @@ class Author(BaseModel):
     name: str
     dept: Optional[str] = None
     orcid: Optional[str] = None
+    image_url: Optional[str] = None
+    email: Optional[str] = None
+    phone: Optional[str] = None
     pub_count: Optional[int] = 0
 
 class Publication(BaseModel):
@@ -68,29 +71,44 @@ async def root():
 async def search_authors(q: str = Query(..., min_length=2)):
     """Search authors by name."""
     query = """
-        SELECT id, name, dept, orcid 
-        FROM authors 
-        WHERE name ILIKE $1 
-        ORDER BY name 
+        SELECT a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone, COALESCE(SUM(amy.pub_count), 0) as total_publications
+        FROM authors a
+        LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
+        WHERE a.name ILIKE $1
+        GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone
+        HAVING COALESCE(SUM(amy.pub_count), 0) > 0
+        ORDER BY total_publications DESC, a.name
         LIMIT 20
     """
     rows = await db.pool.fetch(query, f"%{q}%")
-    return [Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid']) for r in rows]
+    return [
+        Author(
+            id=r['id'], 
+            name=r['name'], 
+            dept=r['dept'], 
+            orcid=r['orcid'], 
+            image_url=r['image_url'],
+            email=r['email'],
+            phone=r['phone'],
+            pub_count=r['total_publications']
+        ) 
+        for r in rows
+    ]
 
 @app.get("/authors/{author_id}", response_model=Author)
 async def get_author(author_id: str):
     """Get author details."""
-    query = "SELECT id, name, dept, orcid FROM authors WHERE id = $1"
+    query = "SELECT id, name, dept, orcid, image_url, email, phone FROM authors WHERE id = $1"
     row = await db.pool.fetchrow(query, author_id)
     if not row:
         raise HTTPException(status_code=404, detail="Author not found")
-    return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'])
+    return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'], image_url=row['image_url'], email=row['email'], phone=row['phone'])
 
 @app.get("/authors/{author_id}/publications", response_model=List[Publication])
 async def get_author_publications(author_id: str):
     """Get publications for an author."""
     query = """
-        SELECT p.id, p.title, p.year, p.citations, p.venue
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE ap.author_id = $1
@@ -98,7 +116,6 @@ async def get_author_publications(author_id: str):
         LIMIT 100
     """
     rows = await db.pool.fetch(query, author_id)
-    import urllib.parse
     return [
         Publication(
             id=r['id'], 
@@ -106,25 +123,80 @@ async def get_author_publications(author_id: str):
             year=r['year'], 
             citations=r['citations'], 
             venue=r['venue'],
-            # Simulating a mapped PDF URL. In a real scenario, this would come from the DB.
-            pdf_url=f"https://scholar.google.com/scholar?q={urllib.parse.quote(r['title'])}"
+            pdf_url=r['pdf_url']
         )
         for r in rows
     ]
+
+@app.get("/authors", response_model=dict)
+async def get_authors(page: int = Query(1, ge=1), limit: int = Query(12, ge=1, le=100)):
+    """Get all authors with pagination."""
+    offset = (page - 1) * limit
+    
+    # 1. Get total count
+    count_query = """
+        SELECT COUNT(DISTINCT a.id)
+        FROM authors a
+        JOIN author_metrics_yearly amy ON a.id = amy.author_id
+        GROUP BY a.id
+        HAVING SUM(amy.pub_count) > 0
+    """
+    # Note: The above count query returns a row for each author. We need the count of rows.
+    # Alternatively, simplistic count of authors who have ANY metric entry with pub_count > 0
+    count_query = """
+        SELECT COUNT(DISTINCT author_id) 
+        FROM author_metrics_yearly 
+        WHERE pub_count > 0
+    """
+    total_count = await db.pool.fetchval(count_query)
+    
+    # 2. Get paginated data
+    # Sort order: 
+    # - Has Image (image_url IS NOT NULL) -> First
+    # - Publication Count (desc) -> Second
+    # - Alphabetical -> Third
+    query = """
+        SELECT a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone, COALESCE(SUM(amy.pub_count), 0) as total_pubs
+        FROM authors a
+        LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
+        GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone
+        HAVING COALESCE(SUM(amy.pub_count), 0) > 0
+        ORDER BY 
+            total_pubs DESC NULLS LAST,
+            (a.image_url IS NOT NULL) DESC,
+            a.name ASC
+        LIMIT $1 OFFSET $2
+    """
+    rows = await db.pool.fetch(query, limit, offset)
+    
+    authors = [
+         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url'], email=r['email'], phone=r['phone'], pub_count=r['total_pubs']) 
+         for r in rows
+    ]
+    
+    return {
+        "data": authors,
+        "meta": {
+            "page": page,
+            "limit": limit,
+            "total_items": total_count,
+            "total_pages": (total_count + limit - 1) // limit
+        }
+    }
 
 @app.get("/stats/top-authors", response_model=List[Author])
 async def get_top_authors():
     """Get top authors by total publications."""
     query = """
-        SELECT a.id, a.name, a.dept, a.orcid, SUM(amy.pub_count) as total_pubs
+        SELECT a.id, a.name, a.dept, a.orcid, a.image_url, SUM(amy.pub_count) as total_pubs
         FROM authors a
         LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
-        GROUP BY a.id, a.name, a.dept, a.orcid
+        GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url
         ORDER BY total_pubs DESC NULLS LAST
         LIMIT 12
     """
     rows = await db.pool.fetch(query)
     return [
-         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], pub_count=r['total_pubs'] or 0) 
+         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url'], pub_count=r['total_pubs'] or 0) 
          for r in rows
     ]

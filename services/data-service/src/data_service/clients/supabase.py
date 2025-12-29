@@ -149,11 +149,11 @@ class Database:
     async def upsert_authors(self, authors: Iterable[Dict[str, Any]]) -> None:
         """Upsert normalised author records into the authors table."""
         query = (
-            "INSERT INTO authors (id, orcid, name, dept, email, ror_id, created_at, updated_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6, NOW(), NOW()) "
+            "INSERT INTO authors (id, orcid, name, dept, email, phone, ror_id, image_url, created_at, updated_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) "
             "ON CONFLICT (id) DO UPDATE SET "
             "orcid = EXCLUDED.orcid, name = EXCLUDED.name, dept = EXCLUDED.dept, "
-            "email = EXCLUDED.email, ror_id = EXCLUDED.ror_id, updated_at = NOW()"
+            "email = EXCLUDED.email, phone = EXCLUDED.phone, ror_id = EXCLUDED.ror_id, image_url = EXCLUDED.image_url, updated_at = NOW()"
         )
         records = []
         for author in authors:
@@ -164,7 +164,9 @@ class Database:
                     author["name"],
                     author.get("dept"),
                     author.get("email"),
+                    author.get("phone"),
                     author.get("ror_id"),
+                    author.get("image_url"),
                 )
             )
         if not records:
@@ -176,11 +178,12 @@ class Database:
     async def upsert_publications(self, works: Iterable[Dict[str, Any]]) -> None:
         """Upsert normalised publication records into the publications table."""
         query = (
-            "INSERT INTO publications (id, doi, title, abstract, year, venue, citations, created_at, updated_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7, NOW(), NOW()) "
+            "INSERT INTO publications (id, doi, title, abstract, year, venue, citations, pdf_url, created_at, updated_at) "
+            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) "
             "ON CONFLICT (id) DO UPDATE SET "
             "doi = EXCLUDED.doi, title = EXCLUDED.title, abstract = EXCLUDED.abstract, "
-            "year = EXCLUDED.year, venue = EXCLUDED.venue, citations = EXCLUDED.citations, updated_at = NOW()"
+            "year = EXCLUDED.year, venue = EXCLUDED.venue, citations = EXCLUDED.citations, "
+            "pdf_url = EXCLUDED.pdf_url, updated_at = NOW()"
         )
         records = []
         for work in works:
@@ -193,6 +196,7 @@ class Database:
                     work.get("year"),
                     work.get("venue"),
                     work.get("citations", 0),
+                    work.get("pdf_url"),
                 )
             )
         if not records:

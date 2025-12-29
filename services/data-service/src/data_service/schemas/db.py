@@ -19,7 +19,9 @@ class AuthorRecord(BaseModel):
     orcid: Optional[str] = None
     dept: Optional[str] = None
     email: Optional[str] = None
+    phone: Optional[str] = None
     ror_id: Optional[str] = None
+    image_url: Optional[str] = None
 
 
 class PublicationRecord(BaseModel):
@@ -30,6 +32,7 @@ class PublicationRecord(BaseModel):
     year: Optional[int] = None
     venue: Optional[str] = None
     citations: Optional[int] = None
+    pdf_url: Optional[str] = None
 
 
 class TopicRecord(BaseModel):

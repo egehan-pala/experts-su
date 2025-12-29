@@ -8,6 +8,9 @@ interface Author {
     name: string;
     dept: string | null;
     orcid: string | null;
+    image_url?: string | null;
+    email?: string | null;
+    phone?: string | null;
 }
 
 interface Publication {
@@ -71,7 +74,26 @@ export default function ProfilePage() {
                             justifyContent: 'center',
                             color: '#a1a1aa'
                         }}>
-                            <svg width="80" height="80" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" /></svg>
+                            {author.image_url ? (
+                                <img
+                                    src={author.image_url}
+                                    alt={author.name}
+                                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                                    onError={(e) => {
+                                        (e.target as HTMLImageElement).style.display = 'none';
+                                        (e.target as HTMLImageElement).nextElementSibling?.removeAttribute('style');
+                                    }}
+                                />
+                            ) : null}
+                            <svg
+                                width="80"
+                                height="80"
+                                viewBox="0 0 24 24"
+                                fill="currentColor"
+                                style={{ display: author.image_url ? 'none' : 'block' }}
+                            >
+                                <path d="M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z" />
+                            </svg>
                         </div>
 
                         {/* Bio Info */}
@@ -86,8 +108,16 @@ export default function ProfilePage() {
                             <div style={{ display: 'flex', gap: '2rem', borderTop: '1px solid #d4d4d8', paddingTop: '1.5rem', marginTop: '1rem' }}>
                                 <div>
                                     <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>Email</span>
-                                    <a href="#" style={{ color: '#002855', textDecoration: 'underline' }}>{author.name.split(' ')[0].toLowerCase()}@sabanciuniv.edu</a>
+                                    <a href={`mailto:${author.email}`} style={{ color: '#002855', textDecoration: 'underline' }}>
+                                        {author.email || 'N/A'}
+                                    </a>
                                 </div>
+                                {author.phone && (
+                                    <div>
+                                        <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>Phone</span>
+                                        <span style={{ color: '#111' }}>{author.phone}</span>
+                                    </div>
+                                )}
                                 <div>
                                     <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>ORCID</span>
                                     <span style={{ fontFamily: 'monospace', color: '#111' }}>{author.orcid || 'N/A'}</span>

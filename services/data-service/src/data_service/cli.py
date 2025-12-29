@@ -264,8 +264,8 @@ def test_api(since: Optional[str] = typer.Option(None, help="ISO date to start (
         
         finally:
             await client.close()
-    
-    _run_async(_cmd())
+
+    asyncio.run(_run())
 
 
 @app.command(help="Collect authors from OpenAlex with optional filters. Saves to JSON files locally.")
@@ -435,6 +435,22 @@ def migrate() -> None:
     # propagate to the Python interpreter executing the script.
     result = subprocess.run(["python3", "sql/migrate.py"], check=False)
     raise SystemExit(result.returncode)
+
+
+@app.command()
+def scrape_images():
+    """Scrape faculty images from Sabancı University website."""
+    async def _run():
+        settings = get_settings()
+        db = Database(settings)
+        await db.connect()
+        try:
+            from .etl.scraper import scrape_and_update_images
+            await scrape_and_update_images(db)
+        finally:
+            await db.close()
+
+    asyncio.run(_run())
 
 
 def main() -> None:

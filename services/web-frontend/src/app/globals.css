@@ -48,7 +48,50 @@ h4 {
   font-weight: 700;
   color: var(--su-blue);
   /* Default headings to blue for elegance */
-  line-height: 1.2;
+  line-height: 1.6;
+}
+
+/* Header Navigation Styles */
+.nav-bar {
+  background-color: white;
+  border-bottom: 1px solid #dae1e7;
+  padding: 1rem 0;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+  transition: all 0.3s ease;
+  position: relative;
+  z-index: 50;
+}
+
+.nav-bar:hover {
+  box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+}
+
+.nav-link {
+  text-decoration: none;
+  color: #444;
+  position: relative;
+  padding: 0.25rem 0;
+  transition: color 0.2s ease;
+}
+
+.nav-link:hover {
+  color: #002777;
+}
+
+.nav-link::after {
+  content: '';
+  position: absolute;
+  width: 0;
+  height: 2px;
+  bottom: 0;
+  left: 50%;
+  background-color: #002777;
+  transition: all 0.3s ease;
+  transform: translateX(-50%);
+}
+
+.nav-link:hover::after {
+  width: 100%;
 }
 
 a {
@@ -68,9 +111,11 @@ a:hover {
 }
 
 /* Card Styles matching Reference */
+/* Card Styles matching Reference */
 .su-card {
   background: white;
-  border: 1px solid transparent;
+  border: none;
+  box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
   transition: transform var(--transition-smooth), box-shadow var(--transition-smooth);
   height: 100%;
   display: flex;
@@ -78,6 +123,7 @@ a:hover {
   position: relative;
   overflow: hidden;
   cursor: pointer;
+  border-radius: 4px;
 }
 
 .su-card:hover {
@@ -104,19 +150,21 @@ a:hover {
 }
 
 .su-card-content {
-  padding: 1.5rem 0;
-  /* Minimal padding, mostly vertical */
+  padding: 1.5rem;
   flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: flex-start;
+  text-align: left;
 }
 
 .su-card-title {
-  font-size: 1.5rem;
-  margin-bottom: 0.75rem;
+  font-size: 1.25rem;
+  margin-bottom: 0.5rem;
   color: #111;
   font-family: var(--font-serif);
   line-height: 1.3;
+  font-weight: 800;
 }
 
 .su-card-desc {
@@ -132,7 +180,7 @@ a:hover {
   width: 32px;
   height: 32px;
   background: var(--su-blue);
-  border-radius: 50%;
+  border-radius: 0;
   border: none;
   display: flex;
   align-items: center;
