@@ -70,7 +70,7 @@ a:hover {
 /* Card Styles matching Reference */
 .su-card {
   background: white;
-  border: 1px solid transparent;
+  border: 1px solid #111;
   transition: transform var(--transition-smooth), box-shadow var(--transition-smooth);
   height: 100%;
   display: flex;
@@ -104,11 +104,13 @@ a:hover {
 }
 
 .su-card-content {
-  padding: 1.5rem 0;
+  padding: 1.5rem 1rem;
   /* Minimal padding, mostly vertical */
   flex: 1;
   display: flex;
   flex-direction: column;
+  align-items: center;
+  text-align: center;
 }
 
 .su-card-title {
