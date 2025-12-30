@@ -112,6 +112,60 @@ async def _collect_works(settings: Settings, db: Database, client: OpenAlexClien
                 relations.clear()
         # Insert any remaining works for this author
         if works_batch:
-            await db.insert_staging_publications(works_batch)
             await db.insert_staging_author_publications(relations)
             logger.info({"message": "Inserted final works batch", "count": len(works_batch)})
+
+
+async def collect_targeted(settings: Settings, db: Database, client: OpenAlexClient) -> None:
+    """Run targeted collection using scraped faculty names."""
+    from ..scrapers.faculty import scrape_all_faculty
+    
+    logger.info("Starting targeted collection...")
+    
+    # 1. Scrape names
+    faculty_list = await scrape_all_faculty()
+    logger.info(f"Scraped {len(faculty_list)} faculty names.")
+    print(f"✅ Found {len(faculty_list)} names from website.")
+
+    total_authors_found = 0
+
+    # 2. Search OpenAlex for each name
+    batch: List[dict] = []
+    
+    for faculty in faculty_list:
+        name = faculty['name'] 
+        # Clean name for search (OpenAlex handles some fuzziness, but cleaner is better)
+        # Note: client.fetch_authors_by_names handles filtering by Sabanci ROR
+        
+        print(f"   Searching for: {name}...", end="", flush=True)
+        found_for_name = False
+        
+        async for author in client.fetch_authors_by_name(name):
+            # We trust the client filter (ROR + Name)
+            batch.append(author)
+            found_for_name = True
+            total_authors_found += 1
+            
+        if found_for_name:
+            print(" Found")
+        else:
+            print(" Not Results")
+
+        if len(batch) >= settings.batch_size:
+            await db.insert_staging_authors(batch)
+            batch.clear()
+
+    if batch:
+        await db.insert_staging_authors(batch)
+    
+    logger.info(f"Targeted author collection complete. Found {total_authors_found} matches.")
+    
+    # 3. Collect works for these authors (Re-use existing logic)
+    # We pass None for 'since' to fetch full history for these specific people, 
+    # or we could respect global since. For targeted, usually we want full history.
+    # But to be safe, let's respect the settings default if needed. 
+    # Actually, user wants "names and their publications", typically implies all of them.
+    # Let's use the default 'since' from settings to avoid fetching ancient history if configured.
+    since = settings.since_default
+    logger.info("Starting works collection for targeted authors...")
+    await _collect_works(settings, db, client, since)
