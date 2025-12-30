@@ -135,8 +135,10 @@ def full_run() -> None:
             await db.connect()
             
             # Step 1: COLLECT (Fetch -> Staging)
-            typer.echo("📥 STEP 1: COLLECTING data from OpenAlex...")
-            await collect_stage(settings, db, client, since=since_date)
+            typer.echo("📥 STEP 1: COLLECTING data from OpenAlex (Targeted Mode)...")
+            # Switch to targeted collection to save storage and time
+            from .etl.collectors import collect_targeted
+            await collect_targeted(settings, db, client)
             typer.echo("✅ Collection complete.\n")
             
             # Step 2: CLEAN & FILTER (Staging -> Production Objects)
@@ -451,6 +453,30 @@ def scrape_images():
             await db.close()
 
     asyncio.run(_run())
+
+
+@app.command(help="Run targeted collection using scraped faculty names.")
+def collect_targeted() -> None:
+    """Optimize collection by fetching only authors found on the faculty website."""
+    from .etl.collectors import collect_targeted as run_targeted
+    
+    settings = get_settings()
+    configure_logging()
+    db = Database(settings)
+    client = OpenAlexClient(settings)
+    
+    async def _cmd() -> None:
+        try:
+            await db.connect()
+            await run_targeted(settings, db, client)
+        except Exception as e:
+            typer.echo(f"Error during targeted collection: {e}")
+            raise
+        finally:
+            await db.close()
+            await client.close()
+            
+    _run_async(_cmd())
 
 
 def main() -> None:

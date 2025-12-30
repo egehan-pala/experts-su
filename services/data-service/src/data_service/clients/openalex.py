@@ -86,7 +86,7 @@ class OpenAlexClient:
             with a premium API key. Without premium access, all authors will be
             returned regardless of this parameter.
         """
-        filter_param = f"last_known_institutions.ror:{self._ror_id}"
+        filter_param = f"affiliations.institution.ror:{self._ror_id}"
         params: Dict[str, str | int | None] = {
             "filter": filter_param,
             "per-page": self._settings.batch_size,
@@ -130,6 +130,31 @@ class OpenAlexClient:
         # Note: from_updated_date would require premium API key
         while True:
             data = await self._get("/works", params)
+            results = data.get("results", [])
+            for item in results:
+                yield item
+            next_cursor = data.get("meta", {}).get("next_cursor")
+            if not next_cursor:
+                break
+            params["cursor"] = next_cursor
+
+    async def fetch_authors_by_name(self, name: str) -> AsyncIterator[Dict]:
+        """Yield authors matching a specific name within the institution.
+        
+        Parameters
+        ----------
+        name: str
+            Name to search for (e.g. "Hüsnü Yenigün").
+        """
+        filter_param = f"affiliations.institution.ror:{self._ror_id}"
+        params: Dict[str, str | int | None] = {
+            "filter": filter_param,
+            "search": name,
+            "per-page": self._settings.batch_size,
+            "cursor": "*",
+        }
+        while True:
+            data = await self._get("/authors", params)
             results = data.get("results", [])
             for item in results:
                 yield item
