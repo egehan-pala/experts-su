@@ -154,7 +154,7 @@ export default function Home() {
 
                   {/* Title / Role */}
                   <p style={{ fontWeight: 800, fontSize: '0.95rem', color: '#111', marginBottom: '1rem', lineHeight: 1.4 }}>
-                    {author.dept || 'Faculty Member'}
+                    {author.name === 'Yusuf Leblebici' ? 'Rektör' : (author.dept || 'Faculty Member')}
                   </p>
 
                   {/* Contact Info */}

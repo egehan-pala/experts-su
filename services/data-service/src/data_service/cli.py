@@ -479,6 +479,117 @@ def collect_targeted() -> None:
     _run_async(_cmd())
 
 
+@app.command(help="Test: List all author IDs from scraped faculty (no DB required).")
+def test_authors(
+    output_file: Optional[str] = typer.Option("author_ids.txt", help="File to save author IDs"),
+) -> None:
+    """Scrape faculty names, find them in OpenAlex, and output author IDs.
+    
+    This is a lightweight test that doesn't require database connection.
+    It shows what authors would be collected and their OpenAlex IDs.
+    
+    Example:
+        python -m data_service.cli test-authors
+        python -m data_service.cli test-authors --output-file my_authors.txt
+    """
+    from .scrapers.faculty import scrape_all_faculty
+    
+    settings = get_settings()
+    configure_logging()
+    client = OpenAlexClient(settings)
+    
+    async def _cmd() -> None:
+        print("\n" + "="*60)
+        print("🧪 TEST: Collecting Author IDs (No DB Required)")
+        print("="*60 + "\n")
+        
+        # Step 1: Scrape faculty names
+        print("📋 Step 1: Scraping faculty names from website...")
+        faculty_list = await scrape_all_faculty()
+        print(f"   ✅ Found {len(faculty_list)} faculty members\n")
+        
+        # Step 2: Find authors in OpenAlex
+        print("🔍 Step 2: Finding authors in OpenAlex (by name + ROR ID)...\n")
+        
+        author_data = []  # List of (name, author_id, works_count)
+        not_found = []
+        
+        for faculty in faculty_list:
+            name = faculty['name']
+            print(f"   Searching: {name}...", end="", flush=True)
+            found = False
+            
+            async for author in client.fetch_authors_by_name(name):
+                author_id = author.get("id", "").split("/")[-1]
+                display_name = author.get("display_name", name)
+                works_count = author.get("works_count", 0)
+                h_index = author.get("summary_stats", {}).get("h_index", 0)
+                
+                author_data.append({
+                    "scraped_name": name,
+                    "openalex_name": display_name,
+                    "author_id": author_id,
+                    "works_count": works_count,
+                    "h_index": h_index,
+                })
+                found = True
+                print(f" ✓ {author_id} ({works_count} works, h-index: {h_index})")
+                break  # Take first match
+            
+            if not found:
+                not_found.append(name)
+                print(" ✗ Not found")
+        
+        # Summary
+        print("\n" + "="*60)
+        print("📊 SUMMARY")
+        print("="*60)
+        print(f"   Faculty scraped:    {len(faculty_list)}")
+        print(f"   Authors found:      {len(author_data)}")
+        print(f"   Not found:          {len(not_found)}")
+        
+        total_works = sum(a["works_count"] for a in author_data)
+        print(f"   Total works to fetch: ~{total_works}")
+        print()
+        
+        # Save author IDs to file
+        from pathlib import Path
+        import json
+        
+        # Save simple ID list
+        output_path = Path(output_file)
+        with open(output_path, "w") as f:
+            for author in author_data:
+                f.write(f"{author['author_id']}\n")
+        print(f"💾 Author IDs saved to: {output_path}")
+        
+        # Save detailed JSON
+        json_path = output_path.with_suffix(".json")
+        with open(json_path, "w") as f:
+            json.dump({
+                "found": author_data,
+                "not_found": not_found,
+                "total_works_estimate": total_works,
+            }, f, indent=2)
+        print(f"💾 Detailed data saved to: {json_path}")
+        
+        # Show not found list
+        if not_found:
+            print(f"\n⚠️  Not found in OpenAlex ({len(not_found)}):")
+            for name in not_found[:10]:
+                print(f"   - {name}")
+            if len(not_found) > 10:
+                print(f"   ... and {len(not_found) - 10} more")
+        
+        print("\n" + "="*60)
+        print("✨ TEST COMPLETE")
+        print("="*60 + "\n")
+        
+        await client.close()
+    
+    _run_async(_cmd())
+
+
 def main() -> None:
     """Entry point for ``python -m data_service.cli``."""
     app()
@@ -544,6 +655,34 @@ def clean_and_load() -> None:
             await db.close()
     
     _run_async(_cmd())
+
+
+@app.command(help="Generate vector embeddings for semantic expert search.")
+def generate_embeddings() -> None:
+    """Generate author expertise embeddings for semantic search.
+    
+    This creates vector embeddings for each author based on their publication
+    topics, enabling semantic search queries like "machine learning security".
+    
+    Requires: sentence-transformers package (pip install sentence-transformers)
+    """
+    configure_logging()
+    typer.echo("\n" + "="*60)
+    typer.echo("🧠 GENERATING AUTHOR EMBEDDINGS FOR SEMANTIC SEARCH")
+    typer.echo("="*60 + "\n")
+    
+    try:
+        from .etl.embeddings import generate_author_embeddings
+        _run_async(generate_author_embeddings())
+        typer.echo("\n" + "="*60)
+        typer.echo("✨ EMBEDDING GENERATION COMPLETE")
+        typer.echo("="*60 + "\n")
+    except ImportError as e:
+        typer.echo("❌ Error: Missing dependencies for embedding generation.")
+        typer.echo("   Please install: pip install sentence-transformers")
+        typer.echo(f"   Details: {e}")
+        raise typer.Exit(code=1)
+
 
 if __name__ == "__main__":
     app()

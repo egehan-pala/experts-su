@@ -147,28 +147,53 @@ class Database:
     # Production upsert helpers
     #
     async def upsert_authors(self, authors: Iterable[Dict[str, Any]]) -> None:
-        """Upsert normalised author records into the authors table."""
-        query = (
-            "INSERT INTO authors (id, orcid, name, dept, email, phone, ror_id, image_url, created_at, updated_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) "
-            "ON CONFLICT (id) DO UPDATE SET "
-            "orcid = EXCLUDED.orcid, name = EXCLUDED.name, dept = EXCLUDED.dept, "
-            "email = EXCLUDED.email, phone = EXCLUDED.phone, ror_id = EXCLUDED.ror_id, image_url = EXCLUDED.image_url, updated_at = NOW()"
-        )
+        """Upsert normalised author records with all OpenAlex fields."""
+        query = """
+            INSERT INTO authors (
+                id, orcid, name, dept, email, phone, ror_id, image_url, is_faculty,
+                works_count, cited_by_count, h_index, i10_index, two_yr_mean_citedness,
+                last_known_institution, last_known_institution_country,
+                affiliations_json, topics_json, counts_by_year_json,
+                openalex_created_date, openalex_updated_date,
+                created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, NOW(), NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                orcid = EXCLUDED.orcid, name = EXCLUDED.name, dept = EXCLUDED.dept,
+                email = EXCLUDED.email, phone = EXCLUDED.phone, ror_id = EXCLUDED.ror_id,
+                image_url = EXCLUDED.image_url, is_faculty = EXCLUDED.is_faculty,
+                works_count = EXCLUDED.works_count, cited_by_count = EXCLUDED.cited_by_count,
+                h_index = EXCLUDED.h_index, i10_index = EXCLUDED.i10_index, two_yr_mean_citedness = EXCLUDED.two_yr_mean_citedness,
+                last_known_institution = EXCLUDED.last_known_institution, last_known_institution_country = EXCLUDED.last_known_institution_country,
+                affiliations_json = EXCLUDED.affiliations_json, topics_json = EXCLUDED.topics_json, counts_by_year_json = EXCLUDED.counts_by_year_json,
+                openalex_created_date = EXCLUDED.openalex_created_date, openalex_updated_date = EXCLUDED.openalex_updated_date,
+                updated_at = NOW()
+        """
         records = []
         for author in authors:
-            records.append(
-                (
-                    author["id"],
-                    author.get("orcid"),
-                    author["name"],
-                    author.get("dept"),
-                    author.get("email"),
-                    author.get("phone"),
-                    author.get("ror_id"),
-                    author.get("image_url"),
-                )
-            )
+            records.append((
+                author["id"],
+                author.get("orcid"),
+                author["name"],
+                author.get("dept"),
+                author.get("email"),
+                author.get("phone"),
+                author.get("ror_id"),
+                author.get("image_url"),
+                author.get("is_faculty"),
+                author.get("works_count"),
+                author.get("cited_by_count"),
+                author.get("h_index"),
+                author.get("i10_index"),
+                author.get("two_yr_mean_citedness"),
+                author.get("last_known_institution"),
+                author.get("last_known_institution_country"),
+                author.get("affiliations_json"),
+                author.get("topics_json"),
+                author.get("counts_by_year_json"),
+                author.get("openalex_created_date"),
+                author.get("openalex_updated_date"),
+            ))
         if not records:
             return
         assert self._pool is not None
@@ -176,29 +201,73 @@ class Database:
             await conn.executemany(query, records)
 
     async def upsert_publications(self, works: Iterable[Dict[str, Any]]) -> None:
-        """Upsert normalised publication records into the publications table."""
-        query = (
-            "INSERT INTO publications (id, doi, title, abstract, year, venue, citations, pdf_url, created_at, updated_at) "
-            "VALUES ($1, $2, $3, $4, $5, $6, $7, $8, NOW(), NOW()) "
-            "ON CONFLICT (id) DO UPDATE SET "
-            "doi = EXCLUDED.doi, title = EXCLUDED.title, abstract = EXCLUDED.abstract, "
-            "year = EXCLUDED.year, venue = EXCLUDED.venue, citations = EXCLUDED.citations, "
-            "pdf_url = EXCLUDED.pdf_url, updated_at = NOW()"
-        )
+        """Upsert normalised publication records with all OpenAlex fields."""
+        query = """
+            INSERT INTO publications (
+                id, doi, title, abstract, year, publication_date, venue, citations,
+                type, type_crossref, is_oa, is_retracted, language,
+                venue_id, venue_issn, venue_type,
+                volume, issue, first_page, last_page,
+                pdf_url, landing_page_url, oa_url, license,
+                primary_topic, topics_json, concepts_json, keywords_json,
+                authorships_json, author_count,
+                referenced_works_count, counts_by_year_json, grants_json,
+                openalex_created_date, openalex_updated_date,
+                created_at, updated_at
+            )
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, NOW(), NOW())
+            ON CONFLICT (id) DO UPDATE SET
+                doi = EXCLUDED.doi, title = EXCLUDED.title, abstract = EXCLUDED.abstract,
+                year = EXCLUDED.year, publication_date = EXCLUDED.publication_date, venue = EXCLUDED.venue, citations = EXCLUDED.citations,
+                type = EXCLUDED.type, type_crossref = EXCLUDED.type_crossref, is_oa = EXCLUDED.is_oa, is_retracted = EXCLUDED.is_retracted, language = EXCLUDED.language,
+                venue_id = EXCLUDED.venue_id, venue_issn = EXCLUDED.venue_issn, venue_type = EXCLUDED.venue_type,
+                volume = EXCLUDED.volume, issue = EXCLUDED.issue, first_page = EXCLUDED.first_page, last_page = EXCLUDED.last_page,
+                pdf_url = EXCLUDED.pdf_url, landing_page_url = EXCLUDED.landing_page_url, oa_url = EXCLUDED.oa_url, license = EXCLUDED.license,
+                primary_topic = EXCLUDED.primary_topic, topics_json = EXCLUDED.topics_json, concepts_json = EXCLUDED.concepts_json, keywords_json = EXCLUDED.keywords_json,
+                authorships_json = EXCLUDED.authorships_json, author_count = EXCLUDED.author_count,
+                referenced_works_count = EXCLUDED.referenced_works_count, counts_by_year_json = EXCLUDED.counts_by_year_json, grants_json = EXCLUDED.grants_json,
+                openalex_created_date = EXCLUDED.openalex_created_date, openalex_updated_date = EXCLUDED.openalex_updated_date,
+                updated_at = NOW()
+        """
         records = []
         for work in works:
-            records.append(
-                (
-                    work["id"],
-                    work.get("doi"),
-                    work.get("title"),
-                    work.get("abstract"),
-                    work.get("year"),
-                    work.get("venue"),
-                    work.get("citations", 0),
-                    work.get("pdf_url"),
-                )
-            )
+            records.append((
+                work["id"],
+                work.get("doi"),
+                work.get("title"),
+                work.get("abstract"),
+                work.get("year"),
+                work.get("publication_date"),
+                work.get("venue"),
+                work.get("citations", 0),
+                work.get("type"),
+                work.get("type_crossref"),
+                work.get("is_oa"),
+                work.get("is_retracted"),
+                work.get("language"),
+                work.get("venue_id"),
+                work.get("venue_issn"),
+                work.get("venue_type"),
+                work.get("volume"),
+                work.get("issue"),
+                work.get("first_page"),
+                work.get("last_page"),
+                work.get("pdf_url"),
+                work.get("landing_page_url"),
+                work.get("oa_url"),
+                work.get("license"),
+                work.get("primary_topic"),
+                work.get("topics_json"),
+                work.get("concepts_json"),
+                work.get("keywords_json"),
+                work.get("authorships_json"),
+                work.get("author_count"),
+                work.get("referenced_works_count"),
+                work.get("counts_by_year_json"),
+                work.get("grants_json"),
+                work.get("openalex_created_date"),
+                work.get("openalex_updated_date"),
+            ))
         if not records:
             return
         assert self._pool is not None

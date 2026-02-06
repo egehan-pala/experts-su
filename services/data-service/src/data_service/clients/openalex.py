@@ -105,17 +105,18 @@ class OpenAlexClient:
                 break
             params["cursor"] = next_cursor
 
-    async def fetch_works_by_author(self, author_id: str, since: Optional[str] = None) -> AsyncIterator[Dict]:
-        """Yield works for a specific author.
+    async def fetch_works_by_author(self, author_id: str) -> AsyncIterator[Dict]:
+        """Yield ALL works for a specific author.
+
+        Fetches the complete publication history using only the author's unique
+        OpenAlex ID. No date or institution filters are applied - this ensures
+        we get all publications including those from before the author joined
+        the configured institution.
 
         Parameters
         ----------
         author_id: str
-            The OpenAlex ID of the author (e.g. ``A123456789``).
-        since: Optional[str]
-            Optional ISO date (YYYY-MM-DD) for incremental syncs. Works
-            updated on or after this date will be returned if supported by the
-            API key.
+            The OpenAlex ID of the author (e.g. ``A123456789`` or full URL).
         """
         # Author IDs are provided as full URLs (e.g. https://openalex.org/A123). We
         # extract the last segment if a full URL is passed in.
@@ -127,7 +128,6 @@ class OpenAlexClient:
             "per-page": self._settings.batch_size,
             "cursor": "*",
         }
-        # Note: from_updated_date would require premium API key
         while True:
             data = await self._get("/works", params)
             results = data.get("results", [])

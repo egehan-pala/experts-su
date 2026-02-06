@@ -11,7 +11,7 @@ logger = logging.getLogger("data_service.etl.scraper")
 
 FACULTY_URLS = [
     # FENS
-    "https://fens.sabanciuniv.edu/tr/faculty-members",
+    "https://fens.sabanciuniv.edu/tr/faculty-members?group_id=281%2C282%2C285%2C301%2C302%2C303%2C681%2C701%2C721%2C821%2C841%2C862%2C921%2C941%2C981%2C1081&prg_code=",
     # FASS
     "https://fass.sabanciuniv.edu/tr/ogretim-uyeleri?group_id=221",
     # SBS

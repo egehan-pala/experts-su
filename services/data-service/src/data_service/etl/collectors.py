@@ -54,8 +54,8 @@ async def collect(settings: Settings, db: Database, client: OpenAlexClient, sinc
     await _collect_authors(settings, db, client, since)
     logger.info({"message": "Author collection complete"})
 
-    logger.info({"message": "Starting works collection", "since": since})
-    await _collect_works(settings, db, client, since)
+    logger.info({"message": "Starting works collection (all works, no date filter)"})
+    await _collect_works(settings, db, client)
     logger.info({"message": "Works collection complete"})
 
     # Persist new sync date
@@ -78,78 +78,109 @@ async def _collect_authors(settings: Settings, db: Database, client: OpenAlexCli
         logger.info({"message": "Inserted final author batch", "count": len(batch)})
 
 
-async def _collect_works(settings: Settings, db: Database, client: OpenAlexClient, since: Optional[str]) -> None:
-    """Fetch works for all staged authors and insert into staging."""
-    # Fetch list of staged authors. We read from the stg_authors table to avoid
-    # querying OpenAlex twice for the same author in repeated runs.
+async def _collect_works(settings: Settings, db: Database, client: OpenAlexClient) -> None:
+    """Fetch ALL works for all staged authors and insert into staging.
+    
+    Uses only author.id filter - no date restrictions. This ensures we get
+    the complete publication history for each author, including works from
+    before they joined Sabancı University.
+    
+    IMPORTANT: Only creates author-publication relationships for the specific
+    author whose works we're fetching, NOT for all co-authors in each work.
+    """
     rows = await db.fetch("SELECT payload FROM stg_authors")
     author_ids = []
     for row in rows:
         payload = row["payload"]
-        # payload is stored as JSON string
         author = json.loads(payload)
         author_id = author.get("id")
         if author_id:
             author_ids.append(author_id)
+    
     # Deduplicate author IDs
     author_ids = list(dict.fromkeys(author_ids))
+    # Create a set for fast lookup of valid author IDs
+    valid_author_ids = set(author_ids)
+    
+    logger.info({"message": "Collecting works for authors", "count": len(author_ids)})
+    
     batch_size = settings.batch_size
-    for author_id in author_ids:
+    total_works = 0
+    
+    for idx, author_id in enumerate(author_ids, 1):
         works_batch: List[dict] = []
         relations: List[tuple[str, str]] = []
-        async for work in client.fetch_works_by_author(author_id, since=since):
+        author_works_count = 0
+        
+        async for work in client.fetch_works_by_author(author_id):
             works_batch.append(work)
-            # Create author_work relation for each authorship in the work
-            for authorship in work.get("authorships", []):
-                aid = authorship.get("author", {}).get("id")
-                if aid:
-                    relations.append((aid, work.get("id")))
+            author_works_count += 1
+            
+            # ONLY create relationship for the specific author we're querying
+            # This is the author_id we used to fetch these works
+            relations.append((author_id, work.get("id")))
+            
             if len(works_batch) >= batch_size:
                 await db.insert_staging_publications(works_batch)
                 await db.insert_staging_author_publications(relations)
                 logger.info({"message": "Inserted works batch", "count": len(works_batch)})
                 works_batch.clear()
                 relations.clear()
+        
         # Insert any remaining works for this author
         if works_batch:
+            await db.insert_staging_publications(works_batch)
             await db.insert_staging_author_publications(relations)
-            logger.info({"message": "Inserted final works batch", "count": len(works_batch)})
+        
+        total_works += author_works_count
+        logger.info({"message": f"Author {idx}/{len(author_ids)}", "author_id": author_id, "works": author_works_count})
+    
+    logger.info({"message": "Works collection complete", "total_works": total_works})
 
 
 async def collect_targeted(settings: Settings, db: Database, client: OpenAlexClient) -> None:
-    """Run targeted collection using scraped faculty names."""
+    """Run targeted collection using scraped faculty names.
+    
+    Flow:
+    1. Web scrape faculty names from Sabancı University website
+    2. Search OpenAlex by name + ROR ID to get author profiles with unique IDs
+    3. Fetch ALL works by author ID (no date/institution filter on works)
+    """
     from ..scrapers.faculty import scrape_all_faculty
     
     logger.info("Starting targeted collection...")
+    print("\n" + "="*60)
+    print("🎯 TARGETED COLLECTION (Web Scraping + ROR ID + Author ID)")
+    print("="*60 + "\n")
     
-    # 1. Scrape names
+    # Step 1: Web scrape faculty names
+    print("📋 Step 1: Scraping faculty names from website...")
     faculty_list = await scrape_all_faculty()
     logger.info(f"Scraped {len(faculty_list)} faculty names.")
-    print(f"✅ Found {len(faculty_list)} names from website.")
+    print(f"   ✅ Found {len(faculty_list)} faculty members\n")
 
+    # Step 2: Find authors in OpenAlex using name + ROR ID filter
+    print("🔍 Step 2: Finding authors in OpenAlex (by name + ROR ID)...")
     total_authors_found = 0
-
-    # 2. Search OpenAlex for each name
     batch: List[dict] = []
     
     for faculty in faculty_list:
-        name = faculty['name'] 
-        # Clean name for search (OpenAlex handles some fuzziness, but cleaner is better)
-        # Note: client.fetch_authors_by_names handles filtering by Sabanci ROR
-        
-        print(f"   Searching for: {name}...", end="", flush=True)
+        name = faculty['name']
+        print(f"   Searching: {name}...", end="", flush=True)
         found_for_name = False
         
+        # IMPORTANT: Only take the FIRST match for each name
+        # This prevents us from getting multiple authors with similar names
         async for author in client.fetch_authors_by_name(name):
-            # We trust the client filter (ROR + Name)
             batch.append(author)
             found_for_name = True
             total_authors_found += 1
+            break  # Take only the first/best match
             
         if found_for_name:
-            print(" Found")
+            print(" ✓ Found")
         else:
-            print(" Not Results")
+            print(" ✗ Not found")
 
         if len(batch) >= settings.batch_size:
             await db.insert_staging_authors(batch)
@@ -158,14 +189,14 @@ async def collect_targeted(settings: Settings, db: Database, client: OpenAlexCli
     if batch:
         await db.insert_staging_authors(batch)
     
-    logger.info(f"Targeted author collection complete. Found {total_authors_found} matches.")
+    print(f"\n   ✅ Found {total_authors_found} author profiles in OpenAlex\n")
+    logger.info(f"Author collection complete. Found {total_authors_found} matches.")
     
-    # 3. Collect works for these authors (Re-use existing logic)
-    # We pass None for 'since' to fetch full history for these specific people, 
-    # or we could respect global since. For targeted, usually we want full history.
-    # But to be safe, let's respect the settings default if needed. 
-    # Actually, user wants "names and their publications", typically implies all of them.
-    # Let's use the default 'since' from settings to avoid fetching ancient history if configured.
-    since = settings.since_default
-    logger.info("Starting works collection for targeted authors...")
-    await _collect_works(settings, db, client, since)
+    # Step 3: Collect ALL works for each author (by author ID only - no filters)
+    print("📚 Step 3: Fetching ALL publications by author ID (no date filter)...")
+    logger.info("Starting works collection (no date filter)...")
+    await _collect_works(settings, db, client)
+    
+    print("\n" + "="*60)
+    print("✨ TARGETED COLLECTION COMPLETE")
+    print("="*60 + "\n")
