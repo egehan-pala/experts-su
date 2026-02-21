@@ -39,11 +39,54 @@ async def load(
     edges can be inserted last.
     """
     # Authors
-    # Authors
     await db.upsert_authors(authors)
-    # logger.info({"message": "[SKIPPED] Would upsert authors", "count": len(authors)})
 
-    # Publications
+    # Populate normalized_name for fuzzy search
+    await db.execute("""
+        UPDATE authors SET normalized_name = LOWER(
+            TRANSLATE(
+                name,
+                'ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĢģĤĥĨĩĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŨũŪūŮůŰűŲųŴŵŶŷŸŹźŻżŽžſ',
+                'AAAAAAACEEEEIIIIDNOOOOOOUUUUYPsaaaaaaceeeeiiiidnoooooouuuuybyAaAaAaCcCcDdDdEeEeEeEeGgGgHhIiIiIiIiKkLlLlLlLlNnNnNnOoOoOoRrRrSsSsSsTtTtUuUuUuUuUuWwYyYZzZzZzs'
+            )
+        ) WHERE normalized_name IS NULL OR normalized_name != LOWER(
+            TRANSLATE(
+                name,
+                'ÀÁÂÃÄÅÆÇÈÉÊËÌÍÎÏÐÑÒÓÔÕÖØÙÚÛÜÝÞßàáâãäåæçèéêëìíîïðñòóôõöøùúûüýþÿĀāĂăĄąĆćČčĎďĐđĒēĖėĘęĚěĞğĢģĤĥĨĩĪīĮįİıĶķĹĺĻļĽľŁłŃńŅņŇňŌōŐőŒœŔŕŘřŚśŞşŠšŢţŤťŨũŪūŮůŰűŲųŴŵŶŷŸŹźŻżŽžſ',
+                'AAAAAAACEEEEIIIIDNOOOOOOUUUUYPsaaaaaaceeeeiiiidnoooooouuuuybyAaAaAaCcCcDdDdEeEeEeEeGgGgHhIiIiIiIiKkLlLlLlLlNnNnNnOoOoOoRrRrSsSsSsTtTtUuUuUuUuUuWwYyYZzZzZzs'
+            )
+        )
+    """)
+    logger.info({"message": "Updated normalized_name for search"})
+
+    # Populate faculty aliases for fuzzy matching
+    # Aliases come from: (1) OpenAlex display names of merged authors
+    alias_records = []
+    for author in authors:
+        if not author.get("is_faculty"):
+            continue
+        author_id = author["id"]
+        author_name = author.get("name", "")
+
+        # If author has merged multiple OA IDs, we don't have their
+        # individual display names in the author record, but we can
+        # add the canonical name as an alias baseline.
+        # The match_map already normalized the name, so the original
+        # OA display name can differ. We add the author's own name.
+        alias_records.append({"faculty_id": author_id, "alias": author_name})
+
+    if alias_records:
+        await db.execute("DELETE FROM faculty_aliases")
+        for rec in alias_records:
+            try:
+                await db.execute(
+                    "INSERT INTO faculty_aliases (faculty_id, alias) VALUES ($1, $2) ON CONFLICT DO NOTHING",
+                    rec["faculty_id"], rec["alias"]
+                )
+            except Exception:
+                pass  # skip duplicates
+        logger.info({"message": "Populated faculty_aliases", "count": len(alias_records)})
+
     # Publications
     await db.upsert_publications(publications)
     # logger.info({"message": "[SKIPPED] Would upsert publications", "count": len(publications)})

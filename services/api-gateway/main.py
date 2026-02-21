@@ -409,3 +409,73 @@ async def search_experts(q: str = Query(..., min_length=2, description="Search q
         )
         for row in rows
     ]
+
+
+# ═══════════════════════════════════════════════════════════════
+#  UNIFIED SEARCH (v2) — Intent-aware Person + Topic search
+# ═══════════════════════════════════════════════════════════════
+
+from search_models import SearchRequest, SearchResponse
+from intent import detect_intent
+from person_search import person_search as do_person_search, suggest as do_suggest
+from topic_search import topic_search as do_topic_search
+
+
+@app.post("/search", response_model=SearchResponse)
+async def unified_search(req: SearchRequest):
+    """Unified search endpoint with intent detection.
+
+    Automatically detects whether the query is looking for a person,
+    a research topic, or both, and routes to the appropriate search.
+    """
+    global embedding_model
+
+    # 1. Detect intent
+    intent_result = await detect_intent(req.query, db.pool)
+    intent = intent_result.intent
+
+    person_results = []
+    topic_results = []
+
+    # 2. Route based on intent
+    dept_filter = req.filters.get("department") if req.filters else None
+
+    if intent in ("PERSON", "MIXED"):
+        person_results = await do_person_search(
+            req.query, db.pool,
+            limit=req.limit if intent == "PERSON" else min(req.limit, 3),
+            department=dept_filter,
+        )
+
+    if intent in ("TOPIC", "MIXED"):
+        if embedding_model is None:
+            raise HTTPException(503, "Semantic search model not loaded")
+        topic_results = await do_topic_search(
+            req.query, db.pool, embedding_model,
+            limit=req.limit,
+            department=dept_filter,
+        )
+
+    # 3. Build response
+    debug_info = None
+    if req.debug:
+        debug_info = {
+            "intent_confidence_person": intent_result.confidence_person,
+            "intent_confidence_topic": intent_result.confidence_topic,
+            "best_name_match": intent_result.best_name_match,
+            "best_name_similarity": intent_result.best_name_similarity,
+        }
+
+    return SearchResponse(
+        intent=intent,
+        person_results=person_results,
+        topic_results=topic_results,
+        debug=debug_info,
+    )
+
+
+@app.get("/search/suggest")
+async def search_suggest(q: str = Query(..., min_length=1)):
+    """Autocomplete: top faculty name suggestions for typeahead."""
+    return await do_suggest(q, db.pool, limit=5)
+
