@@ -139,18 +139,23 @@ async def _collect_works(settings: Settings, db: Database, client: OpenAlexClien
 
 
 async def collect_targeted(settings: Settings, db: Database, client: OpenAlexClient) -> None:
-    """Run targeted collection using scraped faculty names.
+    """Run targeted collection using scraped faculty names + bulk name matching.
     
     Flow:
     1. Web scrape faculty names from Sabancı University website
-    2. Search OpenAlex by name + ROR ID to get author profiles with unique IDs
-    3. Fetch ALL works by author ID (no date/institution filter on works)
+    2. Bulk fetch ALL OpenAlex authors affiliated with the institution
+    3. Smart name matching (exact → abbreviation → fuzzy) with disambiguation
+    4. Save match map for the cleaner (OA author ID → scraped faculty data)
+    5. Insert only matched authors into staging
+    6. Fetch ALL works by author ID (no date/institution filter on works)
     """
+    from pathlib import Path
     from ..scrapers.faculty import scrape_all_faculty
+    from .name_matcher import match_faculty_to_openalex
     
-    logger.info("Starting targeted collection...")
+    logger.info("Starting targeted collection (bulk fetch + name matching)...")
     print("\n" + "="*60)
-    print("🎯 TARGETED COLLECTION (Web Scraping + ROR ID + Author ID)")
+    print("🎯 TARGETED COLLECTION (Bulk Fetch + Name Matching)")
     print("="*60 + "\n")
     
     # Step 1: Web scrape faculty names
@@ -159,41 +164,80 @@ async def collect_targeted(settings: Settings, db: Database, client: OpenAlexCli
     logger.info(f"Scraped {len(faculty_list)} faculty names.")
     print(f"   ✅ Found {len(faculty_list)} faculty members\n")
 
-    # Step 2: Find authors in OpenAlex using name + ROR ID filter
-    print("🔍 Step 2: Finding authors in OpenAlex (by name + ROR ID)...")
-    total_authors_found = 0
-    batch: List[dict] = []
+    # Step 2: Bulk fetch ALL OpenAlex authors for the institution
+    print("🔍 Step 2: Fetching ALL OpenAlex authors for the institution...")
+    oa_authors = await client.fetch_all_authors_by_institution()
+    print(f"   ✅ Fetched {len(oa_authors)} OpenAlex authors\n")
+    logger.info(f"Fetched {len(oa_authors)} OpenAlex authors for institution.")
+
+    # Step 3: Name matching
+    print("🧩 Step 3: Matching scraped names to OpenAlex authors...")
+    result = match_faculty_to_openalex(faculty_list, oa_authors)
     
-    for faculty in faculty_list:
-        name = faculty['name']
-        print(f"   Searching: {name}...", end="", flush=True)
-        found_for_name = False
-        
-        # IMPORTANT: Only take the FIRST match for each name
-        # This prevents us from getting multiple authors with similar names
-        async for author in client.fetch_authors_by_name(name):
-            batch.append(author)
-            found_for_name = True
-            total_authors_found += 1
-            break  # Take only the first/best match
-            
-        if found_for_name:
-            print(" ✓ Found")
-        else:
-            print(" ✗ Not found")
+    matched = result["matched"]
+    unmatched = result["unmatched"]
+    ambiguous = result["ambiguous"]
+    
+    print(f"   ✅ Matched:   {len(matched)}")
+    print(f"   ⚠️  Ambiguous: {len(ambiguous)}")
+    print(f"   ❌ Unmatched: {len(unmatched)}")
+    
+    if ambiguous:
+        print("\n   Ambiguous cases (multiple candidates):")
+        for a in ambiguous:
+            name = a["faculty"]["name"]
+            ids = ", ".join(c["openalex_id"].split("/")[-1] for c in a["candidates"])
+            print(f"     {name} → {ids}")
+    
+    if unmatched:
+        print("\n   Unmatched faculty:")
+        for u in unmatched:
+            print(f"     {u['name']}")
+    print()
 
-        if len(batch) >= settings.batch_size:
-            await db.insert_staging_authors(batch)
-            batch.clear()
+    # Step 4: Save match map for the cleaner
+    # Maps: OA author ID → scraped faculty data (name, email, phone, image, dept)
+    print("💾 Step 4: Saving match map for cleaner enrichment...")
+    match_map: dict = {}
+    for m in matched:
+        oa_id = m.get("openalex_id", "").split("/")[-1]
+        if oa_id:
+            match_map[oa_id] = {
+                "scraped_name": m.get("name", ""),
+                "email": m.get("email", ""),
+                "phone": m.get("phone", ""),
+                "image_url": m.get("image_url", ""),
+                "dept": m.get("title", ""),
+            }
+    
+    match_map_path = Path("data_exports") / "match_map.json"
+    match_map_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(match_map_path, "w") as f:
+        json.dump(match_map, f, indent=2, ensure_ascii=False)
+    print(f"   ✅ Saved match map ({len(match_map)} entries) → {match_map_path}\n")
+    logger.info(f"Match map saved: {len(match_map)} entries")
 
+    # Step 5: Insert matched authors into staging
+    print("📥 Step 5: Inserting matched authors into staging...")
+    batch: List[dict] = []
+    batch_size = settings.batch_size
+    
+    for m in matched:
+        raw_payload = m.get("_raw")
+        if raw_payload:
+            batch.append(raw_payload)
+            if len(batch) >= batch_size:
+                await db.insert_staging_authors(batch)
+                batch.clear()
+    
     if batch:
         await db.insert_staging_authors(batch)
     
-    print(f"\n   ✅ Found {total_authors_found} author profiles in OpenAlex\n")
-    logger.info(f"Author collection complete. Found {total_authors_found} matches.")
+    print(f"   ✅ Inserted {len(matched)} author profiles into staging\n")
+    logger.info(f"Author collection complete. Inserted {len(matched)} matches.")
     
-    # Step 3: Collect ALL works for each author (by author ID only - no filters)
-    print("📚 Step 3: Fetching ALL publications by author ID (no date filter)...")
+    # Step 6: Collect ALL works for each author (by author ID only)
+    print("📚 Step 6: Fetching ALL publications by author ID (no date filter)...")
     logger.info("Starting works collection (no date filter)...")
     await _collect_works(settings, db, client)
     

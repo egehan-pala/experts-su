@@ -41,6 +41,7 @@ class AuthorRecord(BaseModel):
     affiliations_json: Optional[str] = None  # Full affiliation history as JSON
     topics_json: Optional[str] = None  # Research topics as JSON
     counts_by_year_json: Optional[str] = None  # Publication/citation counts by year
+    openalex_ids_json: Optional[str] = None  # All matched OpenAlex IDs (when merged)
     
     # Dates
     openalex_created_date: Optional[str] = None

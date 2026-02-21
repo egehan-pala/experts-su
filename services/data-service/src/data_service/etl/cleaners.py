@@ -54,7 +54,7 @@ def _safe_json(data: Any) -> Optional[str]:
         return None
 
 
-async def clean(db: Database, min_year: int = 0) -> Tuple[
+async def clean(db: Database) -> Tuple[
     List[Dict[str, Any]],  # authors
     List[Dict[str, Any]],  # publications
     List[Dict[str, str]],  # author_publications
@@ -64,6 +64,8 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
     List[Dict[str, Any]],  # coauthor edges
 ]:
     """Clean and deduplicate staged data, preserving all OpenAlex fields."""
+    from pathlib import Path
+    from collections import defaultdict
     
     # Fetch staged data
     stg_authors = await db.fetch("SELECT payload FROM stg_authors")
@@ -80,67 +82,98 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
         except Exception as exc:
             logger.error({"message": "Invalid author payload", "error": str(exc)})
 
-    # Get faculty data for enrichment
-    try:
-        scraped_faculty = await scrape_all_faculty()
-    except Exception as exc:
-        logger.error(f"Failed to scrape faculty: {exc}")
-        scraped_faculty = []
+    # Load match map from collector (OA author ID → scraped faculty data)
+    match_map: Dict[str, dict] = {}
+    match_map_path = Path("data_exports") / "match_map.json"
+    if match_map_path.exists():
+        with open(match_map_path, "r") as f:
+            match_map = json.load(f)
+        logger.info({"message": "Loaded match map", "count": len(match_map)})
+    else:
+        logger.warning("No match_map.json found — enrichment will be limited")
 
-    faculty_map = {_normalize_name_filter(f["name"]): f for f in scraped_faculty}
-    logger.info({"message": "Faculty scraping results", "count": len(scraped_faculty), "sample": scraped_faculty[:1] if scraped_faculty else []})
-
-    # Process authors - preserve ALL OpenAlex data
-    dedup_map: Dict[str, AuthorRecord] = {}
-    faculty_matches = 0
+    # Group authors by scraped faculty name for merging
+    # scraped_name → list of (OAAuthor, match_info)
+    faculty_groups: Dict[str, list] = defaultdict(list)
+    unmatched_authors: list = []
+    
     for author in authors:
-        n_name = _normalize_name_filter(author.display_name)
-        match = faculty_map.get(n_name)
-        if match:
-             faculty_matches += 1
-        
-        # If scraping succeeded, enforce the filter
-        if scraped_faculty and not match:
-            continue
-
         key = author.id.split("/")[-1]
+        match_info = match_map.get(key)
+        if match_info:
+            scraped_name = match_info["scraped_name"]
+            faculty_groups[scraped_name].append((author, match_info))
+        else:
+            unmatched_authors.append(author)
+
+    logger.info({
+        "message": "Author grouping",
+        "faculty_groups": len(faculty_groups),
+        "unmatched": len(unmatched_authors),
+    })
+
+    # Merge authors that map to the same scraped faculty name
+    dedup_map: Dict[str, AuthorRecord] = {}
+    # Track OA ID → primary ID remap for author_publications
+    id_remap: Dict[str, str] = {}
+    
+    for scraped_name, group in faculty_groups.items():
+        # Sort by works_count descending; the one with most works is the primary
+        group.sort(key=lambda x: x[0].works_count or 0, reverse=True)
+        primary_author, primary_match = group[0]
         
-        # Extract summary stats
+        # Collect all OA IDs in this group
+        all_oa_ids = [a.id.split("/")[-1] for a, _ in group]
+        primary_key = all_oa_ids[0]
+        
+        # Build the ID remap: all secondary IDs → primary ID
+        for oa_id in all_oa_ids:
+            id_remap[oa_id] = primary_key
+        
+        # Aggregate stats across all authors in the group
+        total_works = sum(a.works_count or 0 for a, _ in group)
+        total_citations = sum(a.cited_by_count or 0 for a, _ in group)
+        max_h_index = max((
+            (a.summary_stats.h_index if a.summary_stats else None) or 0
+            for a, _ in group
+        ), default=None)
+        max_i10 = max((
+            (a.summary_stats.i10_index if a.summary_stats else None) or 0
+            for a, _ in group
+        ), default=None)
+        
+        # Use primary author for non-aggregated fields
         h_index = None
         i10_index = None
         two_yr_mean = None
-        if author.summary_stats:
-            h_index = author.summary_stats.h_index
-            i10_index = author.summary_stats.i10_index
-            two_yr_mean = author.summary_stats.two_yr_mean_citedness
+        if primary_author.summary_stats:
+            two_yr_mean = primary_author.summary_stats.two_yr_mean_citedness
         
-        # Extract institution info
         ror_id = None
         inst_name = None
         inst_country = None
-        if author.last_known_institution:
-            ror_id = author.last_known_institution.ror
-            inst_name = author.last_known_institution.display_name
-            inst_country = author.last_known_institution.country_code
+        if primary_author.last_known_institution:
+            ror_id = primary_author.last_known_institution.ror
+            inst_name = primary_author.last_known_institution.display_name
+            inst_country = primary_author.last_known_institution.country_code
         
-        # Build complete author record
         rec = AuthorRecord(
-            id=key,
-            name=author.display_name,
-            orcid=author.orcid,
+            id=primary_key,
+            name=scraped_name,  # Use the canonical scraped name
+            orcid=primary_author.orcid,
             
-            # From scraping
-            email=match.get("email") if match else None,
-            phone=match.get("phone") if match else None,
-            dept=match.get("title") if match else None,
-            image_url=match.get("image_url") if match else None,
-            is_faculty=True if match else False,
+            # From scraping via match map
+            email=primary_match.get("email") or None,
+            phone=primary_match.get("phone") or None,
+            dept=primary_match.get("dept") or None,
+            image_url=primary_match.get("image_url") or None,
+            is_faculty=True,
             
-            # From OpenAlex
-            works_count=author.works_count,
-            cited_by_count=author.cited_by_count,
-            h_index=h_index,
-            i10_index=i10_index,
+            # Aggregated stats
+            works_count=total_works,
+            cited_by_count=total_citations,
+            h_index=max_h_index,
+            i10_index=max_i10,
             two_yr_mean_citedness=two_yr_mean,
             
             # Institution
@@ -148,47 +181,39 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
             last_known_institution=inst_name,
             last_known_institution_country=inst_country,
             
-            # JSON fields for complex data
-            affiliations_json=_safe_json(author.affiliations) if author.affiliations else None,
-            topics_json=_safe_json(author.topics) if author.topics else None,
-            counts_by_year_json=_safe_json(author.counts_by_year) if author.counts_by_year else None,
+            # JSON fields from primary author
+            affiliations_json=_safe_json(primary_author.affiliations) if primary_author.affiliations else None,
+            topics_json=_safe_json(primary_author.topics) if primary_author.topics else None,
+            counts_by_year_json=_safe_json(primary_author.counts_by_year) if primary_author.counts_by_year else None,
+            openalex_ids_json=json.dumps(all_oa_ids) if len(all_oa_ids) > 1 else None,
             
             # Dates
-            openalex_created_date=author.created_date,
-            openalex_updated_date=author.updated_date,
+            openalex_created_date=primary_author.created_date,
+            openalex_updated_date=primary_author.updated_date,
         )
+        dedup_map[primary_key] = rec
         
-        existing = dedup_map.get(key)
-        if existing is None:
-            dedup_map[key] = rec
-        else:
-            # We already have this author ID. 
-            # If the new record has faculty info (is_faculty=True), we should keep it/merge it.
-            # But since we iterate stg_authors first, and they are unique by definition (mostly),
-            # simplistic overwrite or ignore is fine. The logic below was based on ORCID merging.
-            # Let's just keep the existing one if it's already there to be safe, 
-            # OR assume stg_authors iteration order is fine.
-            # Actually, we should merge if one has is_faculty=True.
-            if rec.is_faculty and not existing.is_faculty:
-                 dedup_map[key] = rec
+        if len(all_oa_ids) > 1:
+            logger.info({
+                "message": "Merged author",
+                "name": scraped_name,
+                "primary_id": primary_key,
+                "merged_ids": all_oa_ids,
+            })
 
     authors_norm = [rec.model_dump() for rec in dedup_map.values()]
+    logger.info({
+        "message": "Cleaning complete (authors)",
+        "faculty_authors": len(authors_norm),
+        "multi_id_merges": sum(1 for r in dedup_map.values() if r.openalex_ids_json is not None),
+    })
 
-    # Parse works - preserve ALL OpenAlex data
+    # Parse works - preserve ALL OpenAlex data (no filtering)
     works: List[OAWork] = []
     for row in stg_publications:
         payload = json.loads(row["payload"])
         try:
             work = OAWork.model_validate(payload)
-            
-            # Filter by year if specified
-            if min_year > 0 and (work.publication_year is None or work.publication_year < min_year):
-                continue
-            
-            # Filter out theses/dissertations
-            if work.type in ("dissertation", "thesis", "master thesis"):
-                continue
-
             works.append(work)
         except Exception as exc:
             logger.error({"message": "Invalid work payload", "error": str(exc)})
@@ -278,6 +303,9 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
             aid_clean = authorship.author.id.split("/")[-1]
             if not aid_clean:
                 continue
+            
+            # Remap merged author IDs to primary ID
+            aid_clean = id_remap.get(aid_clean, aid_clean)
                 
             # If this author is NOT already in our deduplicated map (i.e. not a staged faculty member)
             # we should add them as an "external" author.
@@ -449,7 +477,7 @@ async def clean(db: Database, min_year: int = 0) -> Tuple[
         "authors": len(authors_norm),
         "publications": len(publications_norm),
         "topics": len(topics_norm),
-        "faculty_matches": faculty_matches,
+        "faculty_groups": len(faculty_groups),
     })
 
     return (

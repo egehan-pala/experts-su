@@ -122,13 +122,8 @@ def full_run() -> None:
     client = OpenAlexClient(settings)
     
     async def _cmd() -> None:
-        # Determine starting date from settings
-        since_date = settings.since_default
-        min_year = int(since_date.split("-")[0])
-        
         typer.echo("\n" + "="*60)
         typer.echo(f"🚀 FULL RUN STARTING")
-        typer.echo(f"   Since Date: {since_date} (Year: {min_year})")
         typer.echo("="*60 + "\n")
         
         try:
@@ -136,13 +131,12 @@ def full_run() -> None:
             
             # Step 1: COLLECT (Fetch -> Staging)
             typer.echo("📥 STEP 1: COLLECTING data from OpenAlex (Targeted Mode)...")
-            # Switch to targeted collection to save storage and time
             from .etl.collectors import collect_targeted
             await collect_targeted(settings, db, client)
             typer.echo("✅ Collection complete.\n")
             
-            # Step 2: CLEAN & FILTER (Staging -> Production Objects)
-            typer.echo(f"🧹 STEP 2: CLEANING and FILTERING (min_year={min_year})...")
+            # Step 2: CLEAN (Staging -> Production Objects)
+            typer.echo("🧹 STEP 2: CLEANING and DEDUPLICATING...")
             (
                 authors,
                 publications,
@@ -151,7 +145,7 @@ def full_run() -> None:
                 publication_topics,
                 metrics,
                 coauthor_edges,
-            ) = await clean_stage(db, min_year=min_year)
+            ) = await clean_stage(db)
             typer.echo(f"✅ Cleaning complete. {len(authors)} authors, {len(publications)} publications passed filters.\n")
             
             # Step 3: SAVE LOCAL BACKUP
@@ -605,14 +599,11 @@ def clean_and_load() -> None:
     db = Database(settings)
     
     async def _cmd() -> None:
-        since_date = settings.since_default
-        min_year = int(since_date.split("-")[0])
-        
         try:
             await db.connect()
             
-            # Step 2: CLEAN & FILTER
-            typer.echo(f"🧹 STEP 2: CLEANING and FILTERING (min_year={min_year})...")
+            # Step 2: CLEAN
+            typer.echo("🧹 STEP 2: CLEANING and DEDUPLICATING...")
             (
                 authors,
                 publications,
@@ -621,8 +612,8 @@ def clean_and_load() -> None:
                 publication_topics,
                 metrics,
                 coauthor_edges,
-            ) = await clean_stage(db, min_year=min_year)
-            typer.echo(f"✅ Cleaning complete. {len(authors)} authors, {len(publications)} publications passed filters.\n")
+            ) = await clean_stage(db)
+            typer.echo(f"✅ Cleaning complete. {len(authors)} authors, {len(publications)} publications.\n")
             
             # Step 3: SAVE LOCAL BACKUP
             typer.echo("💾 STEP 3: SAVING local backup...")

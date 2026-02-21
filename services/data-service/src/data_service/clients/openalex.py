@@ -162,3 +162,33 @@ class OpenAlexClient:
             if not next_cursor:
                 break
             params["cursor"] = next_cursor
+
+    async def fetch_all_authors_by_institution(self) -> list[Dict]:
+        """Fetch ALL authors affiliated with the configured institution.
+
+        Unlike ``fetch_authors_by_ror`` (which yields lazily), this method
+        collects every author into a list so it can be passed to the name
+        matcher for bulk comparison.
+
+        Uses ``affiliations.institution.ror`` so that authors whose
+        ``last_known_institutions`` is empty but who *have* published under
+        the institution are still included.
+        """
+        filter_param = f"affiliations.institution.ror:{self._ror_id}"
+        params: Dict[str, str | int | None] = {
+            "filter": filter_param,
+            "per-page": 200,
+            "cursor": "*",
+        }
+        all_authors: list[Dict] = []
+        while True:
+            data = await self._get("/authors", params)
+            results = data.get("results", [])
+            if not results:
+                break
+            all_authors.extend(results)
+            next_cursor = data.get("meta", {}).get("next_cursor")
+            if not next_cursor:
+                break
+            params["cursor"] = next_cursor
+        return all_authors
