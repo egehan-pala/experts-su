@@ -11,6 +11,7 @@ CREATE TABLE IF NOT EXISTS authors (
     dept TEXT,
     email TEXT,
     ror_id TEXT,
+    is_faculty BOOLEAN DEFAULT FALSE,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );

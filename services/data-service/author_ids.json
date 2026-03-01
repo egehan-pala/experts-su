@@ -1,0 +1,1804 @@
+{
+  "found": [
+    {
+      "scraped_name": "Erkay  Sava\u015f",
+      "openalex_name": "Erkay Sava\u015f",
+      "author_id": "A5064835031",
+      "works_count": 184,
+      "h_index": 34
+    },
+    {
+      "scraped_name": "Bur\u00e7  M\u0131s\u0131rl\u0131o\u011flu",
+      "openalex_name": "Bur\u00e7 M\u0131s\u0131rl\u0131o\u011flu",
+      "author_id": "A5003743873",
+      "works_count": 10,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "H\u00fcsn\u00fc  Yenig\u00fcn",
+      "openalex_name": "H\u00fcsn\u00fc Yenig\u00fcn",
+      "author_id": "A5049982222",
+      "works_count": 72,
+      "h_index": 15
+    },
+    {
+      "scraped_name": "Adnan  Kefal",
+      "openalex_name": "Adnan Kefal",
+      "author_id": "A5034097847",
+      "works_count": 105,
+      "h_index": 29
+    },
+    {
+      "scraped_name": "Albert  Levi",
+      "openalex_name": "Albert L\u00e9vi",
+      "author_id": "A5041987957",
+      "works_count": 222,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "Alex  Lyakhovich",
+      "openalex_name": "Alex Lyakhovich",
+      "author_id": "A5016351181",
+      "works_count": 106,
+      "h_index": 29
+    },
+    {
+      "scraped_name": "Alhun  Ayd\u0131n",
+      "openalex_name": "Alhun Aydin",
+      "author_id": "A5000511686",
+      "works_count": 29,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Ali  Ko\u015far",
+      "openalex_name": "Ali Ko\u015far",
+      "author_id": "A5087453174",
+      "works_count": 398,
+      "h_index": 46
+    },
+    {
+      "scraped_name": "Ali Rana  At\u0131lgan",
+      "openalex_name": "Ali Rana At\u0131lgan",
+      "author_id": "A5020808875",
+      "works_count": 159,
+      "h_index": 30
+    },
+    {
+      "scraped_name": "Alp  Y\u00fcr\u00fcm",
+      "openalex_name": "Alp Y\u00fcr\u00fcm",
+      "author_id": "A5051119723",
+      "works_count": 75,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "Alpagut  Kara",
+      "openalex_name": "Alpagut Kara",
+      "author_id": "A5085006420",
+      "works_count": 99,
+      "h_index": 21
+    },
+    {
+      "scraped_name": "Ayhan  Bozkurt",
+      "openalex_name": "Ayhan Bozkurt",
+      "author_id": "A5027436691",
+      "works_count": 227,
+      "h_index": 45
+    },
+    {
+      "scraped_name": "Bahattin  Ko\u00e7",
+      "openalex_name": "Bahattin Ko\u00e7",
+      "author_id": "A5075149695",
+      "works_count": 189,
+      "h_index": 34
+    },
+    {
+      "scraped_name": "Bar\u0131\u015f  Balc\u0131o\u011flu",
+      "openalex_name": "Bar\u0131\u015f Balc\u0131og\u0303lu",
+      "author_id": "A5012058768",
+      "works_count": 19,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "Bekir  Bediz",
+      "openalex_name": "Bekir Bediz",
+      "author_id": "A5062440966",
+      "works_count": 62,
+      "h_index": 21
+    },
+    {
+      "scraped_name": "Bekir  Dizman",
+      "openalex_name": "Bekir Dizman",
+      "author_id": "A5039994498",
+      "works_count": 44,
+      "h_index": 13
+    },
+    {
+      "scraped_name": "Berrin  Yan\u0131ko\u011flu",
+      "openalex_name": "Berrin Yan\u0131ko\u011flu",
+      "author_id": "A5057031258",
+      "works_count": 136,
+      "h_index": 28
+    },
+    {
+      "scraped_name": "B\u00fclent  \u00c7atay",
+      "openalex_name": "B\u00fclent \u00c7atay",
+      "author_id": "A5030544686",
+      "works_count": 113,
+      "h_index": 25
+    },
+    {
+      "scraped_name": "Burak  Kocuk",
+      "openalex_name": "Burak Kocuk",
+      "author_id": "A5009128576",
+      "works_count": 61,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Burcu  Saner Okan",
+      "openalex_name": "Burcu Saner Okan",
+      "author_id": "A5062171787",
+      "works_count": 104,
+      "h_index": 23
+    },
+    {
+      "scraped_name": "\u00c7a\u011flar  Tun\u00e7",
+      "openalex_name": "\u00c7a\u011flar Tun\u00e7",
+      "author_id": "A5114452644",
+      "works_count": 4,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Canan  At\u0131lgan",
+      "openalex_name": "Canan At\u0131lgan",
+      "author_id": "A5054767162",
+      "works_count": 137,
+      "h_index": 23
+    },
+    {
+      "scraped_name": "Cem  G\u00fcneri",
+      "openalex_name": "Cem G\u00fcneri\u0307",
+      "author_id": "A5038096471",
+      "works_count": 51,
+      "h_index": 13
+    },
+    {
+      "scraped_name": "Cemal  Y\u0131lmaz",
+      "openalex_name": "Cemal Y\u0131lmaz",
+      "author_id": "A5054453972",
+      "works_count": 106,
+      "h_index": 22
+    },
+    {
+      "scraped_name": "Dilara  Kek\u00fcll\u00fco\u011flu",
+      "openalex_name": "Dilara Kek\u00fcll\u00fco\u011flu",
+      "author_id": "A5049858538",
+      "works_count": 16,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Duygu  Kuzuo\u011flu \u00d6zt\u00fcrk",
+      "openalex_name": "Duygu Kuzuo\u011flu\u2010\u00d6zt\u00fcrk",
+      "author_id": "A5034512246",
+      "works_count": 55,
+      "h_index": 15
+    },
+    {
+      "scraped_name": "Duygu  Ta\u015f",
+      "openalex_name": "Duygu Ta\u015f",
+      "author_id": "A5031423542",
+      "works_count": 26,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "Emrah  Kalemci",
+      "openalex_name": "Emrah Kalemci",
+      "author_id": "A5008719330",
+      "works_count": 152,
+      "h_index": 26
+    },
+    {
+      "scraped_name": "Emre  Erdem",
+      "openalex_name": "Emre Erdem",
+      "author_id": "A5051744717",
+      "works_count": 206,
+      "h_index": 42
+    },
+    {
+      "scraped_name": "Erchan  Aptoula",
+      "openalex_name": "Erchan Aptoula",
+      "author_id": "A5026370111",
+      "works_count": 149,
+      "h_index": 23
+    },
+    {
+      "scraped_name": "Erhan  Budak",
+      "openalex_name": "Erhan Budak",
+      "author_id": "A5052606520",
+      "works_count": 251,
+      "h_index": 55
+    },
+    {
+      "scraped_name": "Erhun  Kundakc\u0131o\u011flu",
+      "openalex_name": "O. Erhun Kundakcioglu",
+      "author_id": "A5059928187",
+      "works_count": 64,
+      "h_index": 18
+    },
+    {
+      "scraped_name": "Ersin  G\u00f6\u011f\u00fc\u015f",
+      "openalex_name": "Ersin G\u00f6\u011f\u00fc\u015f",
+      "author_id": "A5046603134",
+      "works_count": 366,
+      "h_index": 39
+    },
+    {
+      "scraped_name": "Esra  Erdem",
+      "openalex_name": "Esra Erdem",
+      "author_id": "A5016455314",
+      "works_count": 204,
+      "h_index": 23
+    },
+    {
+      "scraped_name": "Esra  Koca",
+      "openalex_name": "Esra Koca",
+      "author_id": "A5004633088",
+      "works_count": 26,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Ferruh  \u00d6zbudak",
+      "openalex_name": "Ferruh \u00d6zbudak",
+      "author_id": "A5072676327",
+      "works_count": 255,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "Fevzi \u00c7akmak  Cebeci",
+      "openalex_name": "Fevzi \u00c7akmak Cebeci",
+      "author_id": "A5076444610",
+      "works_count": 58,
+      "h_index": 22
+    },
+    {
+      "scraped_name": "G\u00f6kalp  Alpan",
+      "openalex_name": "G\u00f6kalp Alpan",
+      "author_id": "A5039984631",
+      "works_count": 33,
+      "h_index": 7
+    },
+    {
+      "scraped_name": "G\u00f6ktu\u011f   Karpat",
+      "openalex_name": "G\u00f6ktu\u011f Karpat",
+      "author_id": "A5022130062",
+      "works_count": 43,
+      "h_index": 19
+    },
+    {
+      "scraped_name": "G\u00f6zde  \u0130nce",
+      "openalex_name": "G\u00f6zde \u00d6zayd\u0131n \u0130nce",
+      "author_id": "A5091048474",
+      "works_count": 76,
+      "h_index": 28
+    },
+    {
+      "scraped_name": "G\u00fcll\u00fc  K\u0131z\u0131lta\u015f \u015eendur",
+      "openalex_name": "G\u00fcll\u00fc K\u0131z\u0131lta\u015f \u015eendur",
+      "author_id": "A5010538271",
+      "works_count": 11,
+      "h_index": 6
+    },
+    {
+      "scraped_name": "H\u00fcseyin  \u00d6zkan",
+      "openalex_name": "H\u00fcseyin \u00d6zkan",
+      "author_id": "A5017254842",
+      "works_count": 161,
+      "h_index": 25
+    },
+    {
+      "scraped_name": "\u0130brahim  Tekin",
+      "openalex_name": "\u0130brahim Tekin",
+      "author_id": "A5066558035",
+      "works_count": 135,
+      "h_index": 19
+    },
+    {
+      "scraped_name": "\u0130hsan  Sadati",
+      "openalex_name": "Mir Ehsan Hesam Sadati",
+      "author_id": "A5073362191",
+      "works_count": 23,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "\u0130nan\u00e7  Adagideli",
+      "openalex_name": "\u0130nan\u00e7 Adagideli",
+      "author_id": "A5012315134",
+      "works_count": 108,
+      "h_index": 22
+    },
+    {
+      "scraped_name": "\u0130nan\u00e7  Ar\u0131n",
+      "openalex_name": "\u0130nan\u00e7 Ar\u0131n",
+      "author_id": "A5062695576",
+      "works_count": 9,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "\u0130smail  \u00c7akmak",
+      "openalex_name": "\u0130smail \u00c7akmak",
+      "author_id": "A5065205022",
+      "works_count": 363,
+      "h_index": 98
+    },
+    {
+      "scraped_name": "\u0130smet \u0130n\u00f6n\u00fc  Kaya",
+      "openalex_name": "\u0130smet \u0130. Kaya",
+      "author_id": "A5056644993",
+      "works_count": 61,
+      "h_index": 14
+    },
+    {
+      "scraped_name": "Ka\u011fan  Kur\u015fung\u00f6z",
+      "openalex_name": "Ka\u011fan Kur\u015fung\u00f6z",
+      "author_id": "A5043540696",
+      "works_count": 41,
+      "h_index": 7
+    },
+    {
+      "scraped_name": "Kamer  Kaya",
+      "openalex_name": "Kamer Kaya",
+      "author_id": "A5083404536",
+      "works_count": 138,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "Kemal  K\u0131l\u0131\u00e7",
+      "openalex_name": "Kemal K\u0131l\u0131\u00e7",
+      "author_id": "A5045370881",
+      "works_count": 122,
+      "h_index": 17
+    },
+    {
+      "scraped_name": "Kemalettin  Erbatur",
+      "openalex_name": "Kemalettin Erbatur",
+      "author_id": "A5033078122",
+      "works_count": 92,
+      "h_index": 17
+    },
+    {
+      "scraped_name": "Korkut Kaan  Tokg\u00f6z",
+      "openalex_name": "Korkut Kaan Tokg\u00f6z",
+      "author_id": "A5033648353",
+      "works_count": 84,
+      "h_index": 14
+    },
+    {
+      "scraped_name": "K\u00fcr\u015fat  \u015eendur",
+      "openalex_name": "K\u00fcr\u015fat \u015eendur",
+      "author_id": "A5043657206",
+      "works_count": 132,
+      "h_index": 23
+    },
+    {
+      "scraped_name": "Levent  \u00d6zt\u00fcrk",
+      "openalex_name": "Levent \u00d6zt\u00fcrk",
+      "author_id": "A5082899694",
+      "works_count": 100,
+      "h_index": 42
+    },
+    {
+      "scraped_name": "L\u00fctfi Taner  Tun\u00e7",
+      "openalex_name": "L\u00fctfi Taner Tun\u00e7",
+      "author_id": "A5102750007",
+      "works_count": 56,
+      "h_index": 24
+    },
+    {
+      "scraped_name": "Mahmut Faruk  Ak\u015fit",
+      "openalex_name": "Mahmut Faruk Ak\u015fit",
+      "author_id": "A5016325954",
+      "works_count": 100,
+      "h_index": 17
+    },
+    {
+      "scraped_name": "Mehmet  Y\u0131ld\u0131z",
+      "openalex_name": "Mehmet Y\u0131ld\u0131z",
+      "author_id": "A5100692535",
+      "works_count": 327,
+      "h_index": 45
+    },
+    {
+      "scraped_name": "Mehmet Ali  G\u00fclg\u00fcn",
+      "openalex_name": "Mehmet Ali G\u00fclg\u00fcn",
+      "author_id": "A5028848316",
+      "works_count": 108,
+      "h_index": 23
+    },
+    {
+      "scraped_name": "Mehmet Emre  \u00d6zfatura",
+      "openalex_name": "Mehmet Emre Ozfatura",
+      "author_id": "A5004612457",
+      "works_count": 5,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "Melih  T\u00fcrkseven",
+      "openalex_name": "Melih T\u00fcrkseven",
+      "author_id": "A5007910380",
+      "works_count": 26,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Meltem  Elita\u015f",
+      "openalex_name": "Meltem Elita\u015f",
+      "author_id": "A5033756490",
+      "works_count": 82,
+      "h_index": 13
+    },
+    {
+      "scraped_name": "Mohammad  Sadek",
+      "openalex_name": "Mohammad Sadek",
+      "author_id": "A5052438341",
+      "works_count": 76,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Mohaned  Chraiti",
+      "openalex_name": "Mohaned Chraiti",
+      "author_id": "A5087081973",
+      "works_count": 39,
+      "h_index": 7
+    },
+    {
+      "scraped_name": "Morteza  Ghorbani",
+      "openalex_name": "Morteza Ghorbani",
+      "author_id": "A5071066367",
+      "works_count": 88,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "Murat  Kaya",
+      "openalex_name": "Murat Kaya Yapici",
+      "author_id": "A5061096844",
+      "works_count": 92,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "Murat Kaya  Yap\u0131c\u0131",
+      "openalex_name": "Murat Kaya Yapici",
+      "author_id": "A5061096844",
+      "works_count": 92,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "Mustafa  \u00dcnel",
+      "openalex_name": "Mustafa \u00dcnel",
+      "author_id": "A5031429692",
+      "works_count": 202,
+      "h_index": 21
+    },
+    {
+      "scraped_name": "Nikolaos  Koltsaklis",
+      "openalex_name": "Nikolaos E. Koltsaklis",
+      "author_id": "A5053876572",
+      "works_count": 66,
+      "h_index": 19
+    },
+    {
+      "scraped_name": "Nilay  Duruk Mutluba\u015f",
+      "openalex_name": "Nilay Duruk Mutluba\u015f",
+      "author_id": "A5090654277",
+      "works_count": 25,
+      "h_index": 7
+    },
+    {
+      "scraped_name": "Nur  Mustafao\u011flu",
+      "openalex_name": "Nur Mustafao\u011flu",
+      "author_id": "A5060361429",
+      "works_count": 33,
+      "h_index": 13
+    },
+    {
+      "scraped_name": "Nurdag\u00fcl   Anbar",
+      "openalex_name": "Nurdag\u00fcl Anbar",
+      "author_id": "A5052410721",
+      "works_count": 64,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "Og\u00fcn  Adebali",
+      "openalex_name": "Og\u00fcn Adebal\u0131",
+      "author_id": "A5036514234",
+      "works_count": 80,
+      "h_index": 19
+    },
+    {
+      "scraped_name": "Ongun  \u00d6z\u00e7elik",
+      "openalex_name": "V. Ongun \u00d6z\u00e7elik",
+      "author_id": "A5059240870",
+      "works_count": 58,
+      "h_index": 23
+    },
+    {
+      "scraped_name": "Onur  Varol",
+      "openalex_name": "Onur Varol",
+      "author_id": "A5031461158",
+      "works_count": 93,
+      "h_index": 24
+    },
+    {
+      "scraped_name": "Or\u00e7un  \u00c7etin",
+      "openalex_name": "Or\u00e7un \u00c7etin",
+      "author_id": "A5005365576",
+      "works_count": 24,
+      "h_index": 12
+    },
+    {
+      "scraped_name": "\u00d6zcan  \u00d6zt\u00fcrk",
+      "openalex_name": "\u00d6zcan \u00d6zt\u00fcrk",
+      "author_id": "A5101738631",
+      "works_count": 195,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "\u00d6zge  Akbulut",
+      "openalex_name": "\u00d6zge Akbulut",
+      "author_id": "A5071410149",
+      "works_count": 49,
+      "h_index": 15
+    },
+    {
+      "scraped_name": "\u00d6zg\u00fcr  Er\u00e7etin",
+      "openalex_name": "\u00d6zg\u00fcr Er\u00e7etin",
+      "author_id": "A5034697367",
+      "works_count": 187,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "\u00d6zg\u00fcr  G\u00fcrb\u00fcz",
+      "openalex_name": "\u00d6zg\u00fcr G\u00fcrb\u00fcz",
+      "author_id": "A5006927203",
+      "works_count": 128,
+      "h_index": 17
+    },
+    {
+      "scraped_name": "\u00d6znur  Ta\u015ftan",
+      "openalex_name": "\u00d6znur Ta\u015ftan",
+      "author_id": "A5051657734",
+      "works_count": 93,
+      "h_index": 18
+    },
+    {
+      "scraped_name": "Polat  G\u00f6kta\u015f",
+      "openalex_name": "Polat G\u00f6kta\u015f",
+      "author_id": "A5084781680",
+      "works_count": 83,
+      "h_index": 12
+    },
+    {
+      "scraped_name": "Selim  Balc\u0131soy",
+      "openalex_name": "Selim Balc\u0131soy",
+      "author_id": "A5043347770",
+      "works_count": 131,
+      "h_index": 17
+    },
+    {
+      "scraped_name": "Selim  \u00c7etiner",
+      "openalex_name": "Selim \u00c7etiner",
+      "author_id": "A5050128848",
+      "works_count": 115,
+      "h_index": 15
+    },
+    {
+      "scraped_name": "Selmiye  Alkan G\u00fcrsel",
+      "openalex_name": "Selmiye Alkan G\u00fcrsel",
+      "author_id": "A5009017155",
+      "works_count": 154,
+      "h_index": 36
+    },
+    {
+      "scraped_name": "Semih Onur  Sezer",
+      "openalex_name": "Semih Sezer",
+      "author_id": "A5076986477",
+      "works_count": 56,
+      "h_index": 13
+    },
+    {
+      "scraped_name": "Serhat  Ye\u015filyurt",
+      "openalex_name": "Serhat Ye\u015filyurt",
+      "author_id": "A5088838188",
+      "works_count": 124,
+      "h_index": 19
+    },
+    {
+      "scraped_name": "Serkan  Ate\u015f",
+      "openalex_name": "Serkan Ate\u015f",
+      "author_id": "A5009750009",
+      "works_count": 67,
+      "h_index": 17
+    },
+    {
+      "scraped_name": "Serkan  \u00dcnal",
+      "openalex_name": "Serkan \u00dcnal",
+      "author_id": "A5040498730",
+      "works_count": 80,
+      "h_index": 27
+    },
+    {
+      "scraped_name": "Sinan  Y\u0131ld\u0131r\u0131m",
+      "openalex_name": "Sinan Y\u0131ld\u0131r\u0131m",
+      "author_id": "A5015003622",
+      "works_count": 68,
+      "h_index": 11
+    },
+    {
+      "scraped_name": "S\u00fcha Orhun  Mutluergil",
+      "openalex_name": "S\u00fcha Orhun Mutluergil",
+      "author_id": "A5078443111",
+      "works_count": 19,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Tongu\u00e7  \u00dcnl\u00fcyurt",
+      "openalex_name": "Tongu\u00e7 \u00dcnl\u00fcyurt",
+      "author_id": "A5041168873",
+      "works_count": 55,
+      "h_index": 12
+    },
+    {
+      "scraped_name": "Tu\u011f\u00e7e  Y\u00fcksel",
+      "openalex_name": "Tu\u011f\u00e7e Y\u00fcksel",
+      "author_id": "A5066247734",
+      "works_count": 26,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Turgay  Bayraktar",
+      "openalex_name": "Turgay Bayraktar",
+      "author_id": "A5026913439",
+      "works_count": 40,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Umut  \u015eahin",
+      "openalex_name": "Umut \u015eahin",
+      "author_id": "A5000698520",
+      "works_count": 27,
+      "h_index": 16
+    },
+    {
+      "scraped_name": "\u00dcnal  Ertan",
+      "openalex_name": "\u00dcnal Ertan",
+      "author_id": "A5071067112",
+      "works_count": 119,
+      "h_index": 19
+    },
+    {
+      "scraped_name": "Volkan  Pato\u011flu",
+      "openalex_name": "Volkan Pato\u011flu",
+      "author_id": "A5017793258",
+      "works_count": 218,
+      "h_index": 28
+    },
+    {
+      "scraped_name": "Ya\u015far  G\u00fcrb\u00fcz",
+      "openalex_name": "Ya\u015far G\u00fcrb\u00fcz",
+      "author_id": "A5080101821",
+      "works_count": 270,
+      "h_index": 30
+    },
+    {
+      "scraped_name": "Y\u00fccel  Sayg\u0131n",
+      "openalex_name": "Y\u00fccel Sayg\u0131n",
+      "author_id": "A5062560775",
+      "works_count": 157,
+      "h_index": 26
+    },
+    {
+      "scraped_name": "Yusuf  Leblebici",
+      "openalex_name": "Yusuf Leblebici",
+      "author_id": "A5072423303",
+      "works_count": 713,
+      "h_index": 44
+    },
+    {
+      "scraped_name": "Zafer  Gedik",
+      "openalex_name": "Z. Gedik",
+      "author_id": "A5088391496",
+      "works_count": 62,
+      "h_index": 11
+    },
+    {
+      "scraped_name": "Abuzer Alp  Yeti\u015fgin",
+      "openalex_name": "Abuzer Alp Yetisgin",
+      "author_id": "A5077420627",
+      "works_count": 15,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Afrim  Bojnik",
+      "openalex_name": "Afrim Bojnik",
+      "author_id": "A5011283448",
+      "works_count": 9,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Ahmet  G\u00fcng\u00f6r",
+      "openalex_name": "Ahmet G\u00fcng\u00f6r",
+      "author_id": "A5070802700",
+      "works_count": 76,
+      "h_index": 16
+    },
+    {
+      "scraped_name": "Ali Arda  Gen\u00e7ali",
+      "openalex_name": "A A Gen\u00e7ali",
+      "author_id": "A5038198339",
+      "works_count": 15,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Arsalan  Javeed",
+      "openalex_name": "Arsalan Javeed",
+      "author_id": "A5074304614",
+      "works_count": 10,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Burcu  Barsak\u00e7\u0131",
+      "openalex_name": "Burcu Barsak\u00e7\u0131",
+      "author_id": "A5037996769",
+      "works_count": 2,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Ebru  \u00c7etin",
+      "openalex_name": "Ebru \u00c7etin",
+      "author_id": "A5015042958",
+      "works_count": 9,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Francesco  Navarra",
+      "openalex_name": "Francesco Navarra",
+      "author_id": "A5051835094",
+      "works_count": 26,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "G\u00fcne\u015f  Y\u0131ld\u0131r\u0131m Akdeniz",
+      "openalex_name": "G\u00fcne\u015f Y\u0131ld\u0131r\u0131m Akdeniz",
+      "author_id": "A5106066637",
+      "works_count": 1,
+      "h_index": 0
+    },
+    {
+      "scraped_name": "\u0130rem  K\u0131r\u0131\u015f",
+      "openalex_name": "\u0130rem Kiris",
+      "author_id": "A5055746676",
+      "works_count": 11,
+      "h_index": 6
+    },
+    {
+      "scraped_name": "I\u015f\u0131k  Kantarc\u0131o\u011flu",
+      "openalex_name": "Isik Kantarcioglu",
+      "author_id": "A5031820250",
+      "works_count": 15,
+      "h_index": 6
+    },
+    {
+      "scraped_name": "Marat  Kazanov",
+      "openalex_name": "Marat D. Kazanov",
+      "author_id": "A5070956718",
+      "works_count": 126,
+      "h_index": 47
+    },
+    {
+      "scraped_name": "Mehmet Umut  \u015een",
+      "openalex_name": "Mehmet Umut \u015een",
+      "author_id": "A5103272723",
+      "works_count": 42,
+      "h_index": 9
+    },
+    {
+      "scraped_name": "Mohammadamin  Maleki",
+      "openalex_name": "Mohammadamin Maleki",
+      "author_id": "A5083724422",
+      "works_count": 12,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Muhammed  Zemzemo\u011flu",
+      "openalex_name": "Muhammed Zemzemoglu",
+      "author_id": "A5031346349",
+      "works_count": 5,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "\u00d6zge  Keskin",
+      "openalex_name": "\u00d6zge Keskin",
+      "author_id": "A5005214922",
+      "works_count": 12,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Ramazan  Ceylan",
+      "openalex_name": "Ramazan Ceylan",
+      "author_id": "A5021424805",
+      "works_count": 67,
+      "h_index": 31
+    },
+    {
+      "scraped_name": "Rana  Al Nakib",
+      "openalex_name": "Rana Al Nakib",
+      "author_id": "A5049030328",
+      "works_count": 4,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Salar  Heyat Davoudian",
+      "openalex_name": "Salar Heyat Davoudian",
+      "author_id": "A5072187976",
+      "works_count": 7,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "Sevilay Burcu  \u015eahin",
+      "openalex_name": "Sevilay Burcu Sahin",
+      "author_id": "A5033319585",
+      "works_count": 8,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "\u015eeyda  Aydemir",
+      "openalex_name": "S. Sen",
+      "author_id": "A5062267126",
+      "works_count": 14,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "Sezel  Alkan",
+      "openalex_name": "Sezel Alkan",
+      "author_id": "A5093814738",
+      "works_count": 2,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Umutcan  Erdur",
+      "openalex_name": "Umutcan Erdur",
+      "author_id": "A5116042862",
+      "works_count": 2,
+      "h_index": 0
+    },
+    {
+      "scraped_name": "Omid  Moradi",
+      "openalex_name": "O. Mohammad Moradi",
+      "author_id": "A5113576984",
+      "works_count": 7,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "Mostafa  Shojaeian",
+      "openalex_name": "Mostafa Shojaeian",
+      "author_id": "A5066115666",
+      "works_count": 30,
+      "h_index": 14
+    },
+    {
+      "scraped_name": "Sahar  Porrang",
+      "openalex_name": "Sahar Porrang",
+      "author_id": "A5060164753",
+      "works_count": 7,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Ahmet  Demirelli",
+      "openalex_name": "Ahmet Demirelli",
+      "author_id": "A5092537339",
+      "works_count": 1,
+      "h_index": 0
+    },
+    {
+      "scraped_name": "Canan  Ka\u015f\u0131kc\u0131",
+      "openalex_name": "Canan Ka\u015f\u0131k\u00e7\u0131",
+      "author_id": "A5014744565",
+      "works_count": 6,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Mehmet Murat  Fad\u0131lo\u011flu",
+      "openalex_name": "Mehmet Murat Fad\u0131lo\u011flu",
+      "author_id": "A5060263125",
+      "works_count": 19,
+      "h_index": 9
+    },
+    {
+      "scraped_name": "Saima  G\u00fcl",
+      "openalex_name": "Saima Gul",
+      "author_id": "A5103256677",
+      "works_count": 137,
+      "h_index": 24
+    },
+    {
+      "scraped_name": "Utku  Seven",
+      "openalex_name": "Utku Seven",
+      "author_id": "A5041722436",
+      "works_count": 23,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Yuki  Kaneko",
+      "openalex_name": "Yuki Kaneko",
+      "author_id": "A5002461656",
+      "works_count": 110,
+      "h_index": 22
+    },
+    {
+      "scraped_name": "Syamak  Hossein Nedjad",
+      "openalex_name": "S. Hossein Nedjad",
+      "author_id": "A5074598380",
+      "works_count": 65,
+      "h_index": 21
+    },
+    {
+      "scraped_name": "Ayt\u00fcl  Er\u00e7il",
+      "openalex_name": "Ayt\u00fcl Er\u00e7i\u0307l",
+      "author_id": "A5078494494",
+      "works_count": 124,
+      "h_index": 23
+    },
+    {
+      "scraped_name": "Carmine  Difiglio",
+      "openalex_name": "CARMINE DIFIGLIO",
+      "author_id": "A5112271744",
+      "works_count": 17,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "Cleva  Ow Yang",
+      "openalex_name": "Cleva W. Ow\u2010Yang",
+      "author_id": "A5035477745",
+      "works_count": 85,
+      "h_index": 26
+    },
+    {
+      "scraped_name": "Emrah  Ero\u011flu",
+      "openalex_name": "Emrah Ero\u011flu",
+      "author_id": "A5055381359",
+      "works_count": 85,
+      "h_index": 21
+    },
+    {
+      "scraped_name": "Kemal  Oflazer",
+      "openalex_name": "Kemal Oflazer",
+      "author_id": "A5003566053",
+      "works_count": 180,
+      "h_index": 33
+    },
+    {
+      "scraped_name": "Alize Yaprak  G\u00fcl",
+      "openalex_name": "Alize Yaprak G\u00fcl",
+      "author_id": "A5092766377",
+      "works_count": 5,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Alperen  Do\u011fan",
+      "openalex_name": "Alperen Dogan",
+      "author_id": "A5080728216",
+      "works_count": 1,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Cem  Azgari",
+      "openalex_name": "Cem Azgari",
+      "author_id": "A5018288892",
+      "works_count": 7,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "Cemile  Uslu",
+      "openalex_name": "Cemile Uslu",
+      "author_id": "A5070065351",
+      "works_count": 8,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "Ceren  Y\u0131ld\u0131r\u0131m",
+      "openalex_name": "Ceren Y\u0131ld\u0131r\u0131m",
+      "author_id": "A5101864427",
+      "works_count": 50,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "Cihan  Arl\u0131",
+      "openalex_name": "Cihan Arli",
+      "author_id": "A5028233733",
+      "works_count": 5,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Deniz  Tuncer",
+      "openalex_name": "Deniz Tuncer",
+      "author_id": "A5077819850",
+      "works_count": 2,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Elif Ecem  \u015eaml\u0131o\u011flu",
+      "openalex_name": "Elif Ecem \u015eamlio\u011flu",
+      "author_id": "A5119305979",
+      "works_count": 1,
+      "h_index": 0
+    },
+    {
+      "scraped_name": "Emine Ay\u015fe  Sunar",
+      "openalex_name": "Emine Ay\u015fe Sunar",
+      "author_id": "A5119505671",
+      "works_count": 2,
+      "h_index": 0
+    },
+    {
+      "scraped_name": "Emre  Ko\u00e7er",
+      "openalex_name": "Emre Ko\u00e7er",
+      "author_id": "A5113051817",
+      "works_count": 2,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "\u00d6zberk  \u00d6zt\u00fcrk",
+      "openalex_name": "\u00d6zberk \u00d6zt\u00fcrk",
+      "author_id": "A5000745019",
+      "works_count": 13,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "Raci Berk  \u0130slim",
+      "openalex_name": "Raci Berk \u0130slim",
+      "author_id": "A5081965321",
+      "works_count": 5,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Salih Numan  B\u00fcy\u00fckba\u015f",
+      "openalex_name": "Salih Numan B\u00fcy\u00fckba\u015f",
+      "author_id": "A5119399470",
+      "works_count": 1,
+      "h_index": 0
+    },
+    {
+      "scraped_name": "Melik  Yaz\u0131c\u0131",
+      "openalex_name": "Melik Yaz\u0131c\u0131",
+      "author_id": "A5011870304",
+      "works_count": 55,
+      "h_index": 9
+    },
+    {
+      "scraped_name": "\u00d6mer  Ceylan",
+      "openalex_name": "\u00d6mer Ceylan",
+      "author_id": "A5066962694",
+      "works_count": 52,
+      "h_index": 9
+    },
+    {
+      "scraped_name": "Amin  Bagherzadeh",
+      "openalex_name": "Amin Bagherzadeh",
+      "author_id": "A5032275868",
+      "works_count": 12,
+      "h_index": 7
+    },
+    {
+      "scraped_name": "G\u00fcl  Kozalak",
+      "openalex_name": "G\u00fcl Kozalak",
+      "author_id": "A5009376214",
+      "works_count": 19,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Mohammad Yusaf  Azimi",
+      "openalex_name": "Mohammad Yusaf Azimi",
+      "author_id": "A5033390385",
+      "works_count": 4,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "Zaeema  Khan",
+      "openalex_name": "Zaeema Khan",
+      "author_id": "A5069904682",
+      "works_count": 17,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Albert  Erkip",
+      "openalex_name": "Burak Erman",
+      "author_id": "A5038786006",
+      "works_count": 380,
+      "h_index": 44
+    },
+    {
+      "scraped_name": "Alev  Topuzo\u011flu",
+      "openalex_name": "Alev Topuzo\u011flu",
+      "author_id": "A5040765367",
+      "works_count": 43,
+      "h_index": 13
+    },
+    {
+      "scraped_name": "Asif  \u015eabanovi\u00e7",
+      "openalex_name": "Asif \u015eabanovi\u00e7",
+      "author_id": "A5065559600",
+      "works_count": 349,
+      "h_index": 27
+    },
+    {
+      "scraped_name": "G\u00fcnd\u00fcz  Ulusoy",
+      "openalex_name": "G\u00fcnd\u00fcz Ulusoy",
+      "author_id": "A5046226173",
+      "works_count": 139,
+      "h_index": 28
+    },
+    {
+      "scraped_name": "H\u00fcveyda  Ba\u015fa\u011fa",
+      "openalex_name": "H\u00fcveyda Ba\u015fa\u011fa",
+      "author_id": "A5028118284",
+      "works_count": 86,
+      "h_index": 30
+    },
+    {
+      "scraped_name": "Kemal  \u0130nan",
+      "openalex_name": "K. \u0130nan",
+      "author_id": "A5071680950",
+      "works_count": 19,
+      "h_index": 6
+    },
+    {
+      "scraped_name": "Zehra  Sayers",
+      "openalex_name": "Zehra Sayers",
+      "author_id": "A5072906895",
+      "works_count": 89,
+      "h_index": 17
+    },
+    {
+      "scraped_name": "Henning  Stichtenoth",
+      "openalex_name": "Henning Stichtenoth",
+      "author_id": "A5052204801",
+      "works_count": 109,
+      "h_index": 31
+    },
+    {
+      "scraped_name": "Meltem  M\u00fcft\u00fcler Ba\u00e7",
+      "openalex_name": "Meltem M\u00fcft\u00fcler\u2010Ba\u00e7",
+      "author_id": "A5090349901",
+      "works_count": 156,
+      "h_index": 22
+    },
+    {
+      "scraped_name": "Emre  Sel\u00e7uk",
+      "openalex_name": "Emre Sel\u00e7uk",
+      "author_id": "A5011460372",
+      "works_count": 65,
+      "h_index": 20
+    },
+    {
+      "scraped_name": "Abdurrahman  At\u00e7\u0131l",
+      "openalex_name": "Abdurrahman At\u00e7\u0131l",
+      "author_id": "A5036724657",
+      "works_count": 35,
+      "h_index": 6
+    },
+    {
+      "scraped_name": "Abdurrahman  Aydemir",
+      "openalex_name": "Abdurrahman Aydemir",
+      "author_id": "A5103951309",
+      "works_count": 77,
+      "h_index": 19
+    },
+    {
+      "scraped_name": "A. Bet\u00fcl  \u00c7elik",
+      "openalex_name": "Ay\u015fe Bet\u00fcl \u00c7elik",
+      "author_id": "A5021473656",
+      "works_count": 83,
+      "h_index": 15
+    },
+    {
+      "scraped_name": "Alexander  Rodivilov",
+      "openalex_name": "Alexander Rodivilov",
+      "author_id": "A5034511410",
+      "works_count": 23,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "Alpay  Filiztekin",
+      "openalex_name": "Alpay Filiztekin",
+      "author_id": "A5076105069",
+      "works_count": 77,
+      "h_index": 12
+    },
+    {
+      "scraped_name": "Asl\u0131  \u0130kizo\u011flu Erens\u00fc",
+      "openalex_name": "Asl\u0131 \u0130kizo\u011flu Erens\u00fc",
+      "author_id": "A5067044356",
+      "works_count": 7,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Ate\u015f  Alt\u0131nordu",
+      "openalex_name": "Ate\u015f Alt\u0131nordu",
+      "author_id": "A5089907844",
+      "works_count": 25,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Ay\u015fe  Kad\u0131o\u011flu",
+      "openalex_name": "Ay\u015fe Kad\u0131o\u011flu",
+      "author_id": "A5028216671",
+      "works_count": 43,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "Ay\u015fe  Ozil",
+      "openalex_name": "Ay\u015fe \u00d6zil",
+      "author_id": "A5043867001",
+      "works_count": 20,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "Ay\u015fecan  Terzio\u011flu",
+      "openalex_name": "Ay\u015fecan Terzio\u011flu",
+      "author_id": "A5019269425",
+      "works_count": 23,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "Berk  Esen",
+      "openalex_name": "Berk Esen",
+      "author_id": "A5050872186",
+      "works_count": 34,
+      "h_index": 14
+    },
+    {
+      "scraped_name": "\u00c7a\u011fla  Ayd\u0131n",
+      "openalex_name": "\u00c7a\u011fla Ayd\u0131n",
+      "author_id": "A5034206042",
+      "works_count": 40,
+      "h_index": 11
+    },
+    {
+      "scraped_name": "Cavit  Baran",
+      "openalex_name": "Cavit Baran",
+      "author_id": "A5024378654",
+      "works_count": 10,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "Cenk  \u00d6zbay",
+      "openalex_name": "Cenk \u00d6zbay",
+      "author_id": "A5021316762",
+      "works_count": 30,
+      "h_index": 11
+    },
+    {
+      "scraped_name": "\u00c7i\u011fdem  Ba\u011fc\u0131",
+      "openalex_name": "Sabahat \u00c7i\u011fdem Ba\u011fci",
+      "author_id": "A5081596249",
+      "works_count": 83,
+      "h_index": 25
+    },
+    {
+      "scraped_name": "Emre  Erol",
+      "openalex_name": "Erol Emre",
+      "author_id": "A5078631604",
+      "works_count": 43,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "Emrehan  Aktu\u011f",
+      "openalex_name": "H\u00fczeyfe Torun",
+      "author_id": "A5044567615",
+      "works_count": 50,
+      "h_index": 11
+    },
+    {
+      "scraped_name": "Erdal  Ayd\u0131n",
+      "openalex_name": "Erdal Ayd\u0131n",
+      "author_id": "A5091723188",
+      "works_count": 55,
+      "h_index": 11
+    },
+    {
+      "scraped_name": "Eren  G\u00fcnseli",
+      "openalex_name": "Eren G\u00fcnseli",
+      "author_id": "A5049424846",
+      "works_count": 73,
+      "h_index": 13
+    },
+    {
+      "scraped_name": "Eren  \u0130nci",
+      "openalex_name": "Eren \u0130nci",
+      "author_id": "A5035408479",
+      "works_count": 48,
+      "h_index": 13
+    },
+    {
+      "scraped_name": "Faik  Kurtulmu\u015f",
+      "openalex_name": "Faik Kurtulmu\u015f",
+      "author_id": "A5002707748",
+      "works_count": 21,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Fatih Serkant  Ad\u0131g\u00fczel",
+      "openalex_name": "Fatih Serkant Adiguzel",
+      "author_id": "A5005163191",
+      "works_count": 9,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Feyza  \u00c7orap\u00e7\u0131",
+      "openalex_name": "Feyza \u00c7orap\u00e7\u0131",
+      "author_id": "A5002115833",
+      "works_count": 46,
+      "h_index": 12
+    },
+    {
+      "scraped_name": "G\u00fcl  G\u00fcnayd\u0131n",
+      "openalex_name": "G\u00fcl G\u00fcnayd\u0131n",
+      "author_id": "A5086180985",
+      "works_count": 53,
+      "h_index": 14
+    },
+    {
+      "scraped_name": "\u0130nci  G\u00fcm\u00fc\u015f",
+      "openalex_name": "\u0130nci G\u00fcm\u00fc\u015f",
+      "author_id": "A5091589365",
+      "works_count": 21,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Ivan  Lopez Cruz",
+      "openalex_name": "Iv\u00e1n L\u00f3pez Cruz",
+      "author_id": "A5001274532",
+      "works_count": 27,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Junko  Kanero",
+      "openalex_name": "Junko Kanero",
+      "author_id": "A5027611524",
+      "works_count": 54,
+      "h_index": 12
+    },
+    {
+      "scraped_name": "Mehmet  Ba\u00e7",
+      "openalex_name": "Mehmet Ba\u00e7",
+      "author_id": "A5059993803",
+      "works_count": 65,
+      "h_index": 12
+    },
+    {
+      "scraped_name": "Mehmet  Barlo",
+      "openalex_name": "Mehmet Barlo",
+      "author_id": "A5013992177",
+      "works_count": 39,
+      "h_index": 6
+    },
+    {
+      "scraped_name": "Mehmet  Kuru",
+      "openalex_name": "Mehmet Kuru",
+      "author_id": "A5102556453",
+      "works_count": 5,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Mert  Moral",
+      "openalex_name": "Mert Moral",
+      "author_id": "A5051672613",
+      "works_count": 73,
+      "h_index": 6
+    },
+    {
+      "scraped_name": "Murat  Germen",
+      "openalex_name": "Murat Germen",
+      "author_id": "A5068810715",
+      "works_count": 43,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "Nebi  S\u00fcmer",
+      "openalex_name": "Nebi S\u00fcmer",
+      "author_id": "A5069086842",
+      "works_count": 165,
+      "h_index": 27
+    },
+    {
+      "scraped_name": "Nihan  Alp",
+      "openalex_name": "Nihan Alp",
+      "author_id": "A5026912696",
+      "works_count": 45,
+      "h_index": 6
+    },
+    {
+      "scraped_name": "Olesya  Blazhenkova",
+      "openalex_name": "Olesya Blazhenkova",
+      "author_id": "A5067448407",
+      "works_count": 37,
+      "h_index": 13
+    },
+    {
+      "scraped_name": "Onur  Yaz\u0131c\u0131gil",
+      "openalex_name": "Onur Yaz\u0131c\u0131gil",
+      "author_id": "A5037628354",
+      "works_count": 6,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Oya  Ye\u011fen",
+      "openalex_name": "Oya Ye\u011fen",
+      "author_id": "A5043646193",
+      "works_count": 9,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "\u00d6zge  Kemahl\u0131o\u011flu",
+      "openalex_name": "\u00d6zge Kemahl\u0131o\u011flu",
+      "author_id": "A5075747670",
+      "works_count": 45,
+      "h_index": 9
+    },
+    {
+      "scraped_name": "Robert  Booth",
+      "openalex_name": "Robert W. Booth",
+      "author_id": "A5063301116",
+      "works_count": 44,
+      "h_index": 9
+    },
+    {
+      "scraped_name": "Sel\u00e7uk  Artut",
+      "openalex_name": "Sel\u00e7uk Artut",
+      "author_id": "A5067003089",
+      "works_count": 36,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "Senem  Ayd\u0131n D\u00fczgit",
+      "openalex_name": "Senem Ayd\u0131n\u2010D\u00fczgit",
+      "author_id": "A5082451270",
+      "works_count": 81,
+      "h_index": 17
+    },
+    {
+      "scraped_name": "Sibel  Irz\u0131k",
+      "openalex_name": "Sibel Irz\u0131k",
+      "author_id": "A5021013147",
+      "works_count": 24,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Tommaso  Stefini",
+      "openalex_name": "Tommaso Stefini",
+      "author_id": "A5095855938",
+      "works_count": 6,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Yoong Wah Alex  Wong",
+      "openalex_name": "Yoong Wah Alex Wong",
+      "author_id": "A5003559273",
+      "works_count": 10,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Zeynep G\u00fclru  G\u00f6ker",
+      "openalex_name": "Zeynep G\u00fclru G\u00f6ker",
+      "author_id": "A5102972950",
+      "works_count": 21,
+      "h_index": 6
+    },
+    {
+      "scraped_name": "Ay\u015feg\u00fcl  Toker",
+      "openalex_name": "Ay\u015feg\u00fcl Toker",
+      "author_id": "A5073529402",
+      "works_count": 31,
+      "h_index": 14
+    },
+    {
+      "scraped_name": "Abdullah  Da\u015fc\u0131",
+      "openalex_name": "Abdullah Da\u015f\u00e7\u0131",
+      "author_id": "A5034792334",
+      "works_count": 34,
+      "h_index": 11
+    },
+    {
+      "scraped_name": "A. Doruk  G\u00fcnayd\u0131n",
+      "openalex_name": "A. Doruk G\u00fcnayd\u0131n",
+      "author_id": "A5026378731",
+      "works_count": 45,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Alex  Cayrol",
+      "openalex_name": "Alex Cayrol",
+      "author_id": "A5015562446",
+      "works_count": 8,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Altu\u011f  Tanaltay",
+      "openalex_name": "Altu\u011f Tanaltay",
+      "author_id": "A5089700850",
+      "works_count": 9,
+      "h_index": 3
+    },
+    {
+      "scraped_name": "Arzu  Wasti",
+      "openalex_name": "S. Arzu Wasti",
+      "author_id": "A5046762192",
+      "works_count": 64,
+      "h_index": 26
+    },
+    {
+      "scraped_name": "Ay\u015fe  Kocab\u0131y\u0131ko\u011flu",
+      "openalex_name": "Ay\u015fe Kocab\u0131y\u0131ko\u011flu",
+      "author_id": "A5072785175",
+      "works_count": 17,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Berna  Beyhan",
+      "openalex_name": "Berna Beyhan",
+      "author_id": "A5032113778",
+      "works_count": 33,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "B\u00fcnyamin  \u00d6nal",
+      "openalex_name": "Bunyamin Onal",
+      "author_id": "A5012544747",
+      "works_count": 14,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Burak  G\u00f6kg\u00fcr",
+      "openalex_name": "Burak G\u00f6kg\u00fcr",
+      "author_id": "A5037246866",
+      "works_count": 16,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "Can  Akkan",
+      "openalex_name": "Can Akkan",
+      "author_id": "A5011030657",
+      "works_count": 30,
+      "h_index": 11
+    },
+    {
+      "scraped_name": "Can  Aktan",
+      "openalex_name": "Aras Can Aktan",
+      "author_id": "A5037861865",
+      "works_count": 7,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Celile It\u0131r  G\u00f6\u011f\u00fc\u015f",
+      "openalex_name": "Celile Itir G\u00f6\u011f\u00fc\u015f",
+      "author_id": "A5053663626",
+      "works_count": 21,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "Cenk  Ko\u00e7a\u015f",
+      "openalex_name": "Cenk Ko\u00e7a\u015f",
+      "author_id": "A5080115815",
+      "works_count": 31,
+      "h_index": 11
+    },
+    {
+      "scraped_name": "Evrim  Akdo\u011fu",
+      "openalex_name": "Evrim Akdo\u011fu",
+      "author_id": "A5056363638",
+      "works_count": 26,
+      "h_index": 7
+    },
+    {
+      "scraped_name": "Ezgi  Akp\u0131nar",
+      "openalex_name": "Ezgi Akp\u0131nar",
+      "author_id": "A5087695685",
+      "works_count": 28,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "Ezgi  \u00d6zgen",
+      "openalex_name": "Ezgi Ozgen",
+      "author_id": "A5082041718",
+      "works_count": 2,
+      "h_index": 0
+    },
+    {
+      "scraped_name": "F\u00fcsun  \u00dclengin",
+      "openalex_name": "F\u00fcsun \u00dclengin",
+      "author_id": "A5051591565",
+      "works_count": 128,
+      "h_index": 30
+    },
+    {
+      "scraped_name": "\u0130pek  Nibat",
+      "openalex_name": "Ipek Nibat",
+      "author_id": "A5063873874",
+      "works_count": 3,
+      "h_index": 2
+    },
+    {
+      "scraped_name": "Jane  Maley",
+      "openalex_name": "Jane Maley",
+      "author_id": "A5078089067",
+      "works_count": 96,
+      "h_index": 22
+    },
+    {
+      "scraped_name": "Melek  Ak\u0131n Ate\u015f",
+      "openalex_name": "Melek Ak\u0131n Ate\u015f",
+      "author_id": "A5013720941",
+      "works_count": 30,
+      "h_index": 10
+    },
+    {
+      "scraped_name": "Nihat  Kasap",
+      "openalex_name": "Nihat Kasap",
+      "author_id": "A5024232655",
+      "works_count": 67,
+      "h_index": 8
+    },
+    {
+      "scraped_name": "N\u00fcfer Yasin  Ate\u015f",
+      "openalex_name": "N\u00fcfer Yasin Ate\u015f",
+      "author_id": "A5024562881",
+      "works_count": 58,
+      "h_index": 14
+    },
+    {
+      "scraped_name": "Onuralp  Arma\u011fan",
+      "openalex_name": "Onuralp Arma\u011fan",
+      "author_id": "A5092836844",
+      "works_count": 2,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Orhan Erem  Ate\u015fa\u011fao\u011flu",
+      "openalex_name": "Orhan Erem Ate\u015fa\u011fao\u011flu",
+      "author_id": "A5007446423",
+      "works_count": 28,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "Ozan  Duygulu",
+      "openalex_name": "Ozan Duygulu",
+      "author_id": "A5092532186",
+      "works_count": 1,
+      "h_index": 0
+    },
+    {
+      "scraped_name": "\u00d6zg\u00fcr  Demirta\u015f",
+      "openalex_name": "K. \u00d6zg\u00fcr Demirta\u015f",
+      "author_id": "A5008072780",
+      "works_count": 97,
+      "h_index": 15
+    },
+    {
+      "scraped_name": "Peren  \u00d6zturan",
+      "openalex_name": "Peren \u00d6zturan",
+      "author_id": "A5002686010",
+      "works_count": 18,
+      "h_index": 5
+    },
+    {
+      "scraped_name": "Raha  Akhavan",
+      "openalex_name": "Raha Akhavan\u2010Tabatabaei",
+      "author_id": "A5048304942",
+      "works_count": 75,
+      "h_index": 15
+    },
+    {
+      "scraped_name": "Remzi  G\u00f6z\u00fcb\u00fcy\u00fck",
+      "openalex_name": "Remzi G\u00f6z\u00fcb\u00fcy\u00fck",
+      "author_id": "A5038959580",
+      "works_count": 10,
+      "h_index": 4
+    },
+    {
+      "scraped_name": "\u015eerif Aziz  \u015eim\u015fir",
+      "openalex_name": "\u015eerif Aziz \u015eim\u015fir",
+      "author_id": "A5074118849",
+      "works_count": 34,
+      "h_index": 9
+    },
+    {
+      "scraped_name": "Tevhide  Altekin",
+      "openalex_name": "F. Tevhide Altekin",
+      "author_id": "A5063936367",
+      "works_count": 12,
+      "h_index": 9
+    },
+    {
+      "scraped_name": "Timothy Scott  Kiessling",
+      "openalex_name": "Timothy Kiessling",
+      "author_id": "A5044158510",
+      "works_count": 82,
+      "h_index": 23
+    },
+    {
+      "scraped_name": "Ulf  Nilsson",
+      "openalex_name": "Ulf Nilsson",
+      "author_id": "A5002111119",
+      "works_count": 103,
+      "h_index": 31
+    },
+    {
+      "scraped_name": "Vahid  Karimi Motahhar",
+      "openalex_name": "Vahid Karimi Motahhar",
+      "author_id": "A5099637206",
+      "works_count": 2,
+      "h_index": 1
+    },
+    {
+      "scraped_name": "Yi\u011fit  At\u0131lgan",
+      "openalex_name": "Yi\u011fit At\u0131lgan",
+      "author_id": "A5076454484",
+      "works_count": 79,
+      "h_index": 12
+    },
+    {
+      "scraped_name": "Zeynep  Ayd\u0131n G\u00f6kg\u00f6z",
+      "openalex_name": "Zeynep Aydin G\u00f6kg\u00f6z",
+      "author_id": "A5027778623",
+      "works_count": 5,
+      "h_index": 3
+    }
+  ],
+  "not_found": [
+    "Ayesha Asloob  Topa\u00e7o\u011flu",
+    "Devrim  Co\u015fkun",
+    "Dimitrios  Papathanasiou",
+    "Ezgi  Karabulut T\u00fcrkseven",
+    "Hasan Sait  \u00d6lmez",
+    "Yusuf Ziya  Mencelo\u011flu",
+    "Ebru  Demir Dede",
+    "K\u00fcbra  Kaytanc\u0131",
+    "Marie Amalore Nambi  Pushparaj",
+    "Mayuresh Mahadeo  Londhe",
+    "Samira  Firouz",
+    "\u015eenay  Avdan",
+    "Somayyeh  Alidoust",
+    "Zohreh  Dabagh",
+    "Ratko  Darda",
+    "At\u0131l Utku  Ay",
+    "Elif D\u00fcrdane  Ko\u00e7",
+    "Ay\u015fe K\u0131v\u0131lc\u0131m  Co\u015fkun",
+    "Dimitar  Jetchev",
+    "Emine  Y\u0131lmaz",
+    "Engin  K\u0131rda",
+    "M\u00fckerrem  \u00c7akmak",
+    "Naci  Dai",
+    "Rabia Tu\u011f\u00e7e  Yaz\u0131c\u0131gil",
+    "G\u00f6rkem  Gemalmaz",
+    "Mert  \u00d6z\u00e7elik",
+    "Musa  \u015eim\u015fek",
+    "Sena  Yapsu",
+    "Zeki Doruk  Erden",
+    "Beyhan  Adanur Dedet\u00fcrk",
+    "Mehmet Ali  Alpar",
+    "Ahu  Antmen",
+    "Christopher  \u00c7olak",
+    "Esra  Durceylan Kaygusuz",
+    "Kenan  Sharpe",
+    "Kerem Ozan  Bayraktar",
+    "Kristen  Biehl \u00d6ztuzcu",
+    "Muhammet Tahir  K\u0131lavuz",
+    "Riccardo  Franceschin",
+    "Selim  Birsel",
+    "Tun\u00e7 Tekin  Evcimen",
+    "Bar\u0131\u015f Erman  Depecik",
+    "Nuri Zafer  Yenal",
+    "\u00d6yk\u00fc  Arkan Tun\u00e7",
+    "Selen  Kars \u00dcnl\u00fco\u011flu",
+    "Yusuf  Soner",
+    "Zeynep  Karag\u00fcr"
+  ],
+  "total_works_estimate": 17536
+}

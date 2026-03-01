@@ -2,6 +2,7 @@
 
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
+import CoAuthorshipGraph from '@/components/CoAuthorshipGraph';
 
 interface Author {
     id: string;
@@ -13,14 +14,13 @@ interface Author {
     phone?: string | null;
 }
 
-interface Publication {
-    id: string;
-    title: string;
+interface YearlyMetric {
     year: number;
+    pub_count: number;
     citations: number;
-    venue: string | null;
-    pdf_url: string | null;
 }
+
+// Note: Publications data is stored in backend for future search engine implementation
 
 export default function ProfilePage() {
     const params = useParams();
@@ -28,23 +28,31 @@ export default function ProfilePage() {
     const id = params.id as string;
 
     const [author, setAuthor] = useState<Author | null>(null);
-    const [publications, setPublications] = useState<Publication[]>([]);
+    const [metrics, setMetrics] = useState<YearlyMetric[]>([]);
     const [loading, setLoading] = useState(true);
+    const [hoveredYear, setHoveredYear] = useState<YearlyMetric | null>(null);
 
     useEffect(() => {
         if (id) {
             Promise.all([
                 fetch(`http://localhost:8000/authors/${id}`).then(res => res.json()),
-                fetch(`http://localhost:8000/authors/${id}/publications`).then(res => res.json())
+                fetch(`http://localhost:8000/authors/${id}/metrics`).then(res => res.json())
             ])
-                .then(([authorData, pubsData]) => {
+                .then(([authorData, metricsData]) => {
                     setAuthor(authorData);
-                    setPublications(pubsData);
+                    setMetrics(metricsData);
                     setLoading(false);
                 })
                 .catch((err) => console.error(err));
         }
     }, [id]);
+
+    // Calculate total citations
+    const totalCitations = metrics.reduce((acc, m) => acc + (m.citations || 0), 0);
+
+    // Get recent years for sparkline (last 20 years)
+    const recentMetrics = metrics.slice(-20);
+    const maxCitations = Math.max(...recentMetrics.map(m => m.citations || 0), 1);
 
     if (loading) return <div className="container" style={{ paddingTop: '4rem' }}>Loading profile...</div>;
     if (!author) return <div className="container" style={{ paddingTop: '4rem' }}>Author not found</div>;
@@ -102,10 +110,10 @@ export default function ProfilePage() {
                                 {author.name}
                             </h1>
                             <p style={{ fontSize: '1.25rem', color: '#52525b', fontFamily: 'var(--font-sans)', marginBottom: '1.5rem', fontWeight: 300 }}>
-                                {author.dept || 'Faculty of Engineering and Natural Sciences'}
+                                {author.name === 'Yusuf Leblebici' ? 'Rektör' : (author.dept || 'Faculty of Engineering and Natural Sciences')}
                             </p>
 
-                            <div style={{ display: 'flex', gap: '2rem', borderTop: '1px solid #d4d4d8', paddingTop: '1.5rem', marginTop: '1rem' }}>
+                            <div style={{ display: 'flex', gap: '2rem', borderTop: '1px solid #d4d4d8', paddingTop: '1.5rem', marginTop: '1rem', flexWrap: 'wrap' }}>
                                 <div>
                                     <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>Email</span>
                                     <a href={`mailto:${author.email}`} style={{ color: '#002855', textDecoration: 'underline' }}>
@@ -122,11 +130,55 @@ export default function ProfilePage() {
                                     <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>ORCID</span>
                                     <span style={{ fontFamily: 'monospace', color: '#111' }}>{author.orcid || 'N/A'}</span>
                                 </div>
-                                <div>
-                                    <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>Citations</span>
-                                    <span style={{ fontWeight: 700, fontSize: '1.1rem' }}>
-                                        {publications.reduce((acc, p) => acc + (p.citations || 0), 0).toLocaleString()}
+                                {/* Citations with interactive chart */}
+                                <div style={{ minWidth: '200px' }}>
+                                    <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>
+                                        {hoveredYear ? `Citations in ${hoveredYear.year}` : 'Total Citations'}
                                     </span>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        <span style={{ fontWeight: 700, fontSize: '1.5rem', color: '#002855', transition: 'all 0.15s' }}>
+                                            {hoveredYear ? hoveredYear.citations.toLocaleString() : totalCitations.toLocaleString()}
+                                        </span>
+                                        {/* Interactive bar chart */}
+                                        {recentMetrics.length > 0 && (
+                                            <div
+                                                style={{
+                                                    display: 'flex',
+                                                    alignItems: 'flex-end',
+                                                    gap: '3px',
+                                                    height: '60px',
+                                                    padding: '8px 12px',
+                                                    backgroundColor: '#fff',
+                                                    borderRadius: '8px',
+                                                    border: '1px solid #e4e4e7',
+                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
+                                                }}
+                                                onMouseLeave={() => setHoveredYear(null)}
+                                            >
+                                                {recentMetrics.map((m) => (
+                                                    <div
+                                                        key={m.year}
+                                                        onMouseEnter={() => setHoveredYear(m)}
+                                                        style={{
+                                                            width: '8px',
+                                                            height: `${Math.max((m.citations / maxCitations) * 50, 3)}px`,
+                                                            backgroundColor: hoveredYear?.year === m.year ? '#d6001c' : '#002855',
+                                                            borderRadius: '2px',
+                                                            cursor: 'pointer',
+                                                            transition: 'all 0.15s',
+                                                            opacity: hoveredYear && hoveredYear.year !== m.year ? 0.4 : 1
+                                                        }}
+                                                    />
+                                                ))}
+                                            </div>
+                                        )}
+                                        {recentMetrics.length > 0 && (
+                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#a1a1aa' }}>
+                                                <span>{recentMetrics[0]?.year}</span>
+                                                <span>{recentMetrics[recentMetrics.length - 1]?.year}</span>
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             </div>
                         </div>
@@ -134,61 +186,13 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {/* Content - Publications */}
-            <div className="container" style={{ padding: '4rem 1.5rem' }}>
-                <h2 style={{ fontSize: '2rem', marginBottom: '2rem', fontFamily: 'var(--font-serif)', color: '#111', borderBottom: '2px solid #002855', paddingBottom: '0.5rem', display: 'inline-block' }}>
-                    Selected Publications
-                </h2>
-
-                <div style={{ display: 'flex', flexDirection: 'column', gap: '0' }}>
-                    {publications.map((bib, index) => (
-                        <div key={bib.id} style={{
-                            padding: '1.5rem 0',
-                            borderBottom: '1px solid #e4e4e7',
-                            display: 'flex',
-                            gap: '2rem'
-                        }}>
-                            <div style={{ minWidth: '60px', color: '#71717a', fontWeight: 600, fontSize: '1.1rem' }}>
-                                {bib.year}
-                            </div>
-                            <div>
-                                <h3 style={{ fontSize: '1.2rem', fontWeight: '600', marginBottom: '0.5rem', color: '#111', fontFamily: 'var(--font-serif)' }}>
-                                    {bib.title}
-                                </h3>
-                                <div style={{ fontSize: '0.95rem', color: '#52525b', fontFamily: 'var(--font-sans)', lineHeight: 1.5 }}>
-                                    {bib.venue && <span style={{ fontStyle: 'italic' }}>Published in {bib.venue}. </span>}
-                                    <span style={{ color: '#002855', fontWeight: 500 }}>Cited by {bib.citations}</span>
-                                    {bib.pdf_url && (
-                                        <a
-                                            href={bib.pdf_url}
-                                            target="_blank"
-                                            rel="noopener noreferrer"
-                                            onClick={(e) => e.stopPropagation()} // Prevent card click if nested
-                                            style={{
-                                                marginLeft: '1rem',
-                                                color: '#d6001c',
-                                                fontWeight: 600,
-                                                textDecoration: 'none',
-                                                display: 'inline-flex',
-                                                alignItems: 'center',
-                                                gap: '0.25rem',
-                                                fontSize: '0.85rem',
-                                                border: '1px solid #d6001c',
-                                                padding: '0.1rem 0.5rem',
-                                                borderRadius: '4px'
-                                            }}
-                                        >
-                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"></path><polyline points="14 2 14 8 20 8"></polyline><line x1="16" y1="13" x2="8" y2="13"></line><line x1="16" y1="17" x2="8" y2="17"></line><polyline points="10 9 9 9 8 9"></polyline></svg>
-                                            PDF
-                                        </a>
-                                    )}
-                                </div>
-                            </div>
-                        </div>
-                    ))}
-                    {publications.length === 0 && <p style={{ color: '#71717a' }}>No publications found.</p>}
-                </div>
+            {/* Co-authorship Network Graph */}
+            <div className="container" style={{ marginTop: '2rem' }}>
+                <CoAuthorshipGraph authorId={id} authorName={author.name} />
             </div>
+
+            {/* Publications section removed - data is stored in backend for future search engine implementation */}
         </div>
     );
 }
+
