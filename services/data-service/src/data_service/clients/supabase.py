@@ -13,11 +13,16 @@ instrumentation in the future.
 from __future__ import annotations
 
 import json
+import sys
+import time
 from typing import Any, Dict, Iterable, List, Optional
 
 import asyncpg
 
 from ..config import Settings
+from ..logging import get_logger
+
+logger = get_logger(__name__)
 from ..utils.hashing import compute_hash
 
 
@@ -62,6 +67,46 @@ class Database:
         assert self._pool is not None, "Database not connected"
         async with self._pool.acquire() as conn:
             return await conn.fetchrow(query, *args)
+
+    async def _executemany_batched(
+        self,
+        query: str,
+        records: List[tuple],
+        label: str = "records",
+        batch_size: int = 500,
+    ) -> None:
+        """Execute an INSERT/UPSERT in batches with progress logging.
+
+        Parameters
+        ----------
+        query: str
+            The parameterised SQL statement.
+        records: List[tuple]
+            All rows to insert.
+        label: str
+            Human-readable name used in progress logs.
+        batch_size: int
+            Number of rows per batch (default 500).
+        """
+        if not records:
+            return
+        assert self._pool is not None, "Database not connected"
+        total = len(records)
+        start = time.time()
+        for i in range(0, total, batch_size):
+            batch = records[i : i + batch_size]
+            async with self._pool.acquire() as conn:
+                await conn.executemany(query, batch)
+            done = min(i + batch_size, total)
+            elapsed = time.time() - start
+            logger.info(
+                {
+                    "message": f"Upserted {label}",
+                    "progress": f"{done}/{total}",
+                    "elapsed_s": round(elapsed, 1),
+                }
+            )
+            print(f"  ↳ {label}: {done}/{total} ({round(elapsed, 1)}s)", flush=True)
 
     # ------------------------------------------------------------------
     # Staging insert helpers
@@ -194,11 +239,7 @@ class Database:
                 author.get("openalex_created_date"),
                 author.get("openalex_updated_date"),
             ))
-        if not records:
-            return
-        assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            await conn.executemany(query, records)
+        await self._executemany_batched(query, records, label="authors")
 
     async def upsert_publications(self, works: Iterable[Dict[str, Any]]) -> None:
         """Upsert normalised publication records with all OpenAlex fields."""
@@ -268,11 +309,7 @@ class Database:
                 work.get("openalex_created_date"),
                 work.get("openalex_updated_date"),
             ))
-        if not records:
-            return
-        assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            await conn.executemany(query, records)
+        await self._executemany_batched(query, records, label="publications")
 
     async def upsert_author_publications(self, relations: Iterable[Dict[str, Any]]) -> None:
         """Upsert author-publication relation records."""
@@ -283,11 +320,7 @@ class Database:
         records = []
         for rel in relations:
             records.append((rel["author_id"], rel["publication_id"]))
-        if not records:
-            return
-        assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            await conn.executemany(query, records)
+        await self._executemany_batched(query, records, label="author_publications")
 
     async def upsert_topics(self, topics: Iterable[Dict[str, Any]]) -> None:
         """Upsert topics into the topics table and return their IDs.
@@ -302,9 +335,7 @@ class Database:
         names = [topic["name"] for topic in topics]
         if not names:
             return
-        assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            await conn.executemany(insert_query, [(name,) for name in names])
+        await self._executemany_batched(insert_query, [(name,) for name in names], label="topics")
         # Fetch ids
         select_query = "SELECT id, name FROM topics WHERE name = ANY($1::text[])"
         rows = await self.fetch(select_query, names)
@@ -318,11 +349,7 @@ class Database:
             "VALUES ($1, $2) ON CONFLICT DO NOTHING"
         )
         records = [(rel["publication_id"], rel["topic_id"]) for rel in rels]
-        if not records:
-            return
-        assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            await conn.executemany(query, records)
+        await self._executemany_batched(query, records, label="publication_topics")
 
     async def upsert_metrics(self, metrics: Iterable[Dict[str, Any]]) -> None:
         """Insert or update author-year metrics.
@@ -340,11 +367,7 @@ class Database:
         records = []
         for m in metrics:
             records.append((m["author_id"], m["year"], m["pub_count"], m["citations_year"]))
-        if not records:
-            return
-        assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            await conn.executemany(query, records)
+        await self._executemany_batched(query, records, label="metrics")
 
     async def insert_coauthor_edges(self, edges: Iterable[Dict[str, Any]]) -> None:
         """Insert co-author edges into the coauthor_edges table.
@@ -360,8 +383,4 @@ class Database:
         records = []
         for edge in edges:
             records.append((edge["author_id"], edge["coauthor_id"], edge["weight"]))
-        if not records:
-            return
-        assert self._pool is not None
-        async with self._pool.acquire() as conn:
-            await conn.executemany(query, records)
+        await self._executemany_batched(query, records, label="coauthor_edges")

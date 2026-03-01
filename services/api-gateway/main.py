@@ -421,6 +421,108 @@ from person_search import person_search as do_person_search, suggest as do_sugge
 from topic_search import topic_search as do_topic_search
 
 
+async def _fallback_topic_search(
+    query: str,
+    pool: asyncpg.Pool,
+    limit: int = 10,
+    department: str | None = None,
+):
+    """SQL-based topic search fallback (no embeddings needed).
+
+    Finds faculty whose publications or topics match the query keywords
+    using trigram similarity and ILIKE matching.
+    """
+    from search_models import TopicResult, MatchSnippet
+
+    dept_filter = ""
+    params = [query, f"%{query}%"]
+    if department:
+        dept_filter = "AND a.dept ILIKE $3"
+        params.append(f"%{department}%")
+
+    rows = await pool.fetch(f"""
+        WITH matched_pubs AS (
+            SELECT DISTINCT ON (a.id, p.id)
+                a.id AS faculty_id,
+                a.name,
+                a.dept,
+                a.image_url,
+                a.email,
+                p.title AS publication_title,
+                p.year,
+                GREATEST(
+                    similarity(COALESCE(t.name, ''), $1),
+                    similarity(COALESCE(p.title, ''), $1)
+                ) AS sim
+            FROM authors a
+            JOIN author_publications ap ON a.id = ap.author_id
+            JOIN publications p ON ap.publication_id = p.id
+            LEFT JOIN publication_topics pt ON p.id = pt.publication_id
+            LEFT JOIN topics t ON pt.topic_id = t.id
+            WHERE a.is_faculty = TRUE
+              AND (
+                  t.name ILIKE $2
+                  OR p.title ILIKE $2
+                  OR p.keywords_json::text ILIKE $2
+              )
+              {dept_filter}
+        )
+        SELECT
+            faculty_id, name, dept, image_url, email,
+            publication_title, year, sim,
+            COUNT(*) OVER (PARTITION BY faculty_id) AS match_count
+        FROM matched_pubs
+        ORDER BY match_count DESC, sim DESC
+    """, *params)
+
+    # Aggregate rows by faculty
+    faculty_map: dict[str, dict] = {}
+    for row in rows:
+        fid = row["faculty_id"]
+        if fid not in faculty_map:
+            faculty_map[fid] = {
+                "name": row["name"],
+                "dept": row["dept"],
+                "image_url": row["image_url"],
+                "email": row["email"],
+                "match_count": row["match_count"],
+                "best_sim": row["sim"],
+                "snippets": [],
+            }
+        info = faculty_map[fid]
+        if len(info["snippets"]) < 3:
+            info["snippets"].append(MatchSnippet(
+                publication_title=row["publication_title"],
+                snippet=row["publication_title"] or "",
+                year=row["year"],
+                similarity=round(float(row["sim"]), 4),
+            ))
+
+    # Sort faculties by match_count (most matching publications first)
+    sorted_faculties = sorted(
+        faculty_map.items(),
+        key=lambda kv: (kv[1]["match_count"], kv[1]["best_sim"]),
+        reverse=True,
+    )[:limit]
+
+    results = []
+    for fid, info in sorted_faculties:
+        # Score: normalize match_count to 0-1 range
+        max_matches = sorted_faculties[0][1]["match_count"] if sorted_faculties else 1
+        score = min(info["match_count"] / max(max_matches, 1), 1.0)
+        results.append(TopicResult(
+            id=fid,
+            name=info["name"],
+            dept=info["dept"],
+            image_url=info["image_url"],
+            email=info["email"],
+            similarity=round(score, 4),
+            explanation=info["snippets"],
+        ))
+
+    return results
+
+
 @app.post("/search", response_model=SearchResponse)
 async def unified_search(req: SearchRequest):
     """Unified search endpoint with intent detection.
@@ -448,13 +550,19 @@ async def unified_search(req: SearchRequest):
         )
 
     if intent in ("TOPIC", "MIXED"):
-        if embedding_model is None:
-            raise HTTPException(503, "Semantic search model not loaded")
-        topic_results = await do_topic_search(
-            req.query, db.pool, embedding_model,
-            limit=req.limit,
-            department=dept_filter,
-        )
+        if embedding_model is not None:
+            topic_results = await do_topic_search(
+                req.query, db.pool, embedding_model,
+                limit=req.limit,
+                department=dept_filter,
+            )
+        else:
+            # Fallback: SQL-based keyword topic search (no embeddings needed)
+            topic_results = await _fallback_topic_search(
+                req.query, db.pool,
+                limit=req.limit,
+                department=dept_filter,
+            )
 
     # 3. Build response
     debug_info = None
