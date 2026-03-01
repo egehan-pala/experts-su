@@ -167,20 +167,29 @@ async def scrape_and_update_images(db: Database) -> None:
                     if img:
                         img_url = img.get('src') or img.get('data-src')
 
-                if img_url:
-                    # Fix relative URLs
-                    if img_url.startswith("/"):
-                        img_url = base_domain + img_url
-                    # Update DB
+                if img_url and img_url.startswith("/"):
+                    img_url = base_domain + img_url
+
+                # Areas of interest finding
+                areas = None
+                all_text = card.get_text(separator=' ', strip=True)
+                match = re.search(r"Araştırma Alanı\s*(.*?)(?=$|E-Posta|Email|Daha Fazla|Telefon|\[|\()", all_text, re.IGNORECASE | re.DOTALL)
+                if match:
+                    areas = match.group(1).replace(']', '').strip()
+                    if len(areas) < 3:
+                        areas = None
+
+                if img_url or areas:
                     if norm_name in name_map:
                         author_id = name_map[norm_name]
+                        # Update DB
+                        # We use COALESCE so if a field is not found in this pass, we don't overwrite existing with NULL
                         await db.execute(
-                            "UPDATE authors SET image_url = $1 WHERE id = $2",
-                            img_url, author_id
+                            "UPDATE authors SET image_url = COALESCE($1, image_url), areas_of_interest = COALESCE($2, areas_of_interest) WHERE id = $3",
+                            img_url, areas, author_id
                         )
                         updated_count += 1
-                        # Remove from map to avoid re-update? Or keep.
-                        logger.info(f"Updated {raw_name} -> {img_url}")
+                        logger.info(f"Updated {raw_name} -> img:{bool(img_url)}, areas:{bool(areas)}")
             
             print(f"   Processed {url}.")
                     

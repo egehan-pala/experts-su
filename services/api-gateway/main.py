@@ -2,6 +2,7 @@ from fastapi import FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 import asyncpg
 import os
+import datetime
 from dotenv import load_dotenv
 from typing import List, Optional
 from pydantic import BaseModel
@@ -56,6 +57,12 @@ async def shutdown():
     await db.disconnect()
 
 # Models
+class TopPublication(BaseModel):
+    title: str
+    year: Optional[int]
+    citations: Optional[int]
+    venue: Optional[str]
+
 class Author(BaseModel):
     id: str
     name: str
@@ -64,7 +71,9 @@ class Author(BaseModel):
     image_url: Optional[str] = None
     email: Optional[str] = None
     phone: Optional[str] = None
+    areas_of_interest: Optional[str] = None
     pub_count: Optional[int] = 0
+    top_publication: Optional[TopPublication] = None
 
 class Publication(BaseModel):
     id: str
@@ -110,11 +119,23 @@ async def search_authors(q: str = Query(..., min_length=2)):
 @app.get("/authors/{author_id}", response_model=Author)
 async def get_author(author_id: str):
     """Get author details."""
-    query = "SELECT id, name, dept, orcid, image_url, email, phone FROM authors WHERE id = $1"
+    query = "SELECT id, name, dept, orcid, image_url, email, phone, areas_of_interest FROM authors WHERE id = $1"
     row = await db.pool.fetchrow(query, author_id)
     if not row:
         raise HTTPException(status_code=404, detail="Author not found")
-    return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'], image_url=row['image_url'], email=row['email'], phone=row['phone'])
+        
+    pub_query = """
+        SELECT p.title, p.year, p.citations, p.venue
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id = $1
+        ORDER BY p.citations DESC NULLS LAST
+        LIMIT 1
+    """
+    pub_row = await db.pool.fetchrow(pub_query, author_id)
+    top_pub = TopPublication(**pub_row) if pub_row else None
+    
+    return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'], image_url=row['image_url'], email=row['email'], phone=row['phone'], areas_of_interest=row['areas_of_interest'], top_publication=top_pub)
 
 @app.get("/authors/{author_id}/publications", response_model=List[Publication])
 async def get_author_publications(author_id: str):
@@ -235,6 +256,9 @@ class NetworkNode(BaseModel):
     name: str
     val: int  # weight/size
     image_url: Optional[str] = None
+    is_faculty: bool = False
+    hop: int = 1
+    joint_papers: int = 0
 
 class NetworkLink(BaseModel):
     source: str
@@ -249,8 +273,7 @@ class NetworkGraph(BaseModel):
 
 @app.get("/authors/{author_id}/metrics", response_model=List[YearlyMetric])
 async def get_author_metrics(author_id: str):
-    """Get yearly publication and citation counts for an author."""
-    # We can get this from author_metrics_yearly
+    """Get yearly publication and citation counts for an author, filled to current year."""
     query = """
         SELECT year, pub_count, citations_year
         FROM author_metrics_yearly
@@ -258,93 +281,261 @@ async def get_author_metrics(author_id: str):
         ORDER BY year ASC
     """
     rows = await db.pool.fetch(query, author_id)
-    return [
-        YearlyMetric(year=r['year'], pub_count=r['pub_count'], citations=r['citations_year'])
-        for r in rows
-    ]
+    if not rows:
+        return []
+        
+    start_year = rows[0]['year']
+    end_year = datetime.datetime.now().year
+    
+    # Create a map of existing data
+    data_map = {r['year']: r for r in rows}
+    
+    # Fill missing years
+    filled_metrics = []
+    for y in range(start_year, end_year + 1):
+        if y in data_map:
+            r = data_map[y]
+            filled_metrics.append(YearlyMetric(year=r['year'], pub_count=r['pub_count'], citations=r['citations_year']))
+        else:
+            filled_metrics.append(YearlyMetric(year=y, pub_count=0, citations=0))
+            
+    return filled_metrics
 
-@app.get("/authors/{author_id}/topics", response_model=List[TopicStat])
+class NestedTopicStat(BaseModel):
+    name: str
+    count: int
+
+class SubfieldTopics(BaseModel):
+    subfield: str
+    total_count: int
+    topics: List[NestedTopicStat]
+
+@app.get("/authors/{author_id}/topics", response_model=List[SubfieldTopics])
 async def get_author_topics(author_id: str):
-    """Get top topics for an author based on their publications."""
+    """Get aggregated topics grouped by subfield for an author based on their publications."""
     query = """
-        SELECT t.name, COUNT(*) as count
-        FROM topics t
-        JOIN publication_topics pt ON t.id = pt.topic_id
-        JOIN author_publications ap ON pt.publication_id = ap.publication_id
-        WHERE ap.author_id = $1
-        GROUP BY t.name
-        ORDER BY count DESC
-        LIMIT 20
+        SELECT p.topics_json
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id = $1 AND p.topics_json IS NOT NULL
     """
     rows = await db.pool.fetch(query, author_id)
-    return [
-        TopicStat(name=r['name'], count=r['count'])
-        for r in rows
-    ]
+    
+    subfield_map = {}
+    
+    import json
+    for row in rows:
+        try:
+            # topics_json contains a list of topic objects
+            topics = json.loads(row['topics_json'])
+            for t in topics:
+                # OpenAlex format: t["subfield"]["display_name"], t["display_name"]
+                subfield_name = t.get('subfield', {}).get('display_name')
+                topic_name = t.get('display_name')
+                
+                if not subfield_name or not topic_name:
+                    continue
+                    
+                if subfield_name not in subfield_map:
+                    subfield_map[subfield_name] = {'total': 0, 'topics': {}}
+                    
+                subfield_map[subfield_name]['total'] += 1
+                
+                if topic_name not in subfield_map[subfield_name]['topics']:
+                    subfield_map[subfield_name]['topics'][topic_name] = 0
+                subfield_map[subfield_name]['topics'][topic_name] += 1
+                
+        except (ValueError, TypeError, KeyError):
+            continue
+            
+    # Format response
+    result = []
+    for sf, data in subfield_map.items():
+        topic_list = [NestedTopicStat(name=t_name, count=t_count) for t_name, t_count in data['topics'].items()]
+        # Sort topics inside subfield by count descending
+        topic_list.sort(key=lambda x: x.count, reverse=True)
+        
+        result.append(SubfieldTopics(
+            subfield=sf,
+            total_count=data['total'],
+            topics=topic_list
+        ))
+        
+    # Sort subfields by total count descending
+    result.sort(key=lambda x: x.total_count, reverse=True)
+    return result
+
+class GalaxyNode(BaseModel):
+    name: str
+    count: int
+    children_available: bool = True
+
+@app.get("/authors/{author_id}/galaxy", response_model=List[GalaxyNode])
+async def get_author_galaxy(
+    author_id: str,
+    category: str = Query(..., regex="^(source|subfield)$"),
+    drill: Optional[str] = None,
+    drill2: Optional[str] = None,
+):
+    """Multi-level drill-down data for the Research Galaxy visualization."""
+    import json
+
+    # Fetch all publications for this author with relevant JSON fields
+    query = """
+        SELECT p.id, p.title, p.venue, p.citations, p.topics_json, p.authorships_json
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id = $1
+    """
+    rows = await db.pool.fetch(query, author_id)
+
+    if category == "source":
+        if drill is None:
+            # Level 0: Top sources by total citations
+            source_map = {}
+            for r in rows:
+                v = r['venue']
+                if not v:
+                    continue
+                c = r['citations'] or 0
+                source_map[v] = source_map.get(v, 0) + c
+            items = sorted(source_map.items(), key=lambda x: x[1], reverse=True)[:10]
+            return [GalaxyNode(name=n, count=c, children_available=True) for n, c in items]
+
+        elif drill2 is None:
+            # Level 1: Subfields within a specific source
+            sf_map = {}
+            for r in rows:
+                if r['venue'] != drill:
+                    continue
+                if not r['topics_json']:
+                    continue
+                topics = json.loads(r['topics_json']) if isinstance(r['topics_json'], str) else r['topics_json']
+                for t in topics:
+                    sf_name = t.get('subfield', {}).get('display_name')
+                    if sf_name:
+                        sf_map[sf_name] = sf_map.get(sf_name, 0) + 1
+            items = sorted(sf_map.items(), key=lambda x: x[1], reverse=True)[:10]
+            return [GalaxyNode(name=n, count=c, children_available=True) for n, c in items]
+
+        else:
+            # Level 2: Works in that source+subfield -> returns works with children_available for countries
+            works = []
+            for r in rows:
+                if r['venue'] != drill:
+                    continue
+                if not r['topics_json']:
+                    continue
+                topics = json.loads(r['topics_json']) if isinstance(r['topics_json'], str) else r['topics_json']
+                has_sf = any(t.get('subfield', {}).get('display_name') == drill2 for t in topics)
+                if has_sf:
+                    works.append(GalaxyNode(
+                        name=r['title'] or 'Untitled',
+                        count=r['citations'] or 0,
+                        children_available=True
+                    ))
+            works.sort(key=lambda x: x.count, reverse=True)
+            return works[:10]
+
+    elif category == "subfield":
+        if drill is None:
+            # Level 0: Top subfields by pub count
+            sf_map = {}
+            for r in rows:
+                if not r['topics_json']:
+                    continue
+                topics = json.loads(r['topics_json']) if isinstance(r['topics_json'], str) else r['topics_json']
+                for t in topics:
+                    sf_name = t.get('subfield', {}).get('display_name')
+                    if sf_name:
+                        sf_map[sf_name] = sf_map.get(sf_name, 0) + 1
+            items = sorted(sf_map.items(), key=lambda x: x[1], reverse=True)[:10]
+            return [GalaxyNode(name=n, count=c, children_available=True) for n, c in items]
+
+        elif drill2 is None:
+            # Level 1: Works under that subfield
+            works = []
+            for r in rows:
+                if not r['topics_json']:
+                    continue
+                topics = json.loads(r['topics_json']) if isinstance(r['topics_json'], str) else r['topics_json']
+                has_sf = any(t.get('subfield', {}).get('display_name') == drill for t in topics)
+                if has_sf:
+                    works.append(GalaxyNode(
+                        name=r['title'] or 'Untitled',
+                        count=r['citations'] or 0,
+                        children_available=True
+                    ))
+            works.sort(key=lambda x: x.count, reverse=True)
+            return works[:10]
+
+        else:
+            return []
+
+
+
+    return []
 
 @app.get("/authors/{author_id}/network", response_model=NetworkGraph)
 async def get_author_network(author_id: str):
-    """Get co-authorship network for an author."""
-    # 1. Get edges where this author is involved (Core set)
-    # Filter by threshold >= 5 contributions
-    query_edges = """
-        SELECT coauthor_id, edge_weight
-        FROM coauthor_edges
-        WHERE author_id = $1 AND edge_weight >= 5
-        ORDER BY edge_weight DESC
-        LIMIT 50
+    """Get co-authorship network connecting the top 30 collaborators of an author based on joint citations."""
+    # 1. Top 30 collaborators by joint citations
+    query_l1 = """
+        SELECT 
+            ap2.author_id as coauthor_id,
+            COUNT(DISTINCT p.id) as joint_paper_count,
+            COALESCE(SUM(p.citations), 0) as joint_citations
+        FROM author_publications ap1
+        JOIN publications p ON ap1.publication_id = p.id
+        JOIN author_publications ap2 ON p.id = ap2.publication_id
+        WHERE ap1.author_id = $1 AND ap2.author_id != $1
+        GROUP BY ap2.author_id
+        ORDER BY joint_citations DESC NULLS LAST
+        LIMIT 30
     """
-    edges_rows = await db.pool.fetch(query_edges, author_id)
-    
-    # If no connections, return empty
-    if not edges_rows:
+    l1_rows = await db.pool.fetch(query_l1, author_id)
+    if not l1_rows:
         return NetworkGraph(nodes=[], links=[])
 
-    # 2. Get details for the author and co-authors
-    coauthor_ids = [r['coauthor_id'] for r in edges_rows]
-    all_ids = [author_id] + coauthor_ids
-    
+    top_coauthors = {r['coauthor_id']: r['joint_paper_count'] for r in l1_rows}
+    all_ids = list(top_coauthors.keys())
+
+    # 2. Fetch nodes
     query_nodes = """
-        SELECT id, name, image_url, 
+        SELECT id, name, image_url, is_faculty,
                (SELECT COALESCE(SUM(pub_count),0) FROM author_metrics_yearly WHERE author_id = authors.id) as total_pubs
         FROM authors
         WHERE id = ANY($1::text[])
     """
     nodes_rows = await db.pool.fetch(query_nodes, all_ids)
-    nodes_map = {r['id']: r for r in nodes_rows}
     
-    # Construct formatting for react-force-graph
     nodes = []
-    links = []
-    
-    # Add nodes (Center + Co-authors)
     for row in nodes_rows:
+        n_id = row['id']
         nodes.append(NetworkNode(
-            id=row['id'], 
+            id=n_id, 
             name=row['name'], 
             val=row['total_pubs'] or 5,
-            image_url=row['image_url']
+            image_url=row['image_url'],
+            is_faculty=row['is_faculty'],
+            hop=1,
+            joint_papers=top_coauthors.get(n_id, 0)
         ))
         
-    # Add direct links (Center -> Co-authors)
-    for r in edges_rows:
-        links.append(NetworkLink(source=author_id, target=r['coauthor_id'], value=r['edge_weight']))
-            
-    # 3. Fetch mesh edges (Co-author <-> Co-author) including threshold
-    if coauthor_ids:
-        query_mesh = """
-            SELECT author_id, coauthor_id, edge_weight
-            FROM coauthor_edges
-            WHERE author_id = ANY($1::text[]) 
-              AND coauthor_id = ANY($1::text[])
-              AND author_id < coauthor_id  -- Avoid duplicates (A-B and B-A)
-              AND edge_weight >= 5
-        """
-        mesh_rows = await db.pool.fetch(query_mesh, coauthor_ids)
-        
-        for r in mesh_rows:
-            links.append(NetworkLink(source=r['author_id'], target=r['coauthor_id'], value=r['edge_weight']))
+    # 3. Fetch all internal edges among the discovered nodes
+    query_mesh = """
+        SELECT author_id, coauthor_id, edge_weight
+        FROM coauthor_edges
+        WHERE author_id = ANY($1::text[]) 
+          AND coauthor_id = ANY($1::text[])
+          AND author_id < coauthor_id  -- prevent duplicates
+    """
+    mesh_rows = await db.pool.fetch(query_mesh, all_ids)
     
+    links = []
+    for r in mesh_rows:
+        links.append(NetworkLink(source=r['author_id'], target=r['coauthor_id'], value=r['edge_weight']))
+        
     return NetworkGraph(nodes=nodes, links=links)
 
 
@@ -464,6 +655,8 @@ async def _fallback_topic_search(
                   t.name ILIKE $2
                   OR p.title ILIKE $2
                   OR p.keywords_json::text ILIKE $2
+                  OR p.topics_json::text ILIKE $2
+                  OR p.concepts_json::text ILIKE $2
               )
               {dept_filter}
         )

@@ -1,0 +1,6 @@
+Total: 14669, With auth: 14669
+Pubs checked: 3
+
+Top coauthors:
+  Sung-Mo Kang: 1
+  Armin Tajalli: 1

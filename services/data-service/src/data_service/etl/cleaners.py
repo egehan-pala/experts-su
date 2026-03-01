@@ -230,7 +230,7 @@ async def clean(db: Database) -> Tuple[
     for work in works:
         pub_id = work.id.split("/")[-1]
         
-        # Extract venue info
+        # Extract venue info (host_venue is deprecated, fall back to primary_location.source)
         venue_name = None
         venue_id = None
         venue_issn = None
@@ -240,6 +240,12 @@ async def clean(db: Database) -> Tuple[
             venue_id = work.host_venue.get("id")
             venue_issn = work.host_venue.get("issn_l")
             venue_type = work.host_venue.get("type")
+        if not venue_name and work.primary_location:
+            source = work.primary_location.get("source") or {}
+            venue_name = source.get("display_name")
+            venue_id = venue_id or source.get("id")
+            venue_issn = venue_issn or source.get("issn_l")
+            venue_type = venue_type or source.get("type")
         
         # Extract biblio
         volume = None
