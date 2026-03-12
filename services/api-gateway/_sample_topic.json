@@ -1,0 +1,17 @@
+{
+  "id": "https://openalex.org/T10799",
+  "field": {
+    "id": "https://openalex.org/fields/17",
+    "display_name": "Computer Science"
+  },
+  "score": 0.9994999766349792,
+  "domain": {
+    "id": "https://openalex.org/domains/3",
+    "display_name": "Physical Sciences"
+  },
+  "subfield": {
+    "id": "https://openalex.org/subfields/1707",
+    "display_name": "Computer Vision and Pattern Recognition"
+  },
+  "display_name": "Data Visualization and Analytics"
+}

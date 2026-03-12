@@ -1,0 +1,23 @@
+{
+  "position": "first",
+  "raw_name": "Erk Ediz Akyigit",
+  "author_id": "https://openalex.org/A5088491513",
+  "countries": [
+    "TR"
+  ],
+  "author_name": "Erk Ediz Akyigit",
+  "author_orcid": null,
+  "institutions": [
+    {
+      "id": "https://openalex.org/I134235054",
+      "ror": "https://ror.org/049asqa32",
+      "name": "Sabanc\u0131 \u00dcniversitesi",
+      "country": "TR"
+    }
+  ],
+  "is_corresponding": true,
+  "raw_affiliations": [
+    "Sabanci University",
+    "Sabanci Univ.#TAB#"
+  ]
+}

@@ -162,7 +162,7 @@ def full_run() -> None:
             typer.echo("✅ Snapshot saved locally.\n")
             
             # Step 4: LOAD (Production Objects -> Supabase)
-            typer.echo("☁️  STEP 4: UPLOADING to Supabase...")
+            typer.echo("🗄️  STEP 4: UPLOADING to PostgreSQL...")
             await load_stage(
                 db,
                 authors,
@@ -629,7 +629,7 @@ def clean_and_load() -> None:
             typer.echo("✅ Snapshot saved locally.\n")
             
             # Step 4: LOAD
-            typer.echo("☁️  STEP 4: UPLOADING to Supabase...")
+            typer.echo("🗄️  STEP 4: UPLOADING to PostgreSQL...")
             await load_stage(
                 db,
                 authors,

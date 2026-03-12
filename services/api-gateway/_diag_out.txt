@@ -1,0 +1,13 @@
+Total pubs: 14669, With venue: 0, With venue_id: 0
+pub=W1014564894 venue=None vid=None vtype=None
+pub=W108237706 venue=None vid=None vtype=None
+pub=W110453673 venue=None vid=None vtype=None
+pub=W11596710 venue=None vid=None vtype=None
+pub=W116647951 venue=None vid=None vtype=None
+pub=W133561621 venue=None vid=None vtype=None
+pub=W134793154 venue=None vid=None vtype=None
+pub=W138102374 venue=None vid=None vtype=None
+pub=W140984205 venue=None vid=None vtype=None
+pub=W1481553237 venue=None vid=None vtype=None
+
+No rows with venue at all!

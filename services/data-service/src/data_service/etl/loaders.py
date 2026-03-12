@@ -38,8 +38,22 @@ async def load(
     publication_topics so that we can obtain topic IDs. Metrics and network
     edges can be inserted last.
     """
+    # Truncate dependent/relation tables first for a clean full refresh.
+    # This avoids expensive ON CONFLICT lookups on hundreds of thousands of rows.
+    logger.info({"message": "🗑️ Truncating relation tables for clean refresh..."})
+    for table in [
+        "coauthor_edges",
+        "author_metrics_yearly",
+        "publication_topics",
+        "author_publications",
+    ]:
+        await db.execute(f"TRUNCATE {table} CASCADE")
+    logger.info({"message": "✅ Relation tables truncated"})
+
     # Authors
+    logger.info({"message": "▶ Loading authors...", "count": len(list(authors))})
     await db.upsert_authors(authors)
+    logger.info({"message": "✅ Authors loaded"})
 
     # Populate normalized_name for fuzzy search
     await db.execute("""
@@ -88,19 +102,19 @@ async def load(
         logger.info({"message": "Populated faculty_aliases", "count": len(alias_records)})
 
     # Publications
+    logger.info({"message": "▶ Loading publications...", "count": len(list(publications))})
     await db.upsert_publications(publications)
-    # logger.info({"message": "[SKIPPED] Would upsert publications", "count": len(publications)})
+    logger.info({"message": "✅ Publications loaded"})
 
     # Author-publication relations
-    # Author-publication relations
+    logger.info({"message": "▶ Loading author_publications...", "count": len(list(author_publications))})
     await db.upsert_author_publications(author_publications)
-    # logger.info({"message": "[SKIPPED] Would upsert author_publications", "count": len(author_publications)})
+    logger.info({"message": "✅ Author-publications loaded"})
 
     # Topics: insert names and fetch their IDs
-    # Topics: insert names and fetch their IDs
+    logger.info({"message": "▶ Loading topics...", "count": len(list(topics))})
     name_to_id = await db.upsert_topics(topics)
-    # name_to_id = {t.get("name"): f"local_{i}" for i, t in enumerate(topics)}
-    # logger.info({"message": "[SKIPPED] Would upsert topics", "count": len(name_to_id)})
+    logger.info({"message": "✅ Topics loaded"})
 
     # Create a set of valid publication IDs
     valid_pub_ids = {p["id"] for p in publications}
@@ -116,18 +130,19 @@ async def load(
             pub_topic_records.append(
                 {"publication_id": rel["publication_id"], "topic_id": topic_id}
             )
+    logger.info({"message": "▶ Loading publication_topics...", "count": len(pub_topic_records)})
     await db.upsert_publication_topics(pub_topic_records)
-    # logger.info({"message": "[SKIPPED] Would upsert publication_topics", "count": len(pub_topic_records)})
+    logger.info({"message": "✅ Publication-topics loaded"})
 
     # Metrics
-    # Metrics
+    logger.info({"message": "▶ Loading metrics...", "count": len(list(metrics))})
     await db.upsert_metrics(metrics)
-    # logger.info({"message": "[SKIPPED] Would upsert metrics", "count": len(metrics)})
+    logger.info({"message": "✅ Metrics loaded"})
 
     # Co-author edges
-    # Co-author edges
+    logger.info({"message": "▶ Loading coauthor_edges...", "count": len(list(coauthor_edges))})
     await db.insert_coauthor_edges(coauthor_edges)
-    # logger.info({"message": "[SKIPPED] Would insert coauthor_edges", "count": len(coauthor_edges)})
+    logger.info({"message": "✅ Coauthor edges loaded"})
 
 
 async def save_data_locally(

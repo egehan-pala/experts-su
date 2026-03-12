@@ -63,7 +63,9 @@ export default function SearchPage() {
         }
     }, [q]);
 
-    const hasResults = response && (response.person_results.length > 0 || response.topic_results.length > 0);
+    const personResults = response?.person_results ?? [];
+    const topicResults = response?.topic_results ?? [];
+    const hasResults = personResults.length > 0 || topicResults.length > 0;
 
     return (
         <div className="container" style={{ padding: '2rem 1.5rem 4rem' }}>
@@ -99,11 +101,11 @@ export default function SearchPage() {
             ) : (
                 <>
                     {/* PERSON RESULTS */}
-                    {response.person_results.length > 0 && (
+                    {personResults.length > 0 && (
                         <div style={{ marginBottom: '3rem' }}>
                             {response.intent === 'MIXED' && <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', color: '#111' }}>People</h2>}
                             <div className="experts-grid">
-                                {response.person_results.map((expert) => (
+                                {personResults.map((expert) => (
                                     <div
                                         key={expert.id}
                                         className="su-card"
@@ -143,11 +145,11 @@ export default function SearchPage() {
                     )}
 
                     {/* TOPIC RESULTS */}
-                    {response.topic_results.length > 0 && (
+                    {topicResults.length > 0 && (
                         <div>
                             {response.intent === 'MIXED' && <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', color: '#111' }}>Experts by Topic</h2>}
                             <div className="experts-grid">
-                                {response.topic_results.map((expert) => (
+                                {topicResults.map((expert) => (
                                     <div
                                         key={expert.id}
                                         className="su-card"
