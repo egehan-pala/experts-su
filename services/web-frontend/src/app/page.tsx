@@ -1,8 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { useRouter } from 'next/navigation';
+import { useRouter, useSearchParams } from 'next/navigation';
 import styles from './page.module.css';
+import DepartmentFilter from '@/components/DepartmentFilter';
 
 interface Author {
   id: string;
@@ -13,23 +14,30 @@ interface Author {
   image_url?: string | null;
   email?: string | null;
   phone?: string | null;
+  expertise_tags?: string[];
 }
 
 export default function Home() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState('');
   const [authors, setAuthors] = useState<Author[]>([]);
   const [loading, setLoading] = useState(true);
-  const [page, setPage] = useState(1);
+  
+  const page = parseInt(searchParams.get('page') || '1');
+  const dept = searchParams.get('dept');
+  
   const [totalPages, setTotalPages] = useState(1);
   const limit = 12;
 
   useEffect(() => {
     setLoading(true);
-    // Scroll to top of list when page changes, if reasonable
-    // window.scrollTo({ top: 0, behavior: 'smooth' });
+    let url = `http://localhost:8000/authors?page=${page}&limit=${limit}`;
+    if (dept) {
+      url += `&dept=${encodeURIComponent(dept)}`;
+    }
 
-    fetch(`http://localhost:8000/authors?page=${page}&limit=${limit}`)
+    fetch(url)
       .then((res) => res.json())
       .then((data) => {
         setAuthors(data.data);
@@ -40,7 +48,7 @@ export default function Home() {
         console.error(err);
         setLoading(false);
       });
-  }, [page]);
+  }, [page, dept]);
 
   const handleSearch = (e: React.FormEvent) => {
     e.preventDefault();
@@ -50,8 +58,10 @@ export default function Home() {
   };
 
   const goToPage = (newPage: number) => {
-    if (newPage >= 1 && newPage <= totalPages) {
-      setPage(newPage);
+    if (newPage >= 1 && (totalPages === 0 || newPage <= totalPages)) {
+      const params = new URLSearchParams(searchParams.toString());
+      params.set('page', newPage.toString());
+      router.push(`/?${params.toString()}`);
     }
   };
 
@@ -89,7 +99,7 @@ export default function Home() {
 
       {/* Featured Researchers Grid - Elegant Card Layout */}
       <div className="container" style={{ padding: '4rem 1.5rem' }}>
-        <div style={{ textAlign: 'center', marginBottom: '3rem' }}>
+        <div style={{ textAlign: 'center', marginBottom: '1rem' }}>
           <div style={{ display: 'inline-block' }}>
             <h2 style={{
               fontSize: '2rem',
@@ -105,6 +115,8 @@ export default function Home() {
             </h2>
           </div>
         </div>
+
+        <DepartmentFilter />
 
         <div className="experts-grid">
           {loading ? (
@@ -177,6 +189,42 @@ export default function Home() {
                       </span>
                     </div>
                   </div>
+                  
+                  {/* Expertise Tags */}
+                  {author.expertise_tags && author.expertise_tags.length > 0 && (
+                    <div style={{ 
+                      display: 'flex', 
+                      flexWrap: 'wrap', 
+                      gap: '0.4rem', 
+                      marginTop: 'auto',
+                      paddingTop: '0.5rem'
+                    }}>
+                      {author.expertise_tags.map((tag, idx) => (
+                        <span
+                          key={idx}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            router.push(`/search?q=${encodeURIComponent(tag)}`);
+                          }}
+                          style={{
+                            background: '#002855',
+                            color: 'white',
+                            fontSize: '0.7rem',
+                            padding: '0.2rem 0.6rem',
+                            borderRadius: '999px',
+                            fontWeight: 600,
+                            cursor: 'pointer',
+                            whiteSpace: 'nowrap',
+                            transition: 'opacity 0.2s'
+                          }}
+                          onMouseEnter={(e) => (e.currentTarget.style.opacity = '0.8')}
+                          onMouseLeave={(e) => (e.currentTarget.style.opacity = '1')}
+                        >
+                          {tag}
+                        </span>
+                      ))}
+                    </div>
+                  )}
 
                 </div>
               </div>
