@@ -106,12 +106,17 @@ class OpenAlexClient:
             params["cursor"] = next_cursor
 
     async def fetch_works_by_author(self, author_id: str) -> AsyncIterator[Dict]:
-        """Yield ALL works for a specific author.
+        """Yield ALL research works for a specific author.
 
         Fetches the complete publication history using only the author's unique
         OpenAlex ID. No date or institution filters are applied - this ensures
         we get all publications including those from before the author joined
         the configured institution.
+
+        Quality filters applied (inspired by Rankless.org pipeline):
+        - ``is_paratext:false`` — drops TOC, editorials, covers
+        - ``is_retracted:false`` — removes retracted papers
+        - ``type`` — only includes configured work types (articles, book-chapters, etc.)
 
         Parameters
         ----------
@@ -122,7 +127,18 @@ class OpenAlexClient:
         # extract the last segment if a full URL is passed in.
         if author_id.startswith("http"):
             author_id = author_id.rstrip("/").split("/")[-1]
-        filter_param = f"author.id:{author_id}"
+
+        # Build filter with pollution scrubbing (Rankless-style)
+        work_types = self._settings.openalex_work_types
+        filter_parts = [
+            f"author.id:{author_id}",
+            "is_paratext:false",
+            "is_retracted:false",
+        ]
+        if work_types:
+            filter_parts.append(f"type:{'|'.join(work_types)}")
+        filter_param = ",".join(filter_parts)
+
         params: Dict[str, str | int | None] = {
             "filter": filter_param,
             "per-page": self._settings.batch_size,
@@ -162,6 +178,24 @@ class OpenAlexClient:
             if not next_cursor:
                 break
             params["cursor"] = next_cursor
+
+    async def fetch_author_by_id(self, author_id: str) -> Dict | None:
+        """Fetch a specific author by their OpenAlex ID or URL.
+        
+        Returns None if not found or the ID is invalid.
+        """
+        short_id = author_id.split("/")[-1]
+        if not short_id.startswith("A"):
+            return None
+            
+        try:
+            data = await self._get(f"/authors/{short_id}", {})
+            return data
+        except OpenAlexError as e:
+            from ..utils.logger import get_logger
+            logger = get_logger(__name__)
+            logger.error(f"Failed to fetch author {short_id}: {e}")
+            return None
 
     async def fetch_all_authors_by_institution(self) -> list[Dict]:
         """Fetch ALL authors affiliated with the configured institution.

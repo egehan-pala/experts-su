@@ -33,6 +33,18 @@ class Settings(BaseSettings):
         description="Optional email used to identify the caller to OpenAlex (polite pool)",
     )
 
+    # Data quality filters (inspired by Rankless.org pipeline)
+    openalex_work_types: list[str] = Field(
+        default=["article", "book-chapter", "book", "proceedings-article"],
+        validation_alias="OPENALEX_WORK_TYPES",
+        description="OpenAlex work types to include. Filters out paratext and grey literature.",
+    )
+    max_authors_per_work: int = Field(
+        default=25,
+        validation_alias="MAX_AUTHORS_PER_WORK",
+        description="Exclude hyper-authored papers (>N authors) from co-authorship graph to prevent clique distortion.",
+    )
+
     # Database configuration
     db_host: str = Field(..., validation_alias="DB_HOST", description="Database host")
     db_port: int = Field(5432, validation_alias="DB_PORT", description="Database port")
@@ -44,12 +56,6 @@ class Settings(BaseSettings):
     batch_size: int = Field(
         100, validation_alias="BATCH_SIZE", description="Batch size for API pagination and bulk inserts"
     )
-    since_default: str = Field(
-        "2020-01-01",
-        validation_alias="SINCE_DEFAULT",
-        description="Default ISO date used when --since is not provided on the CLI",
-    )
-
 
 def get_settings() -> Settings:
     """Return a singleton settings object.
