@@ -37,6 +37,100 @@ type GalaxyCategory = 'source' | 'subfield';
 
 // Note: Publications data is stored in backend for future search engine implementation
 
+interface Publication {
+    id: string;
+    title: string;
+    year: number | null;
+    citations: number | null;
+    venue: string | null;
+    pdf_url?: string | null;
+    publication_date?: string | null;
+}
+
+function RecentArticlesSidebar({ authorId }: { authorId: string }) {
+    const [recentPubs, setRecentPubs] = useState<Publication[]>([]);
+    const [loading, setLoading] = useState(true);
+
+    useEffect(() => {
+        if (authorId) {
+            fetch(`http://localhost:8000/authors/${authorId}/recent-publications`)
+                .then(res => res.json())
+                .then(data => {
+                    setRecentPubs(data || []);
+                    setLoading(false);
+                })
+                .catch(err => {
+                    console.error('Error fetching recent publications:', err);
+                    setLoading(false);
+                });
+        }
+    }, [authorId]);
+
+    const formatDate = (dateStr: string | null | undefined) => {
+        if (!dateStr) return '';
+        try {
+            const date = new Date(dateStr);
+            return date.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+        } catch { return dateStr; }
+    };
+
+    if (loading) return null;
+    // if (!recentPubs || recentPubs.length === 0) return null;
+
+    return (
+        <aside style={{
+            width: '320px',
+            flexShrink: 0,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '1.5rem',
+            padding: '1.5rem',
+            backgroundColor: '#ffffff',
+            borderRadius: '16px',
+            border: '1px solid #e4e4e7',
+            boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
+            height: 'fit-content',
+            position: 'sticky',
+            top: '2rem'
+        }}>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', borderBottom: '1px solid #f4f4f5', paddingBottom: '0.75rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
+                    <span style={{ fontSize: '1.25rem' }}>📰</span>
+                    <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: '#d6001c', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, fontFamily: 'var(--font-sans)' }}>
+                        Recent Publications
+                    </h3>
+                </div>
+                <span style={{ fontSize: '0.7rem', color: '#a1a1aa', fontFamily: 'monospace' }}>
+                    Author ID: {authorId}
+                </span>
+            </div>
+
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+                {recentPubs.map(pub => (
+                    <div key={pub.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                        <span style={{ fontSize: '0.8rem', color: '#71717a', fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontWeight: 500 }}>
+                            {formatDate(pub.publication_date)}
+                        </span>
+                        <h4 style={{ fontSize: '1.05rem', color: '#111', fontWeight: 600, lineHeight: 1.4, margin: 0, fontFamily: 'var(--font-serif)' }}>
+                            {pub.title}
+                        </h4>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                            <span style={{ fontSize: '0.8rem', color: '#002855', fontWeight: 700, fontFamily: 'var(--font-sans)' }}>
+                                {pub.venue || 'Unknown Venue'}
+                            </span>
+                        </div>
+                        {pub.pdf_url && (
+                            <a href={pub.pdf_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: '#d6001c', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.2rem', marginTop: '0.25rem' }}>
+                                PDF AVAILABLE ↗
+                            </a>
+                        )}
+                    </div>
+                ))}
+            </div>
+        </aside>
+    );
+}
+
 export default function ProfilePage() {
     const params = useParams();
     const router = useRouter();
@@ -253,228 +347,239 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {/* ✨ Research Galaxy — Multi-Level Constellation ✨ */}
-            {(() => {
-                const PALETTE = [
-                    'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                    'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-                    'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-                    'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-                    'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-                    'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
-                    'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
-                    'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
-                    'linear-gradient(135deg, #f5576c 0%, #ff6a00 100%)',
-                    'linear-gradient(135deg, #13547a 0%, #80d0c7 100%)',
-                ];
-                const SOLID_COLORS = [
-                    '#667eea', '#f5576c', '#4facfe', '#43e97b', '#fa709a',
-                    '#a18cd1', '#fccb90', '#8ec5fc', '#f5576c', '#80d0c7'
-                ];
-                const CATEGORY_META: Record<GalaxyCategory, { icon: string; label: string; levels: string[] }> = {
-                    source: { icon: '🏛️', label: 'Source', levels: ['Sources', 'Subfields', 'Works'] },
-                    subfield: { icon: '🔬', label: 'Subfield', levels: ['Subfields', 'Works'] },
-                };
-                const meta = CATEGORY_META[galaxyCategory];
-                const currentLevel = galaxyBreadcrumb.length;
-                const levelLabel = meta.levels[currentLevel] || 'Details';
-                const maxCount = Math.max(...galaxyNodes.map(n => n.count), 1);
+            {/* Layout with Main Content and Recent Articles Sidebar */}
+            <div className="container" style={{ display: 'flex', gap: '3rem', marginTop: '3rem', alignItems: 'flex-start' }}>
 
-                const handleBubbleClick = (node: GalaxyNode) => {
-                    if (!node.children_available) return;
-                    const newBreadcrumb = [...galaxyBreadcrumb, node.name];
-                    setGalaxyBreadcrumb(newBreadcrumb);
-                    fetchGalaxy(galaxyCategory, newBreadcrumb);
-                };
+                {/* Main Content Column */}
+                <div style={{ flex: 1, minWidth: 0 }}>
+                    {/* ✨ Research Galaxy — Multi-Level Constellation ✨ */}
+                    {(() => {
+                        const PALETTE = [
+                            'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                            'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
+                            'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
+                            'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
+                            'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
+                            'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
+                            'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
+                            'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
+                            'linear-gradient(135deg, #f5576c 0%, #ff6a00 100%)',
+                            'linear-gradient(135deg, #13547a 0%, #80d0c7 100%)',
+                        ];
+                        const SOLID_COLORS = [
+                            '#667eea', '#f5576c', '#4facfe', '#43e97b', '#fa709a',
+                            '#a18cd1', '#fccb90', '#8ec5fc', '#f5576c', '#80d0c7'
+                        ];
+                        const CATEGORY_META: Record<GalaxyCategory, { icon: string; label: string; levels: string[] }> = {
+                            source: { icon: '🏛️', label: 'Source', levels: ['Sources', 'Subfields', 'Works'] },
+                            subfield: { icon: '🔬', label: 'Subfield', levels: ['Subfields', 'Works'] },
+                        };
+                        const meta = CATEGORY_META[galaxyCategory];
+                        const currentLevel = galaxyBreadcrumb.length;
+                        const levelLabel = meta.levels[currentLevel] || 'Details';
+                        const maxCount = Math.max(...galaxyNodes.map(n => n.count), 1);
 
-                const handleBreadcrumbClick = (level: number) => {
-                    const newBreadcrumb = galaxyBreadcrumb.slice(0, level);
-                    setGalaxyBreadcrumb(newBreadcrumb);
-                    fetchGalaxy(galaxyCategory, newBreadcrumb);
-                };
+                        const handleBubbleClick = (node: GalaxyNode) => {
+                            if (!node.children_available) return;
+                            const newBreadcrumb = [...galaxyBreadcrumb, node.name];
+                            setGalaxyBreadcrumb(newBreadcrumb);
+                            fetchGalaxy(galaxyCategory, newBreadcrumb);
+                        };
 
-                return (
-                    <div className="container" style={{ marginTop: '3rem' }}>
-                        <h2 style={{ fontSize: '1.5rem', fontFamily: 'var(--font-serif)', color: '#111', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                            <span style={{ fontSize: '1.25rem' }}>🔬</span>
-                            Research Galaxy
-                        </h2>
+                        const handleBreadcrumbClick = (level: number) => {
+                            const newBreadcrumb = galaxyBreadcrumb.slice(0, level);
+                            setGalaxyBreadcrumb(newBreadcrumb);
+                            fetchGalaxy(galaxyCategory, newBreadcrumb);
+                        };
 
-                        {/* Category Tabs */}
-                        <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                            {(['source', 'subfield'] as GalaxyCategory[]).map(cat => {
-                                const m = CATEGORY_META[cat];
-                                const isActive = galaxyCategory === cat;
-                                return (
-                                    <button
-                                        key={cat}
-                                        onClick={() => { setGalaxyCategory(cat); }}
-                                        style={{
-                                            padding: '0.6rem 1.5rem',
-                                            borderRadius: '12px 12px 0 0',
-                                            border: 'none',
-                                            cursor: 'pointer',
-                                            fontWeight: 700,
-                                            fontSize: '0.9rem',
-                                            color: isActive ? '#fff' : '#52525b',
-                                            background: isActive ? 'linear-gradient(135deg, #0f172a, #1e293b)' : '#f4f4f5',
-                                            transition: 'all 0.3s',
-                                            display: 'flex', alignItems: 'center', gap: '0.4rem',
-                                        }}
-                                    >
-                                        <span>{m.icon}</span> {m.label}
-                                    </button>
-                                );
-                            })}
-                        </div>
+                        return (
+                            <div>
+                                <h2 style={{ fontSize: '1.5rem', fontFamily: 'var(--font-serif)', color: '#111', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                    <span style={{ fontSize: '1.25rem' }}>🔬</span>
+                                    Research Galaxy
+                                </h2>
 
-                        {/* Cosmic Panel */}
-                        <div style={{
-                            background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 40%, #0f172a 100%)',
-                            borderRadius: '0 20px 20px 20px',
-                            padding: '2rem',
-                            position: 'relative',
-                            overflow: 'hidden',
-                            minHeight: '320px',
-                        }}>
-                            {/* Twinkling stars */}
-                            {[...Array(30)].map((_, i) => (
-                                <div key={`star-${i}`} style={{
-                                    position: 'absolute',
-                                    width: `${1 + (i % 3)}px`, height: `${1 + (i % 3)}px`,
-                                    backgroundColor: 'rgba(255,255,255,0.4)',
-                                    borderRadius: '50%',
-                                    top: `${(i * 37) % 100}%`, left: `${(i * 53) % 100}%`,
-                                    animation: `twinkle ${2 + (i % 3)}s ease-in-out infinite`,
-                                    animationDelay: `${(i % 5) * 0.4}s`
-                                }} />
-                            ))}
-
-                            {/* Breadcrumb Navigation */}
-                            <div style={{ position: 'relative', zIndex: 2, marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                <button
-                                    onClick={() => handleBreadcrumbClick(0)}
-                                    style={{ background: 'none', border: 'none', color: galaxyBreadcrumb.length === 0 ? '#fff' : 'rgba(255,255,255,0.5)', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', padding: 0 }}
-                                >
-                                    {meta.icon} {meta.levels[0]}
-                                </button>
-                                {galaxyBreadcrumb.map((crumb, i) => (
-                                    <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                        <span style={{ color: 'rgba(255,255,255,0.3)' }}>›</span>
-                                        <button
-                                            onClick={() => handleBreadcrumbClick(i + 1)}
-                                            style={{
-                                                background: 'none', border: 'none',
-                                                color: i === galaxyBreadcrumb.length - 1 ? '#fff' : 'rgba(255,255,255,0.5)',
-                                                fontSize: '0.85rem', fontWeight: i === galaxyBreadcrumb.length - 1 ? 700 : 400,
-                                                cursor: 'pointer', padding: 0,
-                                                maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                            }}
-                                        >
-                                            {crumb}
-                                        </button>
-                                    </span>
-                                ))}
-                            </div>
-
-                            {/* Level indicator */}
-                            <div style={{ position: 'relative', zIndex: 2, textAlign: 'center', marginBottom: '1rem' }}>
-                                <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '2px' }}>
-                                    {levelLabel}
-                                </span>
-                            </div>
-
-                            {/* Bubble Cloud */}
-                            {galaxyLoading ? (
-                                <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.6)', padding: '3rem', position: 'relative', zIndex: 2 }}>
-                                    Loading...
-                                </div>
-                            ) : galaxyNodes.length === 0 ? (
-                                <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', padding: '3rem', position: 'relative', zIndex: 2 }}>
-                                    No data available for this level
-                                </div>
-                            ) : (
-                                <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '12px', position: 'relative', zIndex: 2, padding: '0.5rem' }}>
-                                    {galaxyNodes.map((node, idx) => {
-                                        const ratio = node.count / maxCount;
-                                        const size = Math.max(58, Math.round(ratio * 140));
-                                        const colorIdx = idx % PALETTE.length;
-                                        const yOff = idx % 3 === 0 ? -6 : idx % 3 === 1 ? 6 : 0;
-                                        const isClickable = node.children_available;
-
+                                {/* Category Tabs */}
+                                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+                                    {(['source', 'subfield'] as GalaxyCategory[]).map(cat => {
+                                        const m = CATEGORY_META[cat];
+                                        const isActive = galaxyCategory === cat;
                                         return (
-                                            <div
-                                                key={`${node.name}-${idx}`}
-                                                title={`${node.name}: ${node.count}`}
-                                                onClick={() => isClickable && handleBubbleClick(node)}
+                                            <button
+                                                key={cat}
+                                                onClick={() => { setGalaxyCategory(cat); }}
                                                 style={{
-                                                    width: `${size}px`, height: `${size}px`,
-                                                    borderRadius: '50%',
-                                                    background: PALETTE[colorIdx],
-                                                    display: 'flex', flexDirection: 'column',
-                                                    alignItems: 'center', justifyContent: 'center',
-                                                    color: '#fff',
-                                                    cursor: isClickable ? 'pointer' : 'default',
-                                                    position: 'relative',
-                                                    transform: `translateY(${yOff}px)`,
-                                                    animation: `bubblePop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards`,
-                                                    animationDelay: `${idx * 0.06}s`,
-                                                    opacity: 0,
-                                                    boxShadow: `0 0 ${Math.round(ratio * 20 + 8)}px ${SOLID_COLORS[colorIdx]}66`,
-                                                    transition: 'transform 0.3s, box-shadow 0.3s',
-                                                    overflow: 'hidden', padding: '6px',
-                                                }}
-                                                onMouseEnter={(e) => {
-                                                    e.currentTarget.style.transform = `translateY(${yOff}px) scale(1.15)`;
-                                                    e.currentTarget.style.boxShadow = `0 0 ${Math.round(ratio * 30 + 14)}px ${SOLID_COLORS[colorIdx]}99`;
-                                                    e.currentTarget.style.zIndex = '10';
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                    e.currentTarget.style.transform = `translateY(${yOff}px) scale(1)`;
-                                                    e.currentTarget.style.boxShadow = `0 0 ${Math.round(ratio * 20 + 8)}px ${SOLID_COLORS[colorIdx]}66`;
-                                                    e.currentTarget.style.zIndex = '1';
+                                                    padding: '0.6rem 1.5rem',
+                                                    borderRadius: '12px 12px 0 0',
+                                                    border: 'none',
+                                                    cursor: 'pointer',
+                                                    fontWeight: 700,
+                                                    fontSize: '0.9rem',
+                                                    color: isActive ? '#fff' : '#52525b',
+                                                    background: isActive ? 'linear-gradient(135deg, #0f172a, #1e293b)' : '#f4f4f5',
+                                                    transition: 'all 0.3s',
+                                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
                                                 }}
                                             >
-                                                <span style={{
-                                                    fontSize: size > 90 ? '0.65rem' : '0.5rem',
-                                                    fontWeight: 600, textAlign: 'center', lineHeight: 1.2,
-                                                    textShadow: '0 1px 3px rgba(0,0,0,0.4)',
-                                                    display: '-webkit-box',
-                                                    WebkitLineClamp: size > 100 ? 3 : 2,
-                                                    WebkitBoxOrient: 'vertical',
-                                                    overflow: 'hidden', wordBreak: 'break-word',
-                                                }}>{node.name}</span>
-                                                <span style={{
-                                                    fontSize: size > 90 ? '0.9rem' : '0.7rem',
-                                                    fontWeight: 800, marginTop: '2px',
-                                                    textShadow: '0 1px 3px rgba(0,0,0,0.5)',
-                                                }}>{node.count}</span>
-                                            </div>
+                                                <span>{m.icon}</span> {m.label}
+                                            </button>
                                         );
                                     })}
                                 </div>
-                            )}
-                        </div>
 
-                        {/* Keyframes */}
-                        <style dangerouslySetInnerHTML={{
-                            __html: `
-                            @keyframes bubblePop {
-                                from { opacity: 0; transform: scale(0.3) translateY(20px); }
-                                to { opacity: 1; transform: scale(1) translateY(0); }
-                            }
-                            @keyframes twinkle {
-                                0%, 100% { opacity: 0.3; }
-                                50% { opacity: 1; }
-                            }
-                        `}} />
+                                {/* Cosmic Panel */}
+                                <div style={{
+                                    background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 40%, #0f172a 100%)',
+                                    borderRadius: '0 20px 20px 20px',
+                                    padding: '2rem',
+                                    position: 'relative',
+                                    overflow: 'hidden',
+                                    minHeight: '320px',
+                                }}>
+                                    {/* Twinkling stars */}
+                                    {[...Array(30)].map((_, i) => (
+                                        <div key={`star-${i}`} style={{
+                                            position: 'absolute',
+                                            width: `${1 + (i % 3)}px`, height: `${1 + (i % 3)}px`,
+                                            backgroundColor: 'rgba(255,255,255,0.4)',
+                                            borderRadius: '50%',
+                                            top: `${(i * 37) % 100}%`, left: `${(i * 53) % 100}%`,
+                                            animation: `twinkle ${2 + (i % 3)}s ease-in-out infinite`,
+                                            animationDelay: `${(i % 5) * 0.4}s`
+                                        }} />
+                                    ))}
+
+                                    {/* Breadcrumb Navigation */}
+                                    <div style={{ position: 'relative', zIndex: 2, marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
+                                        <button
+                                            onClick={() => handleBreadcrumbClick(0)}
+                                            style={{ background: 'none', border: 'none', color: galaxyBreadcrumb.length === 0 ? '#fff' : 'rgba(255,255,255,0.5)', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', padding: 0 }}
+                                        >
+                                            {meta.icon} {meta.levels[0]}
+                                        </button>
+                                        {galaxyBreadcrumb.map((crumb, i) => (
+                                            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                                <span style={{ color: 'rgba(255,255,255,0.3)' }}>›</span>
+                                                <button
+                                                    onClick={() => handleBreadcrumbClick(i + 1)}
+                                                    style={{
+                                                        background: 'none', border: 'none',
+                                                        color: i === galaxyBreadcrumb.length - 1 ? '#fff' : 'rgba(255,255,255,0.5)',
+                                                        fontSize: '0.85rem', fontWeight: i === galaxyBreadcrumb.length - 1 ? 700 : 400,
+                                                        cursor: 'pointer', padding: 0,
+                                                        maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
+                                                    }}
+                                                >
+                                                    {crumb}
+                                                </button>
+                                            </span>
+                                        ))}
+                                    </div>
+
+                                    {/* Level indicator */}
+                                    <div style={{ position: 'relative', zIndex: 2, textAlign: 'center', marginBottom: '1rem' }}>
+                                        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '2px' }}>
+                                            {levelLabel}
+                                        </span>
+                                    </div>
+
+                                    {/* Bubble Cloud */}
+                                    {galaxyLoading ? (
+                                        <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.6)', padding: '3rem', position: 'relative', zIndex: 2 }}>
+                                            Loading...
+                                        </div>
+                                    ) : galaxyNodes.length === 0 ? (
+                                        <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', padding: '3rem', position: 'relative', zIndex: 2 }}>
+                                            No data available for this level
+                                        </div>
+                                    ) : (
+                                        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '12px', position: 'relative', zIndex: 2, padding: '0.5rem' }}>
+                                            {galaxyNodes.map((node, idx) => {
+                                                const ratio = node.count / maxCount;
+                                                const size = Math.max(58, Math.round(ratio * 140));
+                                                const colorIdx = idx % PALETTE.length;
+                                                const yOff = idx % 3 === 0 ? -6 : idx % 3 === 1 ? 6 : 0;
+                                                const isClickable = node.children_available;
+
+                                                return (
+                                                    <div
+                                                        key={`${node.name}-${idx}`}
+                                                        title={`${node.name}: ${node.count}`}
+                                                        onClick={() => isClickable && handleBubbleClick(node)}
+                                                        style={{
+                                                            width: `${size}px`, height: `${size}px`,
+                                                            borderRadius: '50%',
+                                                            background: PALETTE[colorIdx],
+                                                            display: 'flex', flexDirection: 'column',
+                                                            alignItems: 'center', justifyContent: 'center',
+                                                            color: '#fff',
+                                                            cursor: isClickable ? 'pointer' : 'default',
+                                                            position: 'relative',
+                                                            transform: `translateY(${yOff}px)`,
+                                                            animation: `bubblePop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards`,
+                                                            animationDelay: `${idx * 0.06}s`,
+                                                            opacity: 0,
+                                                            boxShadow: `0 0 ${Math.round(ratio * 20 + 8)}px ${SOLID_COLORS[colorIdx]}66`,
+                                                            transition: 'transform 0.3s, box-shadow 0.3s',
+                                                            overflow: 'hidden', padding: '6px',
+                                                        }}
+                                                        onMouseEnter={(e) => {
+                                                            e.currentTarget.style.transform = `translateY(${yOff}px) scale(1.15)`;
+                                                            e.currentTarget.style.boxShadow = `0 0 ${Math.round(ratio * 30 + 14)}px ${SOLID_COLORS[colorIdx]}99`;
+                                                            e.currentTarget.style.zIndex = '10';
+                                                        }}
+                                                        onMouseLeave={(e) => {
+                                                            e.currentTarget.style.transform = `translateY(${yOff}px) scale(1)`;
+                                                            e.currentTarget.style.boxShadow = `0 0 ${Math.round(ratio * 20 + 8)}px ${SOLID_COLORS[colorIdx]}66`;
+                                                            e.currentTarget.style.zIndex = '1';
+                                                        }}
+                                                    >
+                                                        <span style={{
+                                                            fontSize: size > 90 ? '0.65rem' : '0.5rem',
+                                                            fontWeight: 600, textAlign: 'center', lineHeight: 1.2,
+                                                            textShadow: '0 1px 3px rgba(0,0,0,0.4)',
+                                                            display: '-webkit-box',
+                                                            WebkitLineClamp: size > 100 ? 3 : 2,
+                                                            WebkitBoxOrient: 'vertical',
+                                                            overflow: 'hidden', wordBreak: 'break-word',
+                                                        }}>{node.name}</span>
+                                                        <span style={{
+                                                            fontSize: size > 90 ? '0.9rem' : '0.7rem',
+                                                            fontWeight: 800, marginTop: '2px',
+                                                            textShadow: '0 1px 3px rgba(0,0,0,0.5)',
+                                                        }}>{node.count}</span>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Keyframes */}
+                                <style dangerouslySetInnerHTML={{
+                                    __html: `
+                                    @keyframes bubblePop {
+                                        from { opacity: 0; transform: scale(0.3) translateY(20px); }
+                                        to { opacity: 1; transform: scale(1) translateY(0); }
+                                    }
+                                    @keyframes twinkle {
+                                        0%, 100% { opacity: 0.3; }
+                                        50% { opacity: 1; }
+                                    }
+                                `}} />
+                            </div>
+                        );
+                    })()}
+
+                    {/* Co-authorship Network Graph */}
+                    <div style={{ marginTop: '3rem' }}>
+                        <CoAuthorshipGraph authorId={id} authorName={author.name} />
                     </div>
-                );
-            })()}
+                </div>
 
-            {/* Co-authorship Network Graph */}
-            <div className="container" style={{ marginTop: '2rem' }}>
-                <CoAuthorshipGraph authorId={id} authorName={author.name} />
+                {/* Sidebar Column */}
+                <RecentArticlesSidebar authorId={id} />
+
             </div>
 
             {/* Publications section removed - data is stored in backend for future search engine implementation */}

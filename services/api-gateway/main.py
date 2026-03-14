@@ -82,6 +82,7 @@ class Publication(BaseModel):
     citations: Optional[int]
     venue: Optional[str]
     pdf_url: Optional[str] = None
+    publication_date: Optional[str] = None
 
 # Endpoints
 @app.get("/")
@@ -119,7 +120,7 @@ async def search_authors(q: str = Query(..., min_length=2)):
 @app.get("/authors/{author_id}", response_model=Author)
 async def get_author(author_id: str):
     """Get author details."""
-    query = "SELECT id, name, dept, orcid, image_url, email, phone, areas_of_interest FROM authors WHERE id = $1"
+    query = "SELECT id, name, dept, orcid, image_url, email, phone, areas_of_interest FROM authors WHERE id ILIKE $1"
     row = await db.pool.fetchrow(query, author_id)
     if not row:
         raise HTTPException(status_code=404, detail="Author not found")
@@ -128,7 +129,7 @@ async def get_author(author_id: str):
         SELECT p.title, p.year, p.citations, p.venue
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
-        WHERE ap.author_id = $1
+        WHERE ap.author_id ILIKE $1
         ORDER BY p.citations DESC NULLS LAST
         LIMIT 1
     """
@@ -141,10 +142,10 @@ async def get_author(author_id: str):
 async def get_author_publications(author_id: str):
     """Get all publications for an author."""
     query = """
-        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
-        WHERE ap.author_id = $1
+        WHERE ap.author_id ILIKE $1
         ORDER BY p.year DESC, p.citations DESC
     """
     rows = await db.pool.fetch(query, author_id)
@@ -155,7 +156,42 @@ async def get_author_publications(author_id: str):
             year=r['year'], 
             citations=r['citations'], 
             venue=r['venue'],
-            pdf_url=r['pdf_url']
+            pdf_url=r['pdf_url'],
+            publication_date=r['publication_date']
+        )
+        for r in rows
+    ]
+
+@app.get("/authors/{author_id}/recent-publications", response_model=List[Publication])
+async def get_recent_publications(author_id: str):
+    """Get publications from the last week for an author."""
+    # Since we store publication_date as TEXT (YYYY-MM-DD), we use string comparison
+    # or cast to date if Postgres supports it nicely.
+    query = """
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id ILIKE $1 
+          AND p.publication_date IS NOT NULL
+          AND p.publication_date::date >= CURRENT_DATE - INTERVAL '100 days'
+        ORDER BY p.publication_date DESC
+    """
+    try:
+        rows = await db.pool.fetch(query, author_id)
+    except Exception as e:
+        # Fallback if date casting fails for some reason (e.g. invalid date strings)
+        print(f"Error in recent-publications query: {e}")
+        return []
+        
+    return [
+        Publication(
+            id=r['id'], 
+            title=r['title'], 
+            year=r['year'], 
+            citations=r['citations'], 
+            venue=r['venue'],
+            pdf_url=r['pdf_url'],
+            publication_date=r['publication_date']
         )
         for r in rows
     ]
@@ -488,10 +524,10 @@ async def get_author_network(author_id: str):
         FROM author_publications ap1
         JOIN publications p ON ap1.publication_id = p.id
         JOIN author_publications ap2 ON p.id = ap2.publication_id
-        WHERE ap1.author_id = $1 AND ap2.author_id != $1
+        WHERE ap1.author_id ILIKE $1 AND ap2.author_id != ap1.author_id
         GROUP BY ap2.author_id
         ORDER BY joint_citations DESC NULLS LAST
-        LIMIT 30
+        LIMIT 20
     """
     l1_rows = await db.pool.fetch(query_l1, author_id)
     if not l1_rows:
@@ -780,3 +816,6 @@ async def search_suggest(q: str = Query(..., min_length=1)):
     """Autocomplete: top faculty name suggestions for typeahead."""
     return await do_suggest(q, db.pool, limit=5)
 
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -220,7 +220,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
 
                 // mark center node
                 data.nodes.forEach((n) => {
-                    n.isCenter = n.id === shortId || n.name === authorName;
+                    n.isCenter = n.id?.toLowerCase() === shortId?.toLowerCase() || n.name === authorName;
                 });
 
                 setRawData(data);
@@ -331,9 +331,6 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
 
         // center overall
         fg.d3Force('center')?.strength(0.04);
-
-        // stabilize faster
-        fg.cooldownTicks(220);
 
         // initial zoom-to-fit after layout starts
         const t = setTimeout(() => {
