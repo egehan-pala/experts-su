@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import CoAuthorshipGraph from '@/components/CoAuthorshipGraph';
 import FingerprintChart from '@/components/charts/FingerprintChart';
+import SimilarExperts from '@/components/SimilarExperts';
 
 interface Author {
     id: string;
@@ -96,9 +97,9 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
             fontFamily: 'var(--font-sans)',
             overflow: 'hidden'
         }}>
-            <div style={{ 
-                maxWidth: '1200px', 
-                margin: '0 auto', 
+            <div style={{
+                maxWidth: '1200px',
+                margin: '0 auto',
                 padding: '0 5vw',
                 boxSizing: 'border-box'
             }}>
@@ -111,14 +112,14 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '2rem' }}>
                     {recentPubs.map(pub => (
-                        <div key={pub.id} style={{ 
-                            display: 'flex', 
-                            flexDirection: 'column', 
-                            gap: '0.75rem', 
-                            padding: '1.5rem', 
-                            backgroundColor: 'rgba(255, 255, 255, 0.03)', 
-                            borderRadius: '16px', 
-                            border: '1px solid #334155', 
+                        <div key={pub.id} style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.75rem',
+                            padding: '1.5rem',
+                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                            borderRadius: '16px',
+                            border: '1px solid #334155',
                             transition: 'all 0.3s ease',
                             boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                         }}>
@@ -370,6 +371,9 @@ export default function ProfilePage() {
 
             {/* Recent Publications Section (Full-Bleed Expansion) */}
             <RecentArticlesSection authorId={id} />
+
+            {/* Similar Experts Section */}
+            <SimilarExperts authorId={id} />
         </div>
     );
 }

@@ -74,6 +74,7 @@ class Author(BaseModel):
     areas_of_interest: Optional[str] = None
     pub_count: Optional[int] = 0
     top_publication: Optional[TopPublication] = None
+    expertise_tags: List[str] = []
 
 class Publication(BaseModel):
     id: str
@@ -83,6 +84,14 @@ class Publication(BaseModel):
     venue: Optional[str]
     pdf_url: Optional[str] = None
     publication_date: Optional[str] = None
+
+class SimilarAuthor(BaseModel):
+    id: str
+    name: str
+    dept: Optional[str] = None
+    image_url: Optional[str] = None
+    shared_topics: List[str]
+    similarity_score: float
 
 # Endpoints
 @app.get("/")
@@ -197,44 +206,59 @@ async def get_recent_publications(author_id: str):
     ]
 
 @app.get("/authors", response_model=dict)
-async def get_authors(page: int = Query(1, ge=1), limit: int = Query(12, ge=1, le=100)):
-    """Get all authors with pagination."""
+async def get_authors(
+    page: int = Query(1, ge=1), 
+    limit: int = Query(12, ge=1, le=100),
+    dept: Optional[str] = Query(None)
+):
+    """Get all authors with pagination, optionally filtered by department."""
     offset = (page - 1) * limit
     
     # 1. Get total count
-    count_query = """
-        SELECT COUNT(DISTINCT a.id)
-        FROM authors a
-        JOIN author_metrics_yearly amy ON a.id = amy.author_id
-        GROUP BY a.id
-        HAVING SUM(amy.pub_count) > 0
-    """
-    # Note: The above count query returns a row for each author. We need the count of rows.
-    # Alternatively, simplistic count of authors who have ANY metric entry with pub_count > 0
-    count_query = """
+    where_clause = "WHERE a.is_faculty = TRUE"
+    params = []
+    
+    if dept:
+        where_clause += " AND a.dept = $1"
+        params.append(dept)
+        
+    count_query = f"""
         SELECT COUNT(*)
         FROM (
             SELECT a.id
             FROM authors a
             JOIN author_metrics_yearly amy ON a.id = amy.author_id
-            WHERE a.is_faculty = TRUE
+            {where_clause}
             GROUP BY a.id
             HAVING SUM(amy.pub_count) > 0
         ) as sub
     """
-    total_count = await db.pool.fetchval(count_query)
+    total_count = await db.pool.fetchval(count_query, *params)
     
     # 2. Get paginated data
-    # Sort order: 
-    # - Has Image (image_url IS NOT NULL) -> First
-    # - Publication Count (desc) -> Second
-    # - Alphabetical -> Third
-    query = """
-        SELECT a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone, COALESCE(SUM(amy.pub_count), 0) as total_pubs
+    query_params = [limit, offset]
+    if dept:
+        query_params.append(dept)
+        dept_filter = "AND a.dept = $3"
+    else:
+        dept_filter = ""
+
+    query = f"""
+        SELECT 
+            a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone, a.areas_of_interest,
+            COALESCE(SUM(amy.pub_count), 0) as total_pubs,
+            (
+                SELECT topics_json 
+                FROM publications p 
+                JOIN author_publications ap ON p.id = ap.publication_id 
+                WHERE ap.author_id = a.id AND p.topics_json IS NOT NULL 
+                ORDER BY p.citations DESC NULLS LAST 
+                LIMIT 1
+            ) as top_topics
         FROM authors a
         LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
-        WHERE a.is_faculty = TRUE
-        GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone
+        WHERE a.is_faculty = TRUE {dept_filter}
+        GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone, a.areas_of_interest
         HAVING COALESCE(SUM(amy.pub_count), 0) > 0
         ORDER BY 
             total_pubs DESC NULLS LAST,
@@ -242,12 +266,50 @@ async def get_authors(page: int = Query(1, ge=1), limit: int = Query(12, ge=1, l
             a.name ASC
         LIMIT $1 OFFSET $2
     """
-    rows = await db.pool.fetch(query, limit, offset)
+    rows = await db.pool.fetch(query, *query_params)
     
-    authors = [
-         Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url'], email=r['email'], phone=r['phone'], pub_count=r['total_pubs']) 
-         for r in rows
-    ]
+    import json
+    
+    authors = []
+    for r in rows:
+        tags = []
+        # 1. Get from areas_of_interest
+        aoi = r['areas_of_interest']
+        if aoi:
+            # Split by common delimiters and clean
+            import re
+            parts = re.split(r'[,;•\n\r]+', aoi)
+            for p in parts:
+                cleaned = p.strip().title()
+                if cleaned and cleaned not in tags:
+                    tags.append(cleaned)
+        
+        # 2. Fill with top topics if less than 5
+        if len(tags) < 5 and r['top_topics']:
+            try:
+                topics = json.loads(r['top_topics'])
+                for t in topics:
+                    name = t.get('display_name')
+                    if name:
+                        cleaned = name.strip().title()
+                        if cleaned and cleaned not in tags:
+                            tags.append(cleaned)
+                    if len(tags) >= 5:
+                        break
+            except:
+                pass
+        
+        authors.append(Author(
+            id=r['id'], 
+            name=r['name'], 
+            dept=r['dept'], 
+            orcid=r['orcid'], 
+            image_url=r['image_url'], 
+            email=r['email'], 
+            phone=r['phone'], 
+            pub_count=r['total_pubs'],
+            expertise_tags=tags[:5]
+        ))
     
     return {
         "data": authors,
@@ -959,6 +1021,79 @@ async def search_experts(q: str = Query(..., min_length=2, description="Search q
         )
         for row in rows
     ]
+
+@app.get("/authors/{author_id}/similar", response_model=List[SimilarAuthor])
+async def get_similar_authors(author_id: str, limit: int = Query(6, ge=1, le=20)):
+    """Find authors with similar research areas using vector similarity."""
+    global embedding_model
+    
+    # 1. Get the embedding for the target author
+    author_emb_query = "SELECT embedding FROM author_embeddings WHERE author_id = $1"
+    author_emb_row = await db.pool.fetchrow(author_emb_query, author_id)
+    
+    if not author_emb_row:
+        # If no embedding, fallback to some heuristic or return empty
+        # For now, let's just return empty if no embedding exists for the author
+        return []
+        
+    target_embedding = author_emb_row['embedding']
+    
+    # 2. Find similar authors using cosine similarity (via pgvector <=> operator)
+    # We exclude the author themselves.
+    similar_authors_query = """
+        SELECT 
+            ae.author_id,
+            a.name,
+            a.dept,
+            a.image_url,
+            1 - (ae.embedding <=> $2::vector) as similarity
+        FROM author_embeddings ae
+        JOIN authors a ON ae.author_id = a.id
+        WHERE ae.author_id != $1 AND a.is_faculty = TRUE
+        ORDER BY ae.embedding <=> $2::vector
+        LIMIT $3
+    """
+    similar_rows = await db.pool.fetch(similar_authors_query, author_id, target_embedding, limit)
+    
+    # 3. Find shared topics for each similar author
+    # This is a bit complex. We'll fetch the most frequent topics for the target and each similar author.
+    
+    async def get_top_topics(aid):
+        topic_query = """
+            SELECT t.name, COUNT(*) as count
+            FROM topics t
+            JOIN publication_topics pt ON t.id = pt.topic_id
+            JOIN author_publications ap ON pt.publication_id = ap.publication_id
+            WHERE ap.author_id = $1
+            GROUP BY t.name
+            ORDER BY count DESC
+            LIMIT 10
+        """
+        topic_rows = await db.pool.fetch(topic_query, aid)
+        return {r['name'] for r in topic_rows}
+
+    target_topics = await get_top_topics(author_id)
+    
+    results = []
+    for row in similar_rows:
+        sim_id = row['author_id']
+        sim_topics = await get_top_topics(sim_id)
+        
+        # Shared topics = intersection of top topics
+        shared = list(target_topics.intersection(sim_topics))
+        # Limit to top 3 shared topics for the UI
+        shared = shared[:3]
+        
+        results.append(SimilarAuthor(
+            id=sim_id,
+            name=row['name'],
+            dept=row['dept'],
+            image_url=row['image_url'],
+            shared_topics=shared,
+            similarity_score=round(float(row['similarity']), 4)
+        ))
+        
+    return results
 
 
 # ═══════════════════════════════════════════════════════════════
