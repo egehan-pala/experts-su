@@ -16,16 +16,12 @@ const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
 interface NetworkNode {
     id: string;
     name: string;
-    val?: number; // optional
+    val: number; // joint_citations
     image_url?: string | null;
     is_faculty?: boolean;
-    hop?: number;
-    joint_papers?: number;
-
-    // computed
-    isCenter?: boolean;
-    component?: number;
-    degree?: number;
+    joint_papers: number;
+    joint_citations: number;
+    cluster_id: number;
 
     // force-graph runtime positions
     x?: number;
@@ -37,10 +33,12 @@ interface NetworkNode {
 interface NetworkLink {
     source: string | NetworkNode;
     target: string | NetworkNode;
-    value?: number;
+    value: number; // joint_papers
+    joint_citations?: number;
 }
 
 interface NetworkData {
+    center_author_name: string;
     nodes: NetworkNode[];
     links: NetworkLink[];
 }
@@ -59,126 +57,33 @@ function getNodeId(n: string | NetworkNode) {
     return typeof n === 'string' ? n : n.id;
 }
 
-function clamp(n: number, a: number, b: number) {
-    return Math.max(a, Math.min(b, n));
+function clamp(n: number, min: number, max: number) {
+    return Math.max(min, Math.min(max, n));
 }
 
-/**
- * ✅ Build connected components (clusters) so we can place them like Rankless:
- * - each connected component pulled toward its own "component center"
- * - isolates (degree=0) become their own components too
- */
-function computeComponents(nodes: NetworkNode[], links: NetworkLink[]) {
-    const idToIndex = new Map<string, number>();
-    nodes.forEach((n, i) => idToIndex.set(n.id, i));
-
-    const adj: number[][] = Array.from({ length: nodes.length }, () => []);
-    const degree = new Array(nodes.length).fill(0);
-
-    links.forEach((l) => {
-        const s = idToIndex.get(getNodeId(l.source));
-        const t = idToIndex.get(getNodeId(l.target));
-        if (s == null || t == null) return;
-        adj[s].push(t);
-        adj[t].push(s);
-        degree[s] += 1;
-        degree[t] += 1;
-    });
-
-    // annotate degree
-    nodes.forEach((n, i) => (n.degree = degree[i]));
-
-    const visited = new Array(nodes.length).fill(false);
-    const components: number[][] = [];
-    for (let i = 0; i < nodes.length; i++) {
-        if (visited[i]) continue;
-        // BFS
-        const q = [i];
-        visited[i] = true;
-        const comp: number[] = [];
-        while (q.length) {
-            const u = q.shift()!;
-            comp.push(u);
-            for (const v of adj[u]) {
-                if (!visited[v]) {
-                    visited[v] = true;
-                    q.push(v);
-                }
-            }
-        }
-        components.push(comp);
-    }
-
-    // assign component id
-    components.forEach((comp, ci) => {
-        comp.forEach((idx) => {
-            nodes[idx].component = ci;
-        });
-    });
-
-    return { components };
+// Log scale helper for visual mapping
+function logScale(value: number, minVal: number, maxVal: number, minOut: number, maxOut: number) {
+    if (maxVal === minVal) return minOut;
+    const logMin = Math.log(Math.max(1, minVal));
+    const logMax = Math.log(Math.max(1, maxVal));
+    const logVal = Math.log(Math.max(1, value));
+    const normalized = (logVal - logMin) / (logMax - logMin);
+    return minOut + normalized * (maxOut - minOut);
 }
 
-/**
- * ✅ Choose component centers arranged nicely (big in the middle, smaller around),
- * like Rankless "islands".
- */
-function computeComponentCenters(
-    comps: number[][],
-    nodes: NetworkNode[],
-    width: number,
-    height: number
-) {
-    // component "mass" = sum(val or degree)
-    const masses = comps.map((c) =>
-        c.reduce((sum, idx) => sum + (nodes[idx].val ?? 1) + (nodes[idx].degree ?? 0), 0)
-    );
-
-    // sort by mass descending, keep mapping
-    const order = masses
-        .map((m, i) => ({ m, i }))
-        .sort((a, b) => b.m - a.m)
-        .map((x) => x.i);
-
-    const centers = new Map<number, { x: number; y: number }>();
-
-    const cx = width * 0.5;
-    const cy = height * 0.55;
-
-    const ringR1 = Math.min(width, height) * 0.12;
-    const ringR2 = Math.min(width, height) * 0.22;
-
-    // place the biggest in the center-ish
-    if (order.length) centers.set(order[0], { x: cx, y: cy });
-
-    // distribute remaining around rings
-    const rest = order.slice(1);
-    const split = Math.ceil(rest.length * 0.55);
-    const ring1 = rest.slice(0, split);
-    const ring2 = rest.slice(split);
-
-    ring1.forEach((compId, k) => {
-        const angle = (2 * Math.PI * k) / Math.max(1, ring1.length);
-        centers.set(compId, {
-            x: cx + ringR1 * Math.cos(angle),
-            y: cy + ringR1 * Math.sin(angle)
-        });
-    });
-
-    ring2.forEach((compId, k) => {
-        const angle = (2 * Math.PI * (k + 0.5)) / Math.max(1, ring2.length);
-        centers.set(compId, {
-            x: cx + ringR2 * Math.cos(angle),
-            y: cy + ringR2 * Math.sin(angle)
-        });
-    });
-
-    return centers;
-}
+const CLUSTER_COLORS = [
+    '#4FC3F7', '#81C784', '#FFB74D', '#BA68C8', '#F06292', 
+    '#4DB6AC', '#DCE775', '#FF8A65', '#9575CD', '#A1887F'
+];
 
 export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
-    const [rawData, setRawData] = useState<NetworkData | null>(null);
+    const [networkData, setNetworkData] = useState<NetworkData | null>(null);
     const [loading, setLoading] = useState(true);
+    const [yearRange, setYearRange] = useState({ 
+        from: new Date().getFullYear() - 10, 
+        to: new Date().getFullYear() 
+    });
+    const [collaboratorLimit, setCollaboratorLimit] = useState(25);
 
     const containerRef = useRef<HTMLDivElement>(null);
     const fgRef = useRef<any>(null);
@@ -188,15 +93,13 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
     // ✅ responsive sizing
     useEffect(() => {
         if (!containerRef.current) return;
-
         const el = containerRef.current;
         const ro = new ResizeObserver(() => {
             setDimensions({
                 width: el.clientWidth || 1200,
-                height: Math.max(650, Math.min(900, Math.floor((el.clientWidth || 1200) * 0.58)))
+                height: Math.max(650, Math.floor((el.clientWidth || 1200) * 0.58))
             });
         });
-
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
@@ -204,260 +107,282 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
     // ✅ fetch network
     useEffect(() => {
         if (!authorId) return;
-
         setLoading(true);
-
         const shortId = authorId.includes('/') ? authorId.split('/').pop()! : authorId;
 
-        fetch(`http://localhost:8000/authors/${shortId}/network`)
+        const params = new URLSearchParams();
+        params.append('year_from', yearRange.from.toString());
+        params.append('year_to', yearRange.to.toString());
+        params.append('limit', collaboratorLimit.toString());
+
+        fetch(`http://localhost:8000/authors/${shortId}/network?${params.toString()}`)
             .then((res) => res.json())
             .then((data: NetworkData) => {
-                if (!data?.nodes?.length) {
-                    setRawData({ nodes: [], links: [] });
-                    setLoading(false);
-                    return;
-                }
-
-                // mark center node
-                data.nodes.forEach((n) => {
-                    n.isCenter = n.id?.toLowerCase() === shortId?.toLowerCase() || n.name === authorName;
-                });
-
-                setRawData(data);
+                setNetworkData(data);
                 setLoading(false);
             })
             .catch((err) => {
                 console.error('Error fetching network:', err);
                 setLoading(false);
             });
-    }, [authorId, authorName]);
+    }, [authorId, yearRange, collaboratorLimit]);
 
-    // ✅ preprocess to Rankless-like clusters
-    const networkData: NetworkData | null = useMemo(() => {
-        if (!rawData?.nodes?.length) return rawData;
+    // Bounds for scaling
+    const bounds = useMemo(() => {
+        if (!networkData?.nodes.length) return { minCits: 0, maxCits: 0, minPapers: 0, maxPapers: 0 };
+        const cits = networkData.nodes.map(n => n.joint_citations);
+        const papers = networkData.nodes.map(n => n.joint_papers);
+        return {
+            minCits: Math.min(...cits),
+            maxCits: Math.max(...cits),
+            minPapers: Math.min(...papers),
+            maxPapers: Math.max(...papers)
+        };
+    }, [networkData]);
 
-        // clone to avoid mutating state
-        const nodes = rawData.nodes.map((n) => ({ ...n }));
-        const links = rawData.links.map((l) => ({ ...l }));
+    const linkBounds = useMemo(() => {
+        if (!networkData?.links.length) return { minPapers: 0, maxPapers: 0 };
+        const papers = networkData.links.map(l => l.value);
+        return {
+            minPapers: Math.min(...papers),
+            maxPapers: Math.max(...papers)
+        };
+    }, [networkData]);
 
-        // ensure node ids unique
-        const seen = new Set<string>();
-        const filteredNodes: NetworkNode[] = [];
-        for (const n of nodes) {
-            if (!n?.id) continue;
-            if (seen.has(n.id)) continue;
-            seen.add(n.id);
-            filteredNodes.push(n);
-        }
-
-        // remove links that refer to missing nodes
-        const ids = new Set(filteredNodes.map((n) => n.id));
-        const filteredLinks = links.filter((l) => ids.has(getNodeId(l.source)) && ids.has(getNodeId(l.target)));
-
-        // compute connected components + degrees
-        const { components } = computeComponents(filteredNodes, filteredLinks);
-
-        // give nodes a baseline val so sizing works
-        filteredNodes.forEach((n) => {
-            const d = n.degree ?? 0;
-            const jp = n.joint_papers ?? 0;
-            const base = (n.val ?? 1) + d * 0.25 + jp * 0.6;
-            n.val = clamp(base, 1.5, 22);
-        });
-
-        return { nodes: filteredNodes, links: filteredLinks };
-    }, [rawData]);
-
-    // ✅ configure forces (Rankless-ish)
+    // ✅ configure forces
     useEffect(() => {
         if (!fgRef.current || !networkData?.nodes?.length) return;
-
         const fg = fgRef.current;
 
-        // link distance based on weight => heavier link pulls closer
-        // ✅ link distance: increase overall spacing (heavier links still a bit closer)
-        fg.d3Force('link')?.distance((l: any) => {
-            const v = l?.value ?? 1;
+        // Tighter grouping: 
+        // 1. Lower link distance (80 -> 45)
+        // Reference image style: Distinct, tight clusters scattered across the canvas
+        // 1. Very short link distance (30 -> 20)
+        // 2. Maximum link strength (1.0)
+        // 3. Balanced charge repulsion (-150 -> -200) to keep clusters apart
+        // 4. Weak centering force (1.5 -> 0.1) to allow clusters to scatter/breathe
+        fg.d3Force('link')?.distance(20).strength(1.0);
+        fg.d3Force('charge')?.strength(-200);
+        fg.d3Force('collide')?.radius((n: any) => logScale(n.joint_citations || 0, bounds.minCits, bounds.maxCits, 12, 35) + 10);
+        fg.d3Force('center')?.strength(0.1);
 
-            // bigger base distance => less overlap
-            // heavier links slightly shorter, but still long
-            return clamp(700 - v * 8, 450, 900);
-        });
-
-        fg.d3Force('link')?.strength((l: any) => {
-            const v = l?.value ?? 1;
-
-            // slightly lower strength so links don't pull nodes into a tight ball
-            return clamp(0.12 + v * 0.02, 0.12, 0.35);
-        });
-
-        // charge: very strong repulsion within clusters
-        fg.d3Force('charge')?.strength(-2500);
-
-        // ✅ collision: smaller node body, but enough to prevent overlap
-        fg.d3Force('collide')?.radius((n: any) => {
-            const vv = n?.val ?? 6;
-
-            // smaller than before (node size down), but still prevents overlaps
-            return clamp(18 + vv * 0.4, 20, 40);
-        });
-
-        // ✅ cluster centers (component separation)
-        const compsMap = new Map<number, number[]>();
-        networkData.nodes.forEach((n, idx) => {
-            const c = n.component ?? 0;
-            if (!compsMap.has(c)) compsMap.set(c, []);
-            compsMap.get(c)!.push(idx);
-        });
-
-        const comps = Array.from(compsMap.values());
-        const centers = computeComponentCenters(comps, networkData.nodes, dimensions.width, dimensions.height);
-
-        // forceX/forceY pull each component to its island center — strong to keep clusters close
-        fg.d3Force('x')?.strength(0.25);
-        fg.d3Force('y')?.strength(0.25);
-
-        fg.d3Force('x')?.x((n: any) => {
-            const c = n?.component ?? 0;
-            const center = centers.get(c) ?? { x: dimensions.width * 0.5, y: dimensions.height * 0.55 };
-            return center.x;
-        });
-
-        fg.d3Force('y')?.y((n: any) => {
-            const c = n?.component ?? 0;
-            const center = centers.get(c) ?? { x: dimensions.width * 0.5, y: dimensions.height * 0.55 };
-            return center.y;
-        });
-
-        // center overall
-        fg.d3Force('center')?.strength(0.04);
-
-        // initial zoom-to-fit after layout starts
         const t = setTimeout(() => {
-            try {
-                fg.zoomToFit(750, 70);
-            } catch { }
-        }, 450);
-
+            try { fg.zoomToFit(750, 70); } catch { }
+        }, 500);
         return () => clearTimeout(t);
-    }, [networkData, dimensions.width, dimensions.height]);
+    }, [networkData, bounds]);
 
-    // ✅ node drawing (Rankless-style)
+    // ✅ node drawing
     const nodeCanvasObject = useCallback(
-        (node: NetworkNode, ctx: CanvasRenderingContext2D, globalScale: number) => {
-            const isCenter = !!node.isCenter;
+        (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
+            const node = obj as NetworkNode;
+            const radius = logScale(node.joint_citations, bounds.minCits, bounds.maxCits, 3, 12);
+            const borderW = logScale(node.joint_papers, bounds.minPapers, bounds.maxPapers, 0.5, 4);
+            const color = CLUSTER_COLORS[(node.cluster_id - 1) % CLUSTER_COLORS.length] || '#94a3b8';
 
-            const baseR = 1.5 + (node.val ?? 6) * 0.12;
-            const radius = clamp(baseR, 2, 4);
-
-            // fill
+            // Fill
             ctx.beginPath();
             ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI, false);
-            ctx.fillStyle = 'rgba(76, 118, 160, 0.40)'; // translucent blue-gray
+            ctx.fillStyle = `${color}44`; // 44 => ~25% alpha
             ctx.fill();
 
-            // border: joint papers + center emphasis
-            const jp = node.joint_papers ?? 0;
-            const borderWidth = clamp(0.5 + jp * 0.1 + (isCenter ? 0.5 : 0), 0.5, 2);
-            ctx.lineWidth = borderWidth;
-            ctx.strokeStyle = isCenter ? 'rgba(110, 170, 230, 0.95)' : 'rgba(86, 144, 200, 0.85)';
+            // Border
+            ctx.lineWidth = borderW / globalScale;
+            ctx.strokeStyle = color;
             ctx.stroke();
 
-            // label
+            // Label
             const label = safeLastName(node.name);
-            const deg = node.degree ?? 0;
-
-            // Rankless vibe: bigger labels for stronger nodes; scale w/ zoom
-            const fontSize = clamp((isCenter ? 14 : 9) + (deg * 0.3) + (node.val ?? 6) * 0.1, 8, 16);
-            const scaled = fontSize / globalScale;
-
-            ctx.font = `700 ${scaled}px "Courier New", Courier, monospace`;
+            const fontSize = logScale(node.joint_citations, bounds.minCits, bounds.maxCits, 8, 14) / globalScale;
+            
+            ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
             ctx.textAlign = 'center';
-            ctx.textBaseline = 'middle';
-
-            // subtle shadow for readability
-            ctx.shadowColor = 'rgba(0,0,0,0.55)';
-            ctx.shadowBlur = 6 / globalScale;
-
+            ctx.textBaseline = 'top';
             ctx.fillStyle = '#ffffff';
-            ctx.fillText(label, node.x!, node.y!);
-
-            ctx.shadowBlur = 0;
+            ctx.fillText(label, node.x!, node.y! + radius + 2);
         },
-        []
+        [bounds]
     );
 
-    // ✅ link thickness
     const linkWidth = useCallback((l: any) => {
-        const v = l?.value ?? 1;
-        return clamp(1 + v * 0.9, 1, 9);
-    }, []);
+        return logScale(l.value, linkBounds.minPapers, linkBounds.maxPapers, 0.5, 5);
+    }, [linkBounds]);
 
-    if (loading) {
-        return (
-            <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-                Loading network...
-            </div>
-        );
-    }
-
-    if (!networkData || networkData.nodes.length === 0) {
-        return null;
-    }
+    const totalCitations = networkData?.nodes.reduce((sum, n) => sum + n.joint_citations, 0) || 0;
 
     return (
-        <div style={{ marginTop: '1.5rem' }}>
-            <div
-                style={{
-                    background: '#545454', // Rankless-like gray
-                    borderRadius: 10,
-                    padding: '1.25rem',
-                    border: '1px solid #3e3e3e'
-                }}
-            >
-                <h2
-                    style={{
-                        fontSize: '1.25rem',
-                        fontFamily: '"Courier New", Courier, monospace',
-                        color: '#ffffff',
-                        marginBottom: '0.75rem',
-                        textAlign: 'center',
-                        fontWeight: 800,
-                        letterSpacing: '0.08em'
-                    }}
-                >
-                    Co-authorship network of co-authors of {authorName}
-                </h2>
+        <div style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ background: '#1e293b', borderRadius: 12, padding: '1.5rem', border: '1px solid #334155' }}>
+                <header style={{ 
+                    display: 'flex', 
+                    justifyContent: 'space-between', 
+                    alignItems: 'center', 
+                    marginBottom: '1.5rem',
+                    flexWrap: 'wrap',
+                    gap: '1rem'
+                }}>
+                    <div style={{ textAlign: 'left' }}>
+                        <h2 style={{ fontSize: '1.5rem', fontFamily: '"Courier New", Courier, monospace', color: '#f8fafc', fontWeight: 800 }}>
+                            Collaboration Network for {authorName}
+                        </h2>
+                        <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginTop: '0.25rem' }}>
+                            Visualizing top {collaboratorLimit} collaborators by joint citations.
+                        </p>
+                    </div>
 
-                <div ref={containerRef} style={{ overflow: 'hidden', height: dimensions.height }}>
-                    <ForceGraph2D
-                        ref={fgRef}
-                        width={dimensions.width}
-                        height={dimensions.height}
-                        graphData={networkData}
-                        backgroundColor="rgba(0,0,0,0)" // show container bg
-                        nodeLabel={(n: any) =>
-                            `${n?.name ?? ''}${n?.joint_papers ? `\nJoint papers: ${n.joint_papers}` : ''}`
-                        }
-                        nodeCanvasObject={nodeCanvasObject}
-                        linkWidth={linkWidth}
-                        linkColor={() => 'rgba(205, 175, 55, 0.75)'} // gold
-                        linkDirectionalParticles={0}
-                        linkDirectionalParticleWidth={0}
-                        linkCurvature={0}
+                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                        {/* Collaborator Limit Controls */}
+                        <div style={{ 
+                            display: 'flex', 
+                            gap: '12px', 
+                            alignItems: 'center', 
+                            background: '#0f172a', 
+                            padding: '8px 16px', 
+                            borderRadius: '8px', 
+                            border: '1px solid #334155'
+                        }}>
+                            <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, fontFamily: 'monospace' }}>LIMIT</div>
+                            <button 
+                                onClick={() => setCollaboratorLimit(Math.max(5, collaboratorLimit - 5))}
+                                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 4, color: '#f8fafc', width: '28px', height: '28px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
+                            >
+                                -
+                            </button>
+                            <span style={{ color: '#f8fafc', fontSize: '0.875rem', fontWeight: 700, width: '25px', textAlign: 'center' }}>{collaboratorLimit}</span>
+                            <button 
+                                onClick={() => setCollaboratorLimit(Math.min(100, collaboratorLimit + 5))}
+                                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 4, color: '#f8fafc', width: '28px', height: '28px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
+                            >
+                                +
+                            </button>
+                        </div>
 
-                        // UX
-                        enableNodeDrag={true}
-                        cooldownTicks={220}
-                        onNodeHover={(node: any) => {
-                            if (!containerRef.current) return;
-                            containerRef.current.style.cursor = node && node.is_faculty ? 'pointer' : 'default';
-                        }}
-                        onNodeClick={(node: any) => {
-                            if (node && node.id && node.is_faculty) window.open(`/authors/${node.id}`, '_blank');
-                        }}
-                    />
-                </div>
+                        {/* Year Filter Controls */}
+                        <div style={{ 
+                            display: 'flex', 
+                            gap: '12px', 
+                            alignItems: 'center', 
+                            background: '#0f172a', 
+                            padding: '8px 16px', 
+                            borderRadius: '8px', 
+                            border: '1px solid #334155'
+                        }}>
+                            <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, fontFamily: 'monospace' }}>YEAR RANGE</div>
+                            <input 
+                                type="number" 
+                                value={yearRange.from}
+                                onChange={(e) => setYearRange({ ...yearRange, from: parseInt(e.target.value) })}
+                                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 4, color: '#f8fafc', padding: '2px 6px', width: '70px', fontSize: '0.875rem' }}
+                                min={1900} max={2100}
+                            />
+                            <span style={{ color: '#334155' }}>—</span>
+                            <input 
+                                type="number" 
+                                value={yearRange.to}
+                                onChange={(e) => setYearRange({ ...yearRange, to: parseInt(e.target.value) })}
+                                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 4, color: '#f8fafc', padding: '2px 6px', width: '70px', fontSize: '0.875rem' }}
+                                min={1900} max={2100}
+                            />
+                        </div>
+                    </div>
+                </header>
+
+                {loading ? (
+                    <div style={{ height: dimensions.height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', borderRadius: 8, color: '#94a3b8' }}>
+                        Re-calculating network...
+                    </div>
+                ) : !networkData || networkData.nodes.length === 0 ? (
+                    <div style={{ height: dimensions.height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', borderRadius: 8, color: '#94a3b8' }}>
+                        No collaboration data found for this range.
+                    </div>
+                ) : (
+                    <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '1rem', alignItems: 'start' }}>
+                        <div ref={containerRef} style={{ position: 'relative', overflow: 'hidden', height: dimensions.height, background: '#0f172a', borderRadius: 8 }}>
+                            <ForceGraph2D
+                                ref={fgRef}
+                                width={dimensions.width * 0.75}
+                                height={dimensions.height}
+                                graphData={networkData}
+                                nodeCanvasObject={nodeCanvasObject}
+                                nodePointerAreaPaint={(node: any, color, ctx) => {
+                                    const radius = logScale(node.joint_citations, bounds.minCits, bounds.maxCits, 3, 12);
+                                    ctx.fillStyle = color;
+                                    ctx.beginPath();
+                                    ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI, false);
+                                    ctx.fill();
+                                }}
+                                nodeRelSize={4}
+                                linkWidth={linkWidth}
+                                linkColor={() => '#475569aa'}
+                                onNodeClick={(node: any) => {
+                                    if (node && node.id && node.is_faculty) window.open(`/authors/${node.id}`, '_blank');
+                                }}
+                                nodeLabel={(n: any) => `
+                                    ${n.name}
+                                    Joint Citations: ${n.joint_citations}
+                                    Joint Papers: ${n.joint_papers}
+                                `}
+                            />
+
+                            {/* Legend */}
+                            <div style={{
+                                position: 'absolute', bottom: 15, left: 15, background: 'rgba(15, 23, 42, 0.85)',
+                                padding: '0.75rem', borderRadius: 8, border: '1px solid #334155', pointerEvents: 'none',
+                                fontSize: '0.75rem', color: '#f8fafc', fontFamily: 'monospace'
+                            }}>
+                                <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', borderBottom: '1px solid #334155', paddingBottom: '0.25rem' }}>LEGEND</div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                    <div style={{ width: 12, height: 12, borderRadius: '50%', border: '1px solid #f8fafc' }}></div>
+                                    <span>Node Size ∝ Joint Citations</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                    <div style={{ width: 12, height: 12, borderRadius: '50%', border: '3px solid #f8fafc', boxSizing: 'border-box' }}></div>
+                                    <span>Border ∝ Joint Papers (Center)</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                    <div style={{ width: 20, height: 2, background: '#f8fafc' }}></div>
+                                    <span>Edge Width ∝ Shared Works</span>
+                                </div>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                    <div style={{ width: 12, height: 12, borderRadius: '50%', background: CLUSTER_COLORS[0] }}></div>
+                                    <span>Color = Cluster/Community</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Side Panel / Summary */}
+                        <div style={{ background: '#0f172a', borderRadius: 8, padding: '1rem', border: '1px solid #334155', height: '100%', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                            <h3 style={{ fontSize: '0.9rem', color: '#f8fafc', fontWeight: 700, borderBottom: '1px solid #334155', paddingBottom: '0.5rem', fontFamily: 'monospace' }}>
+                                SYNOPSIS
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
+                                <div>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>CORE RESEARCHER</div>
+                                    <div style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold' }}>{authorName}</div>
+                                </div>
+                                <div>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>DISPLAYED COLLABORATORS</div>
+                                    <div style={{ color: '#f8fafc', fontSize: '1.25rem', fontWeight: 'bold' }}>{networkData.nodes.length}</div>
+                                </div>
+                                <div>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>JOINT CITATIONS (TOP {collaboratorLimit})</div>
+                                    <div style={{ color: '#38bdf8', fontSize: '1.25rem', fontWeight: 'bold' }}>{totalCitations}</div>
+                                </div>
+                                <div>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>COMMUNITIES FOUND</div>
+                                    <div style={{ color: '#c084fc', fontSize: '1.25rem', fontWeight: 'bold' }}>{new Set(networkData.nodes.map(n => n.cluster_id)).size}</div>
+                                </div>
+                                <div>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>PERIOD</div>
+                                    <div style={{ color: '#f8fafc', fontSize: '0.9rem', fontWeight: 'bold' }}>{yearRange.from} — {yearRange.to}</div>
+                                </div>
+                            </div>
+                            <div style={{ marginTop: 'auto', fontSize: '0.7rem', color: '#64748b', fontStyle: 'italic' }}>
+                                Note: The central researcher is omitted from the graph to highlight inter-collaborator connections.
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

@@ -47,7 +47,7 @@ interface Publication {
     publication_date?: string | null;
 }
 
-function RecentArticlesSidebar({ authorId }: { authorId: string }) {
+function RecentArticlesSection({ authorId }: { authorId: string }) {
     const [recentPubs, setRecentPubs] = useState<Publication[]>([]);
     const [loading, setLoading] = useState(true);
 
@@ -75,59 +75,47 @@ function RecentArticlesSidebar({ authorId }: { authorId: string }) {
     };
 
     if (loading) return null;
-    // if (!recentPubs || recentPubs.length === 0) return null;
+    if (!recentPubs || recentPubs.length === 0) return null;
 
     return (
-        <aside style={{
-            width: '320px',
-            flexShrink: 0,
-            display: 'flex',
-            flexDirection: 'column',
-            gap: '1.5rem',
-            padding: '1.5rem',
+        <section style={{
+            marginTop: '4rem',
+            padding: '2rem',
             backgroundColor: '#ffffff',
-            borderRadius: '16px',
+            borderRadius: '20px',
             border: '1px solid #e4e4e7',
-            boxShadow: '0 4px 12px rgba(0,0,0,0.03)',
-            height: 'fit-content',
-            position: 'sticky',
-            top: '2rem'
+            boxShadow: '0 10px 30px rgba(0,0,0,0.04)',
         }}>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.2rem', borderBottom: '1px solid #f4f4f5', paddingBottom: '0.75rem' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.6rem' }}>
-                    <span style={{ fontSize: '1.25rem' }}>📰</span>
-                    <h3 style={{ fontSize: '0.85rem', fontWeight: 800, color: '#d6001c', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, fontFamily: 'var(--font-sans)' }}>
-                        Recent Publications
-                    </h3>
-                </div>
-                <span style={{ fontSize: '0.7rem', color: '#a1a1aa', fontFamily: 'monospace' }}>
-                    Author ID: {authorId}
-                </span>
+            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem', borderBottom: '1px solid #f4f4f5', paddingBottom: '1rem' }}>
+                <span style={{ fontSize: '1.5rem' }}>📰</span>
+                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#d6001c', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, fontFamily: 'var(--font-sans)' }}>
+                    Recent Publications
+                </h3>
             </div>
 
-            <div style={{ display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '2.5rem' }}>
                 {recentPubs.map(pub => (
-                    <div key={pub.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                    <div key={pub.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', padding: '1.25rem', backgroundColor: '#f9f9fb', borderRadius: '12px', border: '1px solid #f1f1f4', transition: 'transform 0.2s' }}>
                         <span style={{ fontSize: '0.8rem', color: '#71717a', fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontWeight: 500 }}>
                             {formatDate(pub.publication_date)}
                         </span>
-                        <h4 style={{ fontSize: '1.05rem', color: '#111', fontWeight: 600, lineHeight: 1.4, margin: 0, fontFamily: 'var(--font-serif)' }}>
+                        <h4 style={{ fontSize: '1rem', color: '#111', fontWeight: 700, lineHeight: 1.4, margin: 0, fontFamily: 'var(--font-serif)', minHeight: '2.8em' }}>
                             {pub.title}
                         </h4>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: 'auto' }}>
                             <span style={{ fontSize: '0.8rem', color: '#002855', fontWeight: 700, fontFamily: 'var(--font-sans)' }}>
                                 {pub.venue || 'Unknown Venue'}
                             </span>
                         </div>
                         {pub.pdf_url && (
-                            <a href={pub.pdf_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: '#d6001c', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.2rem', marginTop: '0.25rem' }}>
+                            <a href={pub.pdf_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: '#d6001c', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.2rem', marginTop: '0.5rem' }}>
                                 PDF AVAILABLE ↗
                             </a>
                         )}
                     </div>
                 ))}
             </div>
-        </aside>
+        </section>
     );
 }
 
@@ -347,13 +335,12 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {/* Layout with Main Content and Recent Articles Sidebar */}
-            <div className="container" style={{ display: 'flex', gap: '3rem', marginTop: '3rem', alignItems: 'flex-start' }}>
-
-                {/* Main Content Column */}
-                <div style={{ flex: 1, minWidth: 0 }}>
-                    {/* ✨ Research Galaxy — Multi-Level Constellation ✨ */}
-                    {(() => {
+            {/* Layout Main Column */}
+            <div className="container" style={{ marginTop: '3rem' }}>
+                
+                {/* ✨ Research Galaxy — Multi-Level Constellation ✨ */}
+                {(() => {
+                    // ... (galaxy part stays same inside)
                         const PALETTE = [
                             'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
                             'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
@@ -575,12 +562,10 @@ export default function ProfilePage() {
                     <div style={{ marginTop: '3rem' }}>
                         <CoAuthorshipGraph authorId={id} authorName={author.name} />
                     </div>
+
+                    {/* Recent Publications Section (Full Width Below) */}
+                    <RecentArticlesSection authorId={id} />
                 </div>
-
-                {/* Sidebar Column */}
-                <RecentArticlesSidebar authorId={id} />
-
-            </div>
 
             {/* Publications section removed - data is stored in backend for future search engine implementation */}
         </div>

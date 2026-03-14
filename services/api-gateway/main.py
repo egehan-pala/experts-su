@@ -290,18 +290,21 @@ class TopicStat(BaseModel):
 class NetworkNode(BaseModel):
     id: str
     name: str
-    val: int  # weight/size
+    val: int  # joint_citations_with_center or similar
     image_url: Optional[str] = None
     is_faculty: bool = False
-    hop: int = 1
     joint_papers: int = 0
+    joint_citations: int = 0
+    cluster_id: int = 0
 
 class NetworkLink(BaseModel):
     source: str
     target: str
-    value: int
+    value: int # joint_papers
+    joint_citations: int = 0
 
 class NetworkGraph(BaseModel):
+    center_author_name: str
     nodes: List[NetworkNode]
     links: List[NetworkLink]
 
@@ -512,67 +515,194 @@ async def get_author_galaxy(
 
     return []
 
+# Simple in-memory cache for network graphs
+_network_cache = {}
+
 @app.get("/authors/{author_id}/network", response_model=NetworkGraph)
-async def get_author_network(author_id: str):
-    """Get co-authorship network connecting the top 30 collaborators of an author based on joint citations."""
-    # 1. Top 30 collaborators by joint citations
-    query_l1 = """
-        SELECT 
-            ap2.author_id as coauthor_id,
-            COUNT(DISTINCT p.id) as joint_paper_count,
-            COALESCE(SUM(p.citations), 0) as joint_citations
-        FROM author_publications ap1
-        JOIN publications p ON ap1.publication_id = p.id
-        JOIN author_publications ap2 ON p.id = ap2.publication_id
-        WHERE ap1.author_id ILIKE $1 AND ap2.author_id != ap1.author_id
-        GROUP BY ap2.author_id
-        ORDER BY joint_citations DESC NULLS LAST
-        LIMIT 20
-    """
-    l1_rows = await db.pool.fetch(query_l1, author_id)
-    if not l1_rows:
-        return NetworkGraph(nodes=[], links=[])
+async def get_author_network(author_id: str, 
+                             year_from: Optional[int] = Query(None), 
+                             year_to: Optional[int] = Query(None),
+                             limit: int = Query(25, ge=5, le=100)):
+    """Get co-authorship network connecting the top collaborators of an author based on joint citations."""
+    import json
+    import datetime
+    from collections import defaultdict
 
-    top_coauthors = {r['coauthor_id']: r['joint_paper_count'] for r in l1_rows}
-    all_ids = list(top_coauthors.keys())
+    # Default: last 10 years
+    if year_from is None:
+        year_from = datetime.datetime.now().year - 10
 
-    # 2. Fetch nodes
-    query_nodes = """
-        SELECT id, name, image_url, is_faculty,
-               (SELECT COALESCE(SUM(pub_count),0) FROM author_metrics_yearly WHERE author_id = authors.id) as total_pubs
-        FROM authors
-        WHERE id = ANY($1::text[])
+    # Cache key
+    cache_key = f"{author_id}_{year_from}_{year_to}_{limit}"
+    if cache_key in _network_cache:
+        # Check if cache is fresh (e.g., < 1 hour old - adding simple timestamp would be better but let's keep it simple)
+        # For now just return if exists. In a production app, we'd use Redis or a proper TTL cache.
+        return _network_cache[cache_key]
+
+
+    # 1. Fetch center author name
+    author_row = await db.pool.fetchrow("SELECT name FROM authors WHERE id ILIKE $1", author_id)
+    center_name = author_row['name'] if author_row else "Unknown Author"
+
+    # 2. Fetch all publications for the author including authorships_json
+    # Filter by year if provided - use ILIKE with % just in case
+    year_filter = "AND p.year >= $2"
+    params = [f"%{author_id}%", year_from]
+    if year_to:
+        year_filter += " AND p.year <= $3"
+        params.append(year_to)
+
+    query = f"""
+        SELECT p.id, p.citations, p.authorships_json, p.year
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id ILIKE $1 {year_filter}
     """
-    nodes_rows = await db.pool.fetch(query_nodes, all_ids)
+    publication_rows = await db.pool.fetch(query, *params)
     
+        
+    if not publication_rows:
+        return NetworkGraph(center_author_name=center_name, nodes=[], links=[])
+
+    # 3. Aggregate co-authors from these publications
+    coauthor_metrics = {} # author_id -> {metrics}
+    papers_data = [] # List of (paper_id, citations, [list_of_coauthor_ids])
+
+    # Helper to normalize IDs
+    def clean_id(raw_id):
+        if not raw_id: return None
+        return raw_id.replace("https://openalex.org/", "").split("/")[-1]
+
+    target_id_clean = clean_id(author_id).lower()
+
+    for row in publication_rows:
+        paper_id = row['id']
+        citations = row['citations'] or 0
+        authorships = row['authorships_json']
+        
+        if isinstance(authorships, str):
+            try: authorships = json.loads(authorships)
+            except: continue
+        
+        if not authorships: continue
+
+        paper_coauthors = []
+        for auth in authorships:
+            # Format A: Nested 'author' object
+            # Format B: Flat 'author_id', 'author_name' keys
+            a_info = auth.get('author')
+            if a_info:
+                raw_aid = a_info.get('id')
+                a_name = a_info.get('display_name') or a_info.get('name') or "Unknown"
+            else:
+                raw_aid = auth.get('author_id')
+                a_name = auth.get('author_name') or "Unknown"
+            
+            if not raw_aid: continue
+            
+            aid = clean_id(raw_aid)
+            
+            if aid.lower() == target_id_clean:
+                continue
+                
+            paper_coauthors.append(aid)
+            
+            if aid not in coauthor_metrics:
+                coauthor_metrics[aid] = {
+                    "id": aid,
+                    "name": a_name,
+                    "joint_papers": 0,
+                    "joint_citations": 0
+                }
+            
+            coauthor_metrics[aid]["joint_papers"] += 1
+            coauthor_metrics[aid]["joint_citations"] += citations
+        
+        papers_data.append((paper_id, citations, paper_coauthors))
+
+
+    # 4. Rank and select Top N
+    sorted_coauthors = sorted(
+        coauthor_metrics.values(),
+        key=lambda x: (-x["joint_citations"], -x["joint_papers"], x["name"])
+    )
+    top_n_list = sorted_coauthors[:limit]
+    top_n_ids = {a["id"] for a in top_n_list}
+
+    if not top_n_list:
+        return NetworkGraph(center_author_name=center_name, nodes=[], links=[])
+
+    # 5. Build nodes (enrich with DB info if available)
+    # Fetch additional info for these authors
+    db_authors = await db.pool.fetch(
+        "SELECT id, image_url, is_faculty FROM authors WHERE id = ANY($1::text[])",
+        list(top_n_ids)
+    )
+    db_author_info = {r['id']: r for r in db_authors}
+
     nodes = []
-    for row in nodes_rows:
-        n_id = row['id']
+    for a in top_n_list:
+        info = db_author_info.get(a["id"], {})
         nodes.append(NetworkNode(
-            id=n_id, 
-            name=row['name'], 
-            val=row['total_pubs'] or 5,
-            image_url=row['image_url'],
-            is_faculty=row['is_faculty'],
-            hop=1,
-            joint_papers=top_coauthors.get(n_id, 0)
+            id=a["id"],
+            name=a["name"],
+            val=a["joint_citations"],
+            image_url=info.get("image_url"),
+            is_faculty=info.get("is_faculty", False),
+            joint_papers=a["joint_papers"],
+            joint_citations=a["joint_citations"]
         ))
-        
-    # 3. Fetch all internal edges among the discovered nodes
-    query_mesh = """
-        SELECT author_id, coauthor_id, edge_weight
-        FROM coauthor_edges
-        WHERE author_id = ANY($1::text[]) 
-          AND coauthor_id = ANY($1::text[])
-          AND author_id < coauthor_id  -- prevent duplicates
-    """
-    mesh_rows = await db.pool.fetch(query_mesh, all_ids)
+
+    # 6. Build edges between Top N
+    edge_metrics = {} # (id1, id2) -> {metrics}
     
-    links = []
-    for r in mesh_rows:
-        links.append(NetworkLink(source=r['author_id'], target=r['coauthor_id'], value=r['edge_weight']))
+    for _, citations, paper_coauthors in papers_data:
+        # Filter coauthors to only include those in top N
+        filtered = [cid for cid in paper_coauthors if cid in top_n_ids]
         
-    return NetworkGraph(nodes=nodes, links=links)
+        # All pairs in the filtered list
+        for i in range(len(filtered)):
+            for j in range(i + 1, len(filtered)):
+                pair = tuple(sorted([filtered[i], filtered[j]]))
+                if pair not in edge_metrics:
+                    edge_metrics[pair] = {"joint_papers": 0, "joint_citations": 0}
+                edge_metrics[pair]["joint_papers"] += 1
+                edge_metrics[pair]["joint_citations"] += citations
+
+    links = [
+        NetworkLink(source=p[0], target=p[1], value=m["joint_papers"], joint_citations=m["joint_citations"])
+        for p, m in edge_metrics.items()
+    ]
+
+    # 7. Connected components for cluster_id
+    adj = defaultdict(list)
+    for l in links:
+        adj[l.source].append(l.target)
+        adj[l.target].append(l.source)
+    
+    visited = set()
+    cluster_id = 0
+    node_clusters = {}
+    
+    for node in nodes:
+        if node.id not in visited:
+            cluster_id += 1
+            stack = [node.id]
+            visited.add(node.id)
+            while stack:
+                u = stack.pop()
+                node_clusters[u] = cluster_id
+                for v in adj[u]:
+                    if v not in visited:
+                        visited.add(v)
+                        stack.append(v)
+    
+    for node in nodes:
+        node.cluster_id = node_clusters.get(node.id, 0)
+
+    graph = NetworkGraph(center_author_name=center_name, nodes=nodes, links=links)
+    _network_cache[cache_key] = graph
+    return graph
 
 
 # Expert Search Response Model
