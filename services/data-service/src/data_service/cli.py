@@ -93,8 +93,9 @@ def load() -> None:
             metrics,
             coauthor_edges,
         ) = await clean_stage(db)
-        # Save cleaned data locally instead of uploading to Supabase
-        await save_data_locally(
+        # Load into PostgreSQL
+        await load_stage(
+            db,
             authors,
             publications,
             author_publications,
@@ -103,7 +104,7 @@ def load() -> None:
             metrics,
             coauthor_edges,
         )
-        typer.echo(f"Data saved locally to data_exports/")
+        typer.echo(f"Data loaded into PostgreSQL database")
         await db.close()
     _run_async(_cmd())
 

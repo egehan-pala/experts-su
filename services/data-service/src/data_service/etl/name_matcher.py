@@ -24,14 +24,26 @@ def _normalize(name: str) -> str:
 
 
 def _strip_accents(s: str) -> str:
-    """Remove combining diacritics for looser comparison."""
+    """Remove combining diacritics for looser comparison.
+    
+    Handles Turkish İ/ı properly: İ → i, ı → i before NFKD decomposition.
+    """
+    # Pre-normalize Turkish special characters
+    s = s.replace("İ", "I").replace("ı", "i").replace("i̇", "i")
     nfkd = unicodedata.normalize("NFKD", s)
     return "".join(c for c in nfkd if not unicodedata.combining(c)).lower()
 
 
 def _tokenize(name: str) -> list[str]:
-    """Split a name into tokens, removing dots."""
-    return [t.replace(".", "") for t in _normalize(name).split()]
+    """Split a name into tokens, removing dots and splitting hyphens.
+    
+    Hyphens in compound surnames (e.g. 'Müftüler-Baç') are treated
+    as separators so that the resulting tokens match space-separated
+    variants ('Müftüler Baç'). Also handles unicode hyphens (U+2010).
+    """
+    # Replace all hyphen-like characters with spaces before tokenizing
+    normalised = re.sub(r"[\-\u2010-\u2015]", " ", _normalize(name))
+    return [t.replace(".", "") for t in normalised.split()]
 
 
 def _tokens_compatible(a: str, b: str) -> bool:
@@ -112,6 +124,35 @@ def _names_match_fuzzy(scraped: str, openalex: str) -> bool:
             return True
 
     return False
+
+
+def _names_match_set_based(scraped: str, openalex: str) -> bool:
+    """Last-resort match: compare names as *unordered* sets of tokens.
+
+    This catches cases where surname components are reordered, merged
+    or split differently between the two sources.  All tokens must have
+    a pairwise match (exact or initial) but order is ignored.
+    """
+    s_tok = set(_strip_accents(t) for t in _tokenize(scraped))
+    o_tok = set(_strip_accents(t) for t in _tokenize(openalex))
+
+    # Token counts should be close (within ±1 to allow an extra initial)
+    if abs(len(s_tok) - len(o_tok)) > 1:
+        return False
+
+    shorter, longer = (s_tok, o_tok) if len(s_tok) <= len(o_tok) else (o_tok, s_tok)
+    remaining = list(longer)
+    for st in shorter:
+        matched = False
+        for i, lt in enumerate(remaining):
+            if _tokens_compatible(st, lt):
+                remaining.pop(i)
+                matched = True
+                break
+        if not matched:
+            return False
+    # Any leftover tokens from the longer set should be initials (len == 1)
+    return all(len(r) <= 1 for r in remaining)
 
 
 def _institution_score(author: dict) -> int:
@@ -207,7 +248,7 @@ def match_faculty_to_openalex(
                  "openalex": len(oa_records)})
 
     matched: list[dict] = []
-    unmatched: list[dict] = []
+    unmatched_stage1: list[dict] = []
     ambiguous: list[dict] = []
 
     for faculty in unique_scraped:
@@ -250,7 +291,26 @@ def match_faculty_to_openalex(
                 ambiguous.append({"faculty": faculty, "candidates": fuzzy})
             continue
 
-        unmatched.append(faculty)
+        unmatched_stage1.append(faculty)
+
+    # Step 4: Set-based match (catches reordered/compound surname edge cases)
+    unmatched_final: list[dict] = []
+    for faculty in unmatched_stage1:
+        scraped_name = faculty["name"]
+        setm = [a for a in oa_records
+                if _names_match_set_based(scraped_name, a["openalex_name"])]
+        if setm:
+            best_list, conf = _disambiguate(setm)
+            if best_list:
+                conf = "medium" if conf == "high" else "low"
+                for best in best_list:
+                    matched.append({**faculty, **best, "match_type": "set_based", "confidence": conf})
+            else:
+                ambiguous.append({"faculty": faculty, "candidates": setm})
+            continue
+        unmatched_final.append(faculty)
+
+    unmatched = unmatched_final
 
     logger.info({"message": "Name matching complete",
                  "matched": len(matched),

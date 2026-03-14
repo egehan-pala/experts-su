@@ -12,9 +12,11 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Set, Tuple
 
 import unicodedata
+
+from ..config import get_settings
 
 from ..clients.supabase import Database
 from ..schemas.openalex import OAAuthor, OAWork
@@ -208,15 +210,40 @@ async def clean(db: Database) -> Tuple[
         "multi_id_merges": sum(1 for r in dedup_map.values() if r.openalex_ids_json is not None),
     })
 
-    # Parse works - preserve ALL OpenAlex data (no filtering)
+    # Parse works — apply quality filters (safety net for API-level filtering)
+    settings = get_settings()
+    allowed_types: Set[str] = set(settings.openalex_work_types)
     works: List[OAWork] = []
+    skipped_paratext = 0
+    skipped_retracted = 0
+    skipped_type = 0
     for row in stg_publications:
         payload = json.loads(row["payload"])
         try:
             work = OAWork.model_validate(payload)
+            # Skip paratext (TOC, editorials, covers)
+            if getattr(work, 'is_paratext', False):
+                skipped_paratext += 1
+                continue
+            # Skip retracted works
+            if getattr(work, 'is_retracted', False):
+                skipped_retracted += 1
+                continue
+            # Skip non-research types
+            if allowed_types and work.type and work.type not in allowed_types:
+                skipped_type += 1
+                continue
             works.append(work)
         except Exception as exc:
             logger.error({"message": "Invalid work payload", "error": str(exc)})
+    
+    logger.info({
+        "message": "Works filtering complete",
+        "accepted": len(works),
+        "skipped_paratext": skipped_paratext,
+        "skipped_retracted": skipped_retracted,
+        "skipped_type": skipped_type,
+    })
 
     # Process publications
     publications_norm: List[Dict[str, Any]] = []
@@ -459,19 +486,32 @@ async def clean(db: Database) -> Tuple[
         for (aid, year), data in metrics.items()
     ]
 
-    # Co-author edges
+    # Co-author edges (with hyper-authorship cap — Rankless-style)
+    max_coauthor_cap = settings.max_authors_per_work
     pub_to_authors: Dict[str, List[str]] = {}
     for rel in author_publications_norm:
         pub_to_authors.setdefault(rel["publication_id"], []).append(rel["author_id"])
     
     edges_count: Dict[Tuple[str, str], int] = {}
+    skipped_hyperauthor = 0
     for authors_list in pub_to_authors.values():
         unique_authors = sorted(set(authors_list))
+        # Skip hyper-authored papers to prevent clique distortion in the network
+        if len(unique_authors) > max_coauthor_cap:
+            skipped_hyperauthor += 1
+            continue
         for i in range(len(unique_authors)):
             for j in range(i + 1, len(unique_authors)):
                 a1, a2 = unique_authors[i], unique_authors[j]
                 key = (a1, a2)
                 edges_count[key] = edges_count.get(key, 0) + 1
+    
+    if skipped_hyperauthor > 0:
+        logger.info({
+            "message": "Skipped hyper-authored papers for co-authorship graph",
+            "skipped": skipped_hyperauthor,
+            "cap": max_coauthor_cap,
+        })
     
     coauthor_edges_norm = [
         {"author_id": a1, "coauthor_id": a2, "weight": weight}
