@@ -84,6 +84,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         to: new Date().getFullYear() 
     });
     const [collaboratorLimit, setCollaboratorLimit] = useState(25);
+    const [searchQuery, setSearchQuery] = useState('');
 
     const containerRef = useRef<HTMLDivElement>(null);
     const fgRef = useRef<any>(null);
@@ -156,15 +157,15 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
 
         // Tighter grouping: 
         // 1. Lower link distance (80 -> 45)
-        // Reference image style: Distinct, tight clusters scattered across the canvas
-        // 1. Very short link distance (30 -> 20)
-        // 2. Maximum link strength (1.0)
-        // 3. Balanced charge repulsion (-150 -> -200) to keep clusters apart
-        // 4. Weak centering force (1.5 -> 0.1) to allow clusters to scatter/breathe
-        fg.d3Force('link')?.distance(20).strength(1.0);
-        fg.d3Force('charge')?.strength(-200);
+        // Style: Long internal lines within tight, closely-packed clusters
+        // 1. Longer internal link distance (20 -> 55)
+        // 2. High link strength (1.0) to hold clusters despite longer links
+        // 3. Lower repulsion (-200 -> -100) to allow clusters to sit closer
+        // 4. Stronger centering (0.1 -> 0.8) to pull communities toward each other
+        fg.d3Force('link')?.distance(55).strength(1.0);
+        fg.d3Force('charge')?.strength(-100);
         fg.d3Force('collide')?.radius((n: any) => logScale(n.joint_citations || 0, bounds.minCits, bounds.maxCits, 12, 35) + 10);
-        fg.d3Force('center')?.strength(0.1);
+        fg.d3Force('center')?.strength(0.8);
 
         const t = setTimeout(() => {
             try { fg.zoomToFit(750, 70); } catch { }
@@ -176,37 +177,75 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
     const nodeCanvasObject = useCallback(
         (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const node = obj as NetworkNode;
+            const isMatch = searchQuery && node.name.toLowerCase().includes(searchQuery.toLowerCase());
+            const hasActiveSearch = searchQuery.length > 0;
+            
+            // Dim if searching and not a match
+            const alpha = hasActiveSearch ? (isMatch ? 1 : 0.1) : 1;
+            
             const radius = logScale(node.joint_citations, bounds.minCits, bounds.maxCits, 3, 12);
             const borderW = logScale(node.joint_papers, bounds.minPapers, bounds.maxPapers, 0.5, 4);
             const color = CLUSTER_COLORS[(node.cluster_id - 1) % CLUSTER_COLORS.length] || '#94a3b8';
 
+            // Glow for matches
+            if (isMatch) {
+                ctx.shadowBlur = 15;
+                ctx.shadowColor = '#ffffff';
+            }
+
             // Fill
             ctx.beginPath();
             ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI, false);
-            ctx.fillStyle = `${color}44`; // 44 => ~25% alpha
+            ctx.fillStyle = hasActiveSearch && isMatch ? '#ffffff' : `${color}${Math.round(alpha * 68).toString(16).padStart(2, '0')}`; 
             ctx.fill();
 
             // Border
-            ctx.lineWidth = borderW / globalScale;
-            ctx.strokeStyle = color;
+            ctx.lineWidth = (isMatch ? borderW * 2 : borderW) / globalScale;
+            ctx.strokeStyle = hasActiveSearch && isMatch ? '#ffffff' : color;
+            ctx.globalAlpha = alpha;
             ctx.stroke();
+            ctx.globalAlpha = 1;
+
+            // Reset shadow
+            ctx.shadowBlur = 0;
 
             // Label
             const label = safeLastName(node.name);
             const fontSize = logScale(node.joint_citations, bounds.minCits, bounds.maxCits, 8, 14) / globalScale;
             
-            ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
+            ctx.font = `${isMatch ? '800' : '600'} ${fontSize}px "Courier New", Courier, monospace`;
             ctx.textAlign = 'center';
             ctx.textBaseline = 'top';
-            ctx.fillStyle = '#ffffff';
+            ctx.fillStyle = hasActiveSearch && isMatch ? '#ffffff' : `rgba(255, 255, 255, ${alpha})`;
             ctx.fillText(label, node.x!, node.y! + radius + 2);
         },
-        [bounds]
+        [bounds, searchQuery]
     );
 
     const linkWidth = useCallback((l: any) => {
-        return logScale(l.value, linkBounds.minPapers, linkBounds.maxPapers, 0.5, 5);
-    }, [linkBounds]);
+        const hasActiveSearch = searchQuery.length > 0;
+        const sourceMatch = searchQuery && l.source.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        const targetMatch = searchQuery && l.target.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        const isRelated = sourceMatch || targetMatch;
+
+        const baseWidth = logScale(l.value, linkBounds.minPapers, linkBounds.maxPapers, 0.5, 5);
+        if (hasActiveSearch) {
+            return isRelated ? baseWidth * 1.5 : 0.2;
+        }
+        return baseWidth;
+    }, [linkBounds, searchQuery]);
+
+    const linkColor = useCallback((l: any) => {
+        const hasActiveSearch = searchQuery.length > 0;
+        const sourceMatch = searchQuery && l.source.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        const targetMatch = searchQuery && l.target.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        const isRelated = sourceMatch || targetMatch;
+
+        if (hasActiveSearch) {
+            return isRelated ? '#ffffff88' : '#33415522';
+        }
+        return '#475569aa';
+    }, [searchQuery]);
 
     const totalCitations = networkData?.nodes.reduce((sum, n) => sum + n.joint_citations, 0) || 0;
 
@@ -284,6 +323,41 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 min={1900} max={2100}
                             />
                         </div>
+
+                        {/* Node Search */}
+                        <div style={{ 
+                            display: 'flex', 
+                            gap: '12px', 
+                            alignItems: 'center', 
+                            background: '#0f172a', 
+                            padding: '8px 16px', 
+                            borderRadius: '8px', 
+                            border: '1px solid #334155'
+                        }}>
+                            <span style={{ fontSize: '0.9rem' }}>🔍</span>
+                            <input 
+                                type="text" 
+                                placeholder="Search author..."
+                                value={searchQuery}
+                                onChange={(e) => setSearchQuery(e.target.value)}
+                                style={{ 
+                                    background: 'transparent', 
+                                    border: 'none', 
+                                    color: '#f8fafc', 
+                                    fontSize: '0.875rem', 
+                                    outline: 'none',
+                                    width: '150px'
+                                }}
+                            />
+                            {searchQuery && (
+                                <button 
+                                    onClick={() => setSearchQuery('')}
+                                    style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
+                                >
+                                    ✕
+                                </button>
+                            )}
+                        </div>
                     </div>
                 </header>
 
@@ -313,7 +387,10 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 }}
                                 nodeRelSize={4}
                                 linkWidth={linkWidth}
-                                linkColor={() => '#475569aa'}
+                                linkColor={linkColor}
+                                linkDirectionalParticles={searchQuery ? 2 : 0}
+                                linkDirectionalParticleWidth={2}
+                                linkDirectionalParticleSpeed={0.005}
                                 onNodeClick={(node: any) => {
                                     if (node && node.id && node.is_faculty) window.open(`/authors/${node.id}`, '_blank');
                                 }}
