@@ -1,7 +1,9 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
+import * as d3Force from 'd3-force';
 
 // ✅ ForceGraph2D (no SSR)
 const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
@@ -53,15 +55,6 @@ function safeLastName(fullName: string) {
     return parts.length ? parts[parts.length - 1] : fullName;
 }
 
-function getNodeId(n: string | NetworkNode) {
-    return typeof n === 'string' ? n : n.id;
-}
-
-function clamp(n: number, min: number, max: number) {
-    return Math.max(min, Math.min(max, n));
-}
-
-// Log scale helper for visual mapping
 function logScale(value: number, minVal: number, maxVal: number, minOut: number, maxOut: number) {
     if (maxVal === minVal) return minOut;
     const logMin = Math.log(Math.max(1, minVal));
@@ -72,20 +65,30 @@ function logScale(value: number, minVal: number, maxVal: number, minOut: number,
 }
 
 const CLUSTER_COLORS = [
-    '#4FC3F7', '#81C784', '#FFB74D', '#BA68C8', '#F06292', 
-    '#4DB6AC', '#DCE775', '#FF8A65', '#9575CD', '#A1887F'
+    '#3b82f6',
+    '#81C784',
+    '#FFB74D',
+    '#BA68C8',
+    '#F06292',
+    '#4DB6AC',
+    '#DCE775',
+    '#FF8A65',
+    '#9575CD',
+    '#A1887F'
 ];
 
 export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
     const [networkData, setNetworkData] = useState<NetworkData | null>(null);
     const [loading, setLoading] = useState(true);
-    const [yearRange, setYearRange] = useState({ 
-        from: new Date().getFullYear() - 10, 
-        to: new Date().getFullYear() 
+    const [yearRange, setYearRange] = useState({
+        from: new Date().getFullYear() - 4,
+        to: new Date().getFullYear()
     });
     const [collaboratorLimit, setCollaboratorLimit] = useState(25);
     const [searchQuery, setSearchQuery] = useState('');
+    const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
+    const router = useRouter();
     const containerRef = useRef<HTMLDivElement>(null);
     const fgRef = useRef<any>(null);
 
@@ -95,12 +98,14 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
     useEffect(() => {
         if (!containerRef.current) return;
         const el = containerRef.current;
+
         const ro = new ResizeObserver(() => {
             setDimensions({
                 width: el.clientWidth || 1200,
                 height: Math.max(650, Math.floor((el.clientWidth || 1200) * 0.58))
             });
         });
+
         ro.observe(el);
         return () => ro.disconnect();
     }, []);
@@ -108,6 +113,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
     // ✅ fetch network
     useEffect(() => {
         if (!authorId) return;
+
         setLoading(true);
         const shortId = authorId.includes('/') ? authorId.split('/').pop()! : authorId;
 
@@ -119,7 +125,18 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         fetch(`http://localhost:8000/authors/${shortId}/network?${params.toString()}`)
             .then((res) => res.json())
             .then((data: NetworkData) => {
-                setNetworkData(data);
+                // Critical Safety Filter: Ensure all links point to existing nodes
+                const nodeIds = new Set(data.nodes.map(n => n.id));
+                const filteredLinks = data.links.filter(l => {
+                    const s = typeof l.source === 'object' ? (l.source as any).id : l.source;
+                    const t = typeof l.target === 'object' ? (l.target as any).id : l.target;
+                    return nodeIds.has(s) && nodeIds.has(t);
+                });
+
+                setNetworkData({
+                    ...data,
+                    links: filteredLinks
+                });
                 setLoading(false);
             })
             .catch((err) => {
@@ -128,11 +145,15 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
             });
     }, [authorId, yearRange, collaboratorLimit]);
 
-    // Bounds for scaling
+    // Bounds for visual scaling
     const bounds = useMemo(() => {
-        if (!networkData?.nodes.length) return { minCits: 0, maxCits: 0, minPapers: 0, maxPapers: 0 };
+        if (!networkData?.nodes.length) {
+            return { minCits: 0, maxCits: 0, minPapers: 0, maxPapers: 0 };
+        }
+
         const cits = networkData.nodes.map(n => n.joint_citations);
         const papers = networkData.nodes.map(n => n.joint_papers);
+
         return {
             minCits: Math.min(...cits),
             maxCits: Math.max(...cits),
@@ -142,7 +163,10 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
     }, [networkData]);
 
     const linkBounds = useMemo(() => {
-        if (!networkData?.links.length) return { minPapers: 0, maxPapers: 0 };
+        if (!networkData?.links.length) {
+            return { minPapers: 0, maxPapers: 0 };
+        }
+
         const papers = networkData.links.map(l => l.value);
         return {
             minPapers: Math.min(...papers),
@@ -150,118 +174,263 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         };
     }, [networkData]);
 
-    // ✅ configure forces
+    // ✅ cluster anchor points to keep disconnected communities close together
+    const clusterCenters = useMemo(() => {
+        const centers = new Map<number, { x: number; y: number }>();
+
+        if (!networkData?.nodes?.length) return centers;
+
+        const clusterIds = [...new Set(networkData.nodes.map(n => n.cluster_id).filter(Boolean))];
+
+        if (clusterIds.length === 0) {
+            centers.set(0, { x: 0, y: 0 });
+            return centers;
+        }
+
+        if (clusterIds.length === 1) {
+            centers.set(clusterIds[0], { x: 0, y: 0 });
+            return centers;
+        }
+
+        // Small ring so all components stay visually close, like Rankless
+        const ringRadius = Math.max(30, Math.min(70, clusterIds.length * 10));
+
+        clusterIds.forEach((cid, i) => {
+            const angle = (i / clusterIds.length) * Math.PI * 2;
+            centers.set(cid, {
+                x: Math.cos(angle) * ringRadius,
+                y: Math.sin(angle) * ringRadius
+            });
+        });
+
+        return centers;
+    }, [networkData]);
+
+    // ✅ configure forces - compact, rankless-like
     useEffect(() => {
         if (!fgRef.current || !networkData?.nodes?.length) return;
         const fg = fgRef.current;
 
-        // Tighter grouping: 
-        // 1. Lower link distance (80 -> 45)
-        // Style: Long internal lines within tight, closely-packed clusters
-        // 1. Longer internal link distance (20 -> 55)
-        // 2. High link strength (1.0) to hold clusters despite longer links
-        // 3. Lower repulsion (-200 -> -100) to allow clusters to sit closer
-        // 4. Stronger centering (0.1 -> 0.8) to pull communities toward each other
-        fg.d3Force('link')?.distance(55).strength(1.0);
-        fg.d3Force('charge')?.strength(-100);
-        fg.d3Force('collide')?.radius((n: any) => logScale(n.joint_citations || 0, bounds.minCits, bounds.maxCits, 12, 35) + 10);
-        fg.d3Force('center')?.strength(0.8);
+        // Strong internal links so nodes in the same group stay compact
+        // NOTE: We do NOT pass the links array here. ForceGraph2D will automatically
+        // call .links() on this force once the simulation nodes are ready.
+        fg.d3Force(
+            'link',
+            d3Force.forceLink()
+                .id((d: any) => d.id)
+                .distance((link: any) => {
+                    const w = link.value || 1;
+                    if (w >= 6) return 7;
+                    if (w >= 4) return 8;
+                    if (w >= 3) return 9;
+                    if (w === 2) return 11;
+                    return 13;
+                })
+                .strength((link: any) => {
+                    const w = link.value || 1;
+                    if (w >= 6) return 1.0;
+                    if (w >= 4) return 0.95;
+                    if (w >= 3) return 0.9;
+                    if (w === 2) return 0.82;
+                    return 0.72;
+                })
+        );
+
+        // Low repulsion so clusters do not push away too much
+        fg.d3Force(
+            'charge',
+            d3Force.forceManyBody().strength(-10)
+        );
+
+        // Small collision so nodes don't overlap but can stay tightly packed
+        fg.d3Force(
+            'collide',
+            d3Force.forceCollide().radius(5.5).strength(0.95)
+        );
+
+        // Global center
+        fg.d3Force(
+            'center',
+            d3Force.forceCenter(0, 0)
+        );
+
+        // Pull clusters to nearby anchor points
+        fg.d3Force('cluster', (alpha: number) => {
+            // Get active nodes from simulation rather than prop data to ensure correctly handled particle objects
+            const simulationNodes = fg.getGraphBbox() ? (fg.getGraphBbox() as any).nodes : networkData.nodes;
+            // Actually, ForceGraph2D provides nodes to the force if it's a d3 force, 
+            // but since this is a manual lambda, we should be careful.
+            // Let's use the nodes reachable via the fg instance.
+            for (const node of networkData.nodes as any[]) {
+                const target = clusterCenters.get(node.cluster_id) || { x: 0, y: 0 };
+                node.vx += (target.x - (node.x || 0)) * 0.20 * alpha;
+                node.vy += (target.y - (node.y || 0)) * 0.20 * alpha;
+            }
+        });
+
+        // Light extra gravity to keep entire graph cohesive
+        fg.d3Force('gravityX', d3Force.forceX(0).strength(0.035));
+        fg.d3Force('gravityY', d3Force.forceY(0).strength(0.035));
+
+        fg.d3ReheatSimulation();
 
         const t = setTimeout(() => {
-            try { fg.zoomToFit(750, 70); } catch { }
-        }, 500);
+            try {
+                fg.zoomToFit(400, 80);
+            } catch { }
+        }, 1200);
+
         return () => clearTimeout(t);
-    }, [networkData, bounds]);
+    }, [networkData, clusterCenters]);
 
     // ✅ node drawing
     const nodeCanvasObject = useCallback(
         (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const node = obj as NetworkNode;
+            const isHovered = hoveredNode === node.id;
             const isMatch = searchQuery && node.name.toLowerCase().includes(searchQuery.toLowerCase());
             const hasActiveSearch = searchQuery.length > 0;
-            
-            // Dim if searching and not a match
-            const alpha = hasActiveSearch ? (isMatch ? 1 : 0.1) : 1;
-            
-            const radius = logScale(node.joint_citations, bounds.minCits, bounds.maxCits, 3, 12);
-            const borderW = logScale(node.joint_papers, bounds.minPapers, bounds.maxPapers, 0.5, 4);
-            const color = CLUSTER_COLORS[(node.cluster_id - 1) % CLUSTER_COLORS.length] || '#94a3b8';
 
-            // Glow for matches
-            if (isMatch) {
-                ctx.shadowBlur = 15;
-                ctx.shadowColor = '#ffffff';
-            }
+            const alpha = hasActiveSearch ? (isMatch ? 1 : 0.12) : 1;
 
-            // Fill
+            // Slightly stable screen-space radius
+            const radius = 4.5 / globalScale;
+
+            // Use cluster color when available, otherwise default blue
+            const clusterColor =
+                CLUSTER_COLORS[((node.cluster_id || 1) - 1) % CLUSTER_COLORS.length] || '#3b82f6';
+
+            const fillColor = isHovered ? '#2563eb' : clusterColor;
+            const borderColor = isHovered ? '#0f172a' : '#ffffff';
+
             ctx.beginPath();
-            ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI, false);
-            ctx.fillStyle = hasActiveSearch && isMatch ? '#ffffff' : `${color}${Math.round(alpha * 68).toString(16).padStart(2, '0')}`; 
+            ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
+            ctx.globalAlpha = alpha;
+            ctx.fillStyle = fillColor;
             ctx.fill();
 
-            // Border
-            ctx.lineWidth = (isMatch ? borderW * 2 : borderW) / globalScale;
-            ctx.strokeStyle = hasActiveSearch && isMatch ? '#ffffff' : color;
-            ctx.globalAlpha = alpha;
+            // Border width can still hint at center-joint paper count
+            const borderW = isHovered
+                ? 2.5 / globalScale
+                : logScale(node.joint_papers, bounds.minPapers, bounds.maxPapers, 1.2, 2.4) / globalScale;
+
+            ctx.lineWidth = borderW;
+            ctx.strokeStyle = borderColor;
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            // Reset shadow
-            ctx.shadowBlur = 0;
+            const showLabel = isHovered || isMatch;
+            if (showLabel) {
+                const label = node.name;
+                const fontSize = 12 / globalScale;
 
-            // Label
-            const label = safeLastName(node.name);
-            const fontSize = logScale(node.joint_citations, bounds.minCits, bounds.maxCits, 8, 14) / globalScale;
-            
-            ctx.font = `${isMatch ? '800' : '600'} ${fontSize}px "Courier New", Courier, monospace`;
-            ctx.textAlign = 'center';
-            ctx.textBaseline = 'top';
-            ctx.fillStyle = hasActiveSearch && isMatch ? '#ffffff' : `rgba(255, 255, 255, ${alpha})`;
-            ctx.fillText(label, node.x!, node.y! + radius + 2);
+                ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
+                ctx.textAlign = 'center';
+                ctx.textBaseline = 'top';
+
+                // soft white background for readability
+                const textX = node.x || 0;
+                const textY = (node.y || 0) + radius + 4;
+                const metrics = ctx.measureText(label);
+                const paddingX = 4 / globalScale;
+                const paddingY = 2 / globalScale;
+                const textHeight = fontSize + paddingY * 2;
+
+                ctx.fillStyle = 'rgba(255,255,255,0.92)';
+                ctx.fillRect(
+                    textX - metrics.width / 2 - paddingX,
+                    textY - paddingY,
+                    metrics.width + paddingX * 2,
+                    textHeight
+                );
+
+                ctx.fillStyle = '#0f172a';
+                ctx.fillText(label, textX, textY);
+            }
         },
-        [bounds, searchQuery]
+        [hoveredNode, searchQuery, bounds]
     );
 
     const linkWidth = useCallback((l: any) => {
+        const val = l.value || 1;
+
+        let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
+
         const hasActiveSearch = searchQuery.length > 0;
-        const sourceMatch = searchQuery && l.source.name?.toLowerCase().includes(searchQuery.toLowerCase());
-        const targetMatch = searchQuery && l.target.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        const sourceMatch = searchQuery && l.source?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        const targetMatch = searchQuery && l.target?.name?.toLowerCase().includes(searchQuery.toLowerCase());
         const isRelated = sourceMatch || targetMatch;
 
-        const baseWidth = logScale(l.value, linkBounds.minPapers, linkBounds.maxPapers, 0.5, 5);
         if (hasActiveSearch) {
-            return isRelated ? baseWidth * 1.5 : 0.2;
+            return isRelated ? baseWidth : 0.25;
         }
+
         return baseWidth;
-    }, [linkBounds, searchQuery]);
+    }, [searchQuery, linkBounds]);
 
     const linkColor = useCallback((l: any) => {
         const hasActiveSearch = searchQuery.length > 0;
-        const sourceMatch = searchQuery && l.source.name?.toLowerCase().includes(searchQuery.toLowerCase());
-        const targetMatch = searchQuery && l.target.name?.toLowerCase().includes(searchQuery.toLowerCase());
-        const isRelated = sourceMatch || targetMatch;
+        const isMatch = (nodeName?: string) =>
+            searchQuery &&
+            nodeName &&
+            typeof nodeName === 'string' &&
+            nodeName.toLowerCase().includes(searchQuery.toLowerCase());
+
+        const isRelated = isMatch(l.source?.name) || isMatch(l.target?.name);
 
         if (hasActiveSearch) {
-            return isRelated ? '#ffffff88' : '#33415522';
+            return isRelated ? 'rgba(148, 163, 184, 0.95)' : 'rgba(226, 232, 240, 0.18)';
         }
-        return '#475569aa';
+
+        return 'rgba(148, 163, 184, 0.75)';
     }, [searchQuery]);
 
     const totalCitations = networkData?.nodes.reduce((sum, n) => sum + n.joint_citations, 0) || 0;
 
     return (
-        <div style={{ marginTop: '2rem', display: 'flex', flexDirection: 'column', gap: '1.5rem' }}>
-            <div style={{ background: '#1e293b', borderRadius: 12, padding: '1.5rem', border: '1px solid #334155' }}>
-                <header style={{ 
-                    display: 'flex', 
-                    justifyContent: 'space-between', 
-                    alignItems: 'center', 
-                    marginBottom: '1.5rem',
-                    flexWrap: 'wrap',
-                    gap: '1rem'
-                }}>
+        <div
+            style={{
+                marginTop: '2rem',
+                display: 'flex',
+                flexDirection: 'column',
+                gap: '1.5rem',
+                width: '100vw',
+                position: 'relative',
+                left: '50%',
+                right: '50%',
+                marginLeft: '-50vw',
+                marginRight: '-50vw',
+                padding: '0 5vw',
+                boxSizing: 'border-box'
+            }}
+        >
+            <div
+                style={{
+                    background: '#1e293b',
+                    borderRadius: 12,
+                    padding: '1.5rem',
+                    border: '1px solid #334155'
+                }}
+            >
+                <header
+                    style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '1.5rem',
+                        flexWrap: 'wrap',
+                        gap: '1rem'
+                    }}
+                >
                     <div style={{ textAlign: 'left' }}>
-                        <h2 style={{ fontSize: '1.5rem', fontFamily: '"Courier New", Courier, monospace', color: '#f8fafc', fontWeight: 800 }}>
+                        <h2
+                            style={{
+                                fontSize: '1.5rem',
+                                fontFamily: '"Courier New", Courier, monospace',
+                                color: '#f8fafc',
+                                fontWeight: 800
+                            }}
+                        >
                             Collaboration Network for {authorName}
                         </h2>
                         <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginTop: '0.25rem' }}>
@@ -271,88 +440,183 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
 
                     <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
                         {/* Collaborator Limit Controls */}
-                        <div style={{ 
-                            display: 'flex', 
-                            gap: '12px', 
-                            alignItems: 'center', 
-                            background: '#0f172a', 
-                            padding: '8px 16px', 
-                            borderRadius: '8px', 
-                            border: '1px solid #334155'
-                        }}>
-                            <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, fontFamily: 'monospace' }}>LIMIT</div>
-                            <button 
+                        <div
+                            style={{
+                                display: 'flex',
+                                gap: '12px',
+                                alignItems: 'center',
+                                background: '#0f172a',
+                                padding: '8px 16px',
+                                borderRadius: '8px',
+                                border: '1px solid #334155'
+                            }}
+                        >
+                            <div
+                                style={{
+                                    color: '#94a3b8',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    fontFamily: 'monospace'
+                                }}
+                            >
+                                LIMIT
+                            </div>
+                            <button
                                 onClick={() => setCollaboratorLimit(Math.max(5, collaboratorLimit - 5))}
-                                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 4, color: '#f8fafc', width: '28px', height: '28px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
+                                style={{
+                                    background: '#1e293b',
+                                    border: '1px solid #334155',
+                                    borderRadius: 4,
+                                    color: '#f8fafc',
+                                    width: '28px',
+                                    height: '28px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontWeight: 'bold'
+                                }}
                             >
                                 -
                             </button>
-                            <span style={{ color: '#f8fafc', fontSize: '0.875rem', fontWeight: 700, width: '25px', textAlign: 'center' }}>{collaboratorLimit}</span>
-                            <button 
+                            <span
+                                style={{
+                                    color: '#f8fafc',
+                                    fontSize: '0.875rem',
+                                    fontWeight: 700,
+                                    width: '25px',
+                                    textAlign: 'center'
+                                }}
+                            >
+                                {collaboratorLimit}
+                            </span>
+                            <button
                                 onClick={() => setCollaboratorLimit(Math.min(100, collaboratorLimit + 5))}
-                                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 4, color: '#f8fafc', width: '28px', height: '28px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 'bold' }}
+                                style={{
+                                    background: '#1e293b',
+                                    border: '1px solid #334155',
+                                    borderRadius: 4,
+                                    color: '#f8fafc',
+                                    width: '28px',
+                                    height: '28px',
+                                    cursor: 'pointer',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    justifyContent: 'center',
+                                    fontWeight: 'bold'
+                                }}
                             >
                                 +
                             </button>
                         </div>
 
                         {/* Year Filter Controls */}
-                        <div style={{ 
-                            display: 'flex', 
-                            gap: '12px', 
-                            alignItems: 'center', 
-                            background: '#0f172a', 
-                            padding: '8px 16px', 
-                            borderRadius: '8px', 
-                            border: '1px solid #334155'
-                        }}>
-                            <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, fontFamily: 'monospace' }}>YEAR RANGE</div>
-                            <input 
-                                type="number" 
+                        <div
+                            style={{
+                                display: 'flex',
+                                gap: '12px',
+                                alignItems: 'center',
+                                background: '#0f172a',
+                                padding: '8px 16px',
+                                borderRadius: '8px',
+                                border: '1px solid #334155'
+                            }}
+                        >
+                            <div
+                                style={{
+                                    color: '#94a3b8',
+                                    fontSize: '0.75rem',
+                                    fontWeight: 600,
+                                    fontFamily: 'monospace'
+                                }}
+                            >
+                                YEAR RANGE
+                            </div>
+                            <input
+                                type="number"
                                 value={yearRange.from}
-                                onChange={(e) => setYearRange({ ...yearRange, from: parseInt(e.target.value) })}
-                                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 4, color: '#f8fafc', padding: '2px 6px', width: '70px', fontSize: '0.875rem' }}
-                                min={1900} max={2100}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    setYearRange({
+                                        ...yearRange,
+                                        from: isNaN(val) ? yearRange.from : val
+                                    });
+                                }}
+                                style={{
+                                    background: '#1e293b',
+                                    border: '1px solid #334155',
+                                    borderRadius: 4,
+                                    color: '#f8fafc',
+                                    padding: '2px 6px',
+                                    width: '70px',
+                                    fontSize: '0.875rem'
+                                }}
+                                min={1900}
+                                max={2100}
                             />
                             <span style={{ color: '#334155' }}>—</span>
-                            <input 
-                                type="number" 
+                            <input
+                                type="number"
                                 value={yearRange.to}
-                                onChange={(e) => setYearRange({ ...yearRange, to: parseInt(e.target.value) })}
-                                style={{ background: '#1e293b', border: '1px solid #334155', borderRadius: 4, color: '#f8fafc', padding: '2px 6px', width: '70px', fontSize: '0.875rem' }}
-                                min={1900} max={2100}
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
+                                    setYearRange({
+                                        ...yearRange,
+                                        to: isNaN(val) ? yearRange.to : val
+                                    });
+                                }}
+                                style={{
+                                    background: '#1e293b',
+                                    border: '1px solid #334155',
+                                    borderRadius: 4,
+                                    color: '#f8fafc',
+                                    padding: '2px 6px',
+                                    width: '70px',
+                                    fontSize: '0.875rem'
+                                }}
+                                min={1900}
+                                max={2100}
                             />
                         </div>
 
                         {/* Node Search */}
-                        <div style={{ 
-                            display: 'flex', 
-                            gap: '12px', 
-                            alignItems: 'center', 
-                            background: '#0f172a', 
-                            padding: '8px 16px', 
-                            borderRadius: '8px', 
-                            border: '1px solid #334155'
-                        }}>
+                        <div
+                            style={{
+                                display: 'flex',
+                                gap: '12px',
+                                alignItems: 'center',
+                                background: '#0f172a',
+                                padding: '8px 16px',
+                                borderRadius: '8px',
+                                border: '1px solid #334155'
+                            }}
+                        >
                             <span style={{ fontSize: '0.9rem' }}>🔍</span>
-                            <input 
-                                type="text" 
+                            <input
+                                type="text"
                                 placeholder="Search author..."
                                 value={searchQuery}
                                 onChange={(e) => setSearchQuery(e.target.value)}
-                                style={{ 
-                                    background: 'transparent', 
-                                    border: 'none', 
-                                    color: '#f8fafc', 
-                                    fontSize: '0.875rem', 
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#f8fafc',
+                                    fontSize: '0.875rem',
                                     outline: 'none',
                                     width: '150px'
                                 }}
                             />
                             {searchQuery && (
-                                <button 
+                                <button
                                     onClick={() => setSearchQuery('')}
-                                    style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
+                                    style={{
+                                        background: 'transparent',
+                                        border: 'none',
+                                        color: '#94a3b8',
+                                        cursor: 'pointer',
+                                        padding: 0,
+                                        fontSize: '0.8rem'
+                                    }}
                                 >
                                     ✕
                                 </button>
@@ -362,100 +626,281 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                 </header>
 
                 {loading ? (
-                    <div style={{ height: dimensions.height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', borderRadius: 8, color: '#94a3b8' }}>
+                    <div
+                        style={{
+                            height: dimensions.height,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: '#0f172a',
+                            borderRadius: 8,
+                            color: '#94a3b8'
+                        }}
+                    >
                         Re-calculating network...
                     </div>
                 ) : !networkData || networkData.nodes.length === 0 ? (
-                    <div style={{ height: dimensions.height, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#0f172a', borderRadius: 8, color: '#94a3b8' }}>
+                    <div
+                        style={{
+                            height: dimensions.height,
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            background: '#0f172a',
+                            borderRadius: 8,
+                            color: '#94a3b8'
+                        }}
+                    >
                         No collaboration data found for this range.
                     </div>
                 ) : (
-                    <div style={{ display: 'grid', gridTemplateColumns: '3fr 1fr', gap: '1rem', alignItems: 'start' }}>
-                        <div ref={containerRef} style={{ position: 'relative', overflow: 'hidden', height: dimensions.height, background: '#0f172a', borderRadius: 8 }}>
+                    <div
+                        style={{
+                            width: '100%',
+                            height: dimensions.height,
+                            position: 'relative',
+                            overflow: 'hidden',
+                            background: '#1e293b',
+                            borderRadius: 8
+                        }}
+                    >
+                        {/* Summary Overlay Top Right */}
+                        <div
+                            style={{
+                                position: 'absolute',
+                                top: 20,
+                                right: 20,
+                                zIndex: 10,
+                                background: 'rgba(255, 255, 255, 0.95)',
+                                padding: '1.5rem',
+                                borderRadius: 12,
+                                border: '1px solid #e2e8f0',
+                                width: '280px',
+                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+                                pointerEvents: 'none'
+                            }}
+                        >
+                            <h3
+                                style={{
+                                    fontSize: '0.85rem',
+                                    color: '#0f172a',
+                                    fontWeight: 800,
+                                    borderBottom: '2px solid #3b82f6',
+                                    paddingBottom: '0.5rem',
+                                    fontFamily: 'var(--font-heading)',
+                                    margin: '0 0 1rem 0'
+                                }}
+                            >
+                                NETWORK SUMMARY
+                            </h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div>
+                                    <div
+                                        style={{
+                                            color: '#64748b',
+                                            fontSize: '0.65rem',
+                                            fontWeight: 600,
+                                            textTransform: 'uppercase'
+                                        }}
+                                    >
+                                        Core Researcher
+                                    </div>
+                                    <div style={{ color: '#0f172a', fontSize: '1rem', fontWeight: 'bold' }}>
+                                        {authorName}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div
+                                        style={{
+                                            color: '#64748b',
+                                            fontSize: '0.65rem',
+                                            fontWeight: 600,
+                                            textTransform: 'uppercase'
+                                        }}
+                                    >
+                                        Filtered Collaborators
+                                    </div>
+                                    <div style={{ color: '#3b82f6', fontSize: '1.25rem', fontWeight: 'bold' }}>
+                                        {networkData.nodes.length}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div
+                                        style={{
+                                            color: '#64748b',
+                                            fontSize: '0.65rem',
+                                            fontWeight: 600,
+                                            textTransform: 'uppercase'
+                                        }}
+                                    >
+                                        Total Joint Citations
+                                    </div>
+                                    <div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                                        {totalCitations.toLocaleString()}
+                                    </div>
+                                </div>
+                                <div>
+                                    <div
+                                        style={{
+                                            color: '#64748b',
+                                            fontSize: '0.65rem',
+                                            fontWeight: 600,
+                                            textTransform: 'uppercase'
+                                        }}
+                                    >
+                                        Active Period
+                                    </div>
+                                    <div style={{ color: '#0f172a', fontSize: '1rem', fontWeight: 'bold' }}>
+                                        {yearRange.from} — {yearRange.to}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div
+                                style={{
+                                    marginTop: '1rem',
+                                    fontSize: '0.65rem',
+                                    color: '#94a3b8',
+                                    lineHeight: 1.4
+                                }}
+                            >
+                                * Central researcher is omitted.
+                            </div>
+                        </div>
+
+                        {/* Hover Overlay */}
+                        <div
+                            style={{
+                                position: 'absolute',
+                                top: 20,
+                                right: 320,
+                                zIndex: 10,
+                                background: 'rgba(255, 255, 255, 0.95)',
+                                padding: '1rem',
+                                borderRadius: 12,
+                                border: '1px solid #3b82f6',
+                                width: '220px',
+                                boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.2)',
+                                opacity: hoveredNode ? 1 : 0,
+                                transition: 'opacity 0.2s ease',
+                                pointerEvents: 'none'
+                            }}
+                        >
+                            <div style={{ color: '#3b82f6', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
+                                SELECTED AUTHOR
+                            </div>
+                            <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+                                {hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.name : 'None'}
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
+                                <span style={{ color: '#64748b' }}>Joint Papers:</span>
+                                <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                                    {hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.joint_papers : 0}
+                                </span>
+                            </div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                                <span style={{ color: '#64748b' }}>Joint Citations:</span>
+                                <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                                    {hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.joint_citations : 0}
+                                </span>
+                            </div>
+                        </div>
+
+                        <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
                             <ForceGraph2D
                                 ref={fgRef}
-                                width={dimensions.width * 0.75}
+                                width={dimensions.width}
                                 height={dimensions.height}
                                 graphData={networkData}
+                                enableNodeDrag={false}
+                                enableZoomInteraction={true}
+                                enablePanInteraction={true}
+                                cooldownTicks={220}
+                                onEngineStop={() => {
+                                    try {
+                                        fgRef.current?.zoomToFit(300, 80);
+                                    } catch { }
+                                }}
                                 nodeCanvasObject={nodeCanvasObject}
-                                nodePointerAreaPaint={(node: any, color, ctx) => {
-                                    const radius = logScale(node.joint_citations, bounds.minCits, bounds.maxCits, 3, 12);
+                                nodePointerAreaPaint={(node: any, color, ctx, globalScale) => {
+                                    const radius = 6 / globalScale;
                                     ctx.fillStyle = color;
                                     ctx.beginPath();
-                                    ctx.arc(node.x!, node.y!, radius, 0, 2 * Math.PI, false);
+                                    ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
                                     ctx.fill();
                                 }}
-                                nodeRelSize={4}
+                                onNodeHover={(node: any) => setHoveredNode(node ? node.id : null)}
+                                nodeLabel={() => ''}
+                                onNodeClick={(node: any) => {
+                                    if (node.is_faculty) {
+                                        router.push(`/authors/${node.id}`);
+                                    }
+                                }}
                                 linkWidth={linkWidth}
                                 linkColor={linkColor}
                                 linkDirectionalParticles={searchQuery ? 2 : 0}
                                 linkDirectionalParticleWidth={2}
                                 linkDirectionalParticleSpeed={0.005}
-                                onNodeClick={(node: any) => {
-                                    if (node && node.id && node.is_faculty) window.open(`/authors/${node.id}`, '_blank');
-                                }}
-                                nodeLabel={(n: any) => `
-                                    ${n.name}
-                                    Joint Citations: ${n.joint_citations}
-                                    Joint Papers: ${n.joint_papers}
-                                `}
                             />
 
                             {/* Legend */}
-                            <div style={{
-                                position: 'absolute', bottom: 15, left: 15, background: 'rgba(15, 23, 42, 0.85)',
-                                padding: '0.75rem', borderRadius: 8, border: '1px solid #334155', pointerEvents: 'none',
-                                fontSize: '0.75rem', color: '#f8fafc', fontFamily: 'monospace'
-                            }}>
-                                <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', borderBottom: '1px solid #334155', paddingBottom: '0.25rem' }}>LEGEND</div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                    <div style={{ width: 12, height: 12, borderRadius: '50%', border: '1px solid #f8fafc' }}></div>
-                                    <span>Node Size ∝ Joint Citations</span>
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    bottom: 15,
+                                    left: 15,
+                                    background: 'rgba(255, 255, 255, 0.9)',
+                                    padding: '0.75rem',
+                                    borderRadius: 8,
+                                    border: '1px solid #e2e8f0',
+                                    pointerEvents: 'none',
+                                    fontSize: '0.75rem',
+                                    color: '#0f172a',
+                                    fontFamily: 'monospace',
+                                    boxShadow: '0 2px 4px rgb(0 0 0 / 0.05)'
+                                }}
+                            >
+                                <div
+                                    style={{
+                                        fontWeight: 'bold',
+                                        marginBottom: '0.5rem',
+                                        borderBottom: '1px solid #e2e8f0',
+                                        paddingBottom: '0.25rem'
+                                    }}
+                                >
+                                    LEGEND
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                    <div style={{ width: 12, height: 12, borderRadius: '50%', border: '3px solid #f8fafc', boxSizing: 'border-box' }}></div>
-                                    <span>Border ∝ Joint Papers (Center)</span>
+                                    <div
+                                        style={{
+                                            width: 8,
+                                            height: 8,
+                                            borderRadius: '50%',
+                                            background: '#3b82f6'
+                                        }}
+                                    />
+                                    <span>Collaborator</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                    <div style={{ width: 20, height: 2, background: '#f8fafc' }}></div>
+                                    <div style={{ width: 20, height: 2, background: '#94a3b8' }} />
                                     <span>Edge Width ∝ Shared Works</span>
                                 </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                                    <div style={{ width: 12, height: 12, borderRadius: '50%', background: CLUSTER_COLORS[0] }}></div>
-                                    <span>Color = Cluster/Community</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                    <div
+                                        style={{
+                                            width: 10,
+                                            height: 10,
+                                            borderRadius: '50%',
+                                            background: '#3b82f6',
+                                            border: '2px solid #fff',
+                                            boxSizing: 'border-box'
+                                        }}
+                                    />
+                                    <span>Border ∝ Joint Papers (Center)</span>
                                 </div>
-                            </div>
-                        </div>
-
-                        {/* Side Panel / Summary */}
-                        <div style={{ background: '#0f172a', borderRadius: 8, padding: '1rem', border: '1px solid #334155', height: '100%', display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                            <h3 style={{ fontSize: '0.9rem', color: '#f8fafc', fontWeight: 700, borderBottom: '1px solid #334155', paddingBottom: '0.5rem', fontFamily: 'monospace' }}>
-                                SYNOPSIS
-                            </h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem' }}>
-                                <div>
-                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>CORE RESEARCHER</div>
-                                    <div style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold' }}>{authorName}</div>
+                                <div style={{ fontSize: '0.65rem', color: '#64748b', marginTop: '4px' }}>
+                                    Clusters are compacted for readability
                                 </div>
-                                <div>
-                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>DISPLAYED COLLABORATORS</div>
-                                    <div style={{ color: '#f8fafc', fontSize: '1.25rem', fontWeight: 'bold' }}>{networkData.nodes.length}</div>
-                                </div>
-                                <div>
-                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>JOINT CITATIONS (TOP {collaboratorLimit})</div>
-                                    <div style={{ color: '#38bdf8', fontSize: '1.25rem', fontWeight: 'bold' }}>{totalCitations}</div>
-                                </div>
-                                <div>
-                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>COMMUNITIES FOUND</div>
-                                    <div style={{ color: '#c084fc', fontSize: '1.25rem', fontWeight: 'bold' }}>{new Set(networkData.nodes.map(n => n.cluster_id)).size}</div>
-                                </div>
-                                <div>
-                                    <div style={{ color: '#94a3b8', fontSize: '0.7rem' }}>PERIOD</div>
-                                    <div style={{ color: '#f8fafc', fontSize: '0.9rem', fontWeight: 'bold' }}>{yearRange.from} — {yearRange.to}</div>
-                                </div>
-                            </div>
-                            <div style={{ marginTop: 'auto', fontSize: '0.7rem', color: '#64748b', fontStyle: 'italic' }}>
-                                Note: The central researcher is omitted from the graph to highlight inter-collaborator connections.
                             </div>
                         </div>
                     </div>

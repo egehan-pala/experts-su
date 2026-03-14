@@ -171,10 +171,10 @@ async def get_recent_publications(author_id: str):
         SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
-        WHERE ap.author_id ILIKE $1 
+        WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
           AND p.publication_date IS NOT NULL
-          AND p.publication_date::date >= CURRENT_DATE - INTERVAL '100 days'
         ORDER BY p.publication_date DESC
+        LIMIT 15
     """
     try:
         rows = await db.pool.fetch(query, author_id)
@@ -545,9 +545,9 @@ async def get_author_network(author_id: str,
     center_name = author_row['name'] if author_row else "Unknown Author"
 
     # 2. Fetch all publications for the author including authorships_json
-    # Filter by year if provided - use ILIKE with % just in case
+    # Filter by year if provided using strict match
     year_filter = "AND p.year >= $2"
-    params = [f"%{author_id}%", year_from]
+    params = [author_id, year_from]
     if year_to:
         year_filter += " AND p.year <= $3"
         params.append(year_to)
@@ -556,7 +556,7 @@ async def get_author_network(author_id: str,
         SELECT p.id, p.citations, p.authorships_json, p.year
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
-        WHERE ap.author_id ILIKE $1 {year_filter}
+        WHERE ap.author_id = $1 {year_filter}
     """
     publication_rows = await db.pool.fetch(query, *params)
     

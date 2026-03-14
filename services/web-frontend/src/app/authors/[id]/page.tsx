@@ -53,7 +53,8 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
 
     useEffect(() => {
         if (authorId) {
-            fetch(`http://localhost:8000/authors/${authorId}/recent-publications`)
+            const shortId = authorId.replace('https://openalex.org/', '').split('/').pop() || authorId;
+            fetch(`http://localhost:8000/authors/${shortId}/recent-publications`)
                 .then(res => res.json())
                 .then(data => {
                     setRecentPubs(data || []);
