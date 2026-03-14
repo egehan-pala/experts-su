@@ -171,10 +171,10 @@ async def get_recent_publications(author_id: str):
         SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
-        WHERE ap.author_id ILIKE $1 
+        WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
           AND p.publication_date IS NOT NULL
-          AND p.publication_date::date >= CURRENT_DATE - INTERVAL '100 days'
         ORDER BY p.publication_date DESC
+        LIMIT 15
     """
     try:
         rows = await db.pool.fetch(query, author_id)
