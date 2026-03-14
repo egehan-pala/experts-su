@@ -1,6 +1,7 @@
 'use client';
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useRouter } from 'next/navigation';
 import dynamic from 'next/dynamic';
 import * as d3Force from 'd3-force';
 
@@ -87,6 +88,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
     const [searchQuery, setSearchQuery] = useState('');
     const [hoveredNode, setHoveredNode] = useState<string | null>(null);
 
+    const router = useRouter();
     const containerRef = useRef<HTMLDivElement>(null);
     const fgRef = useRef<any>(null);
 
@@ -533,12 +535,13 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                             <input
                                 type="number"
                                 value={yearRange.from}
-                                onChange={(e) =>
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
                                     setYearRange({
                                         ...yearRange,
-                                        from: parseInt(e.target.value)
-                                    })
-                                }
+                                        from: isNaN(val) ? yearRange.from : val
+                                    });
+                                }}
                                 style={{
                                     background: '#1e293b',
                                     border: '1px solid #334155',
@@ -555,12 +558,13 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                             <input
                                 type="number"
                                 value={yearRange.to}
-                                onChange={(e) =>
+                                onChange={(e) => {
+                                    const val = parseInt(e.target.value);
                                     setYearRange({
                                         ...yearRange,
-                                        to: parseInt(e.target.value)
-                                    })
-                                }
+                                        to: isNaN(val) ? yearRange.to : val
+                                    });
+                                }}
                                 style={{
                                     background: '#1e293b',
                                     border: '1px solid #334155',
@@ -826,6 +830,12 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                     ctx.fill();
                                 }}
                                 onNodeHover={(node: any) => setHoveredNode(node ? node.id : null)}
+                                nodeLabel={() => ''}
+                                onNodeClick={(node: any) => {
+                                    if (node.is_faculty) {
+                                        router.push(`/authors/${node.id}`);
+                                    }
+                                }}
                                 linkWidth={linkWidth}
                                 linkColor={linkColor}
                                 linkDirectionalParticles={searchQuery ? 2 : 0}
