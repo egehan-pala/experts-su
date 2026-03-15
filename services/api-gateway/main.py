@@ -73,6 +73,7 @@ class Author(BaseModel):
     phone: Optional[str] = None
     areas_of_interest: Optional[str] = None
     pub_count: Optional[int] = 0
+    cited_by_count: Optional[int] = 0
     top_publication: Optional[TopPublication] = None
 
 class Publication(BaseModel):
@@ -120,7 +121,7 @@ async def search_authors(q: str = Query(..., min_length=2)):
 @app.get("/authors/{author_id}", response_model=Author)
 async def get_author(author_id: str):
     """Get author details."""
-    query = "SELECT id, name, dept, orcid, image_url, email, phone, areas_of_interest FROM authors WHERE id ILIKE $1"
+    query = "SELECT id, name, dept, orcid, image_url, email, phone, areas_of_interest, cited_by_count FROM authors WHERE id ILIKE $1"
     row = await db.pool.fetchrow(query, author_id)
     if not row:
         raise HTTPException(status_code=404, detail="Author not found")
@@ -136,7 +137,22 @@ async def get_author(author_id: str):
     pub_row = await db.pool.fetchrow(pub_query, author_id)
     top_pub = TopPublication(**pub_row) if pub_row else None
     
-    return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'], image_url=row['image_url'], email=row['email'], phone=row['phone'], areas_of_interest=row['areas_of_interest'], top_publication=top_pub)
+    # Use local cited_by_count from DB
+    cited_by_count = row.get('cited_by_count') or 0
+
+    return Author(
+        id=row['id'], 
+        name=row['name'], 
+        dept=row['dept'], 
+        orcid=row['orcid'], 
+        image_url=row['image_url'], 
+        email=row['email'], 
+        phone=row['phone'], 
+        areas_of_interest=row['areas_of_interest'], 
+        pub_count=row.get('total_publications', 0),
+        cited_by_count=cited_by_count,
+        top_publication=top_pub
+    )
 
 @app.get("/authors/{author_id}/publications", response_model=List[Publication])
 async def get_author_publications(author_id: str):
@@ -347,6 +363,10 @@ class CountryStat(BaseModel):
     count: int
     names: List[str] = []
 
+class GeoCitationResponse(BaseModel):
+    total_count: int
+    countries: List[CountryStat]
+
 class CoAuthorStat(BaseModel):
     name: str
     count: int
@@ -360,55 +380,60 @@ class ConceptDetail(BaseModel):
 # Visualization Endpoints
 
 @app.get("/authors/{author_id}/metrics", response_model=List[YearlyMetric])
-async def get_author_metrics(author_id: str):
-    """
-    Get yearly publication count and yearly total citation count for an author.
-
-    citations field means:
-    For each year Y, the total number of citations received in year Y
-    across ALL publications of this author.
-    Example:
-    year=2024, citations=128  -> the author's all papers received 128 citations during 2024.
-    """
-    query = """
-        SELECT
-            year,
-            COALESCE(pub_count, 0) AS pub_count,
-            COALESCE(citations_year, 0) AS citations_year
-        FROM author_metrics_yearly
-        WHERE author_id ILIKE $1
+async def get_author_metrics(
+    author_id: str, 
+    realtime: bool = Query(False),
+    since: Optional[str] = Query(None)
+):
+    """Get yearly publication and citation counts for an author, filled to current year."""
+    import httpx
+    from collections import Counter
+    
+    # 1. Get local publication counts per year
+    query_pubs = """
+        SELECT year, COUNT(*) as pub_count
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id = $1 OR ap.author_id ILIKE '%' || $1
+        GROUP BY year
         ORDER BY year ASC
     """
-    rows = await db.pool.fetch(query, author_id)
-
-    if not rows:
-        return []
-
-    start_year = rows[0]["year"]
+    pub_rows = await db.pool.fetch(query_pubs, author_id)
+    pub_counts = {r['year']: r['pub_count'] for r in pub_rows if r['year']}
+    
+    start_year = min(pub_counts.keys()) if pub_counts else 2000
+    if since and since.isdigit():
+        start_year = max(start_year, int(since))
+    
     end_year = datetime.datetime.now().year
+    citation_counts = Counter()
+    
+    # 2. Use local citation metrics (from structured author_citations_yearly)
+    query_citations = """
+        SELECT year, count as citations_year
+        FROM author_citations_yearly
+        WHERE author_id = $1 OR author_id ILIKE '%' || $1
+        ORDER BY year ASC
+    """
+    cit_rows = await db.pool.fetch(query_citations, author_id)
+    for r in cit_rows:
+        citation_counts[r['year']] = r['citations_year']
+    
+    if cit_rows and not pub_counts:
+        start_year = min(cit_rows[0]['year'], start_year)
 
-    # Existing yearly data map
-    yearly_map = {
-        r["year"]: {
-            "pub_count": r["pub_count"] or 0,
-            "citations_year": r["citations_year"] or 0
-        }
-        for r in rows
-    }
-
-    # Fill missing years with 0
-    result = []
-    for year in range(start_year, end_year + 1):
-        data = yearly_map.get(year, {"pub_count": 0, "citations_year": 0})
-        result.append(
-            YearlyMetric(
-                year=year,
-                pub_count=data["pub_count"],
-                citations=data["citations_year"]
-            )
-        )
-
-    return result
+    # 4. Fill and merge
+    filled_metrics = []
+    actual_start = min(start_year, min(citation_counts.keys())) if citation_counts else start_year
+    
+    for y in range(actual_start, end_year + 1):
+        filled_metrics.append(YearlyMetric(
+            year=y,
+            pub_count=pub_counts.get(y, 0),
+            citations=citation_counts.get(y, 0)
+        ))
+            
+    return filled_metrics
 
 class NestedTopicStat(BaseModel):
     name: str
@@ -754,6 +779,209 @@ async def get_concept_details(author_id: str, concept: str = Query(...)):
         co_authors=co_authors,
         top_paper=top_paper
     )
+
+@app.get("/authors/{author_id}/geo-citations", response_model=GeoCitationResponse)
+async def get_author_geo_citations(author_id: str, since: Optional[str] = Query(None)):
+    """Get aggregated geographic locations of works citing this author's research."""
+    import httpx
+    from collections import Counter
+    
+    # 1. Fetch ALL publication IDs from OpenAlex (Ensures speed and completeness for global metrics)
+    alex_id = author_id if author_id.startswith('A') else f"A{author_id}"
+    if not alex_id.startswith('https://openalex.org/'):
+        alex_id = f"https://openalex.org/{alex_id}"
+        
+    works_list = []
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # per_page=200 is sufficient for current faculty (Onur Varol ~94)
+            res = await client.get(f"https://api.openalex.org/works?filter=author.id:{alex_id}&select=id&per_page=200")
+            if res.status_code == 200:
+                works_list = [w['id'].split('/')[-1] for w in res.json().get('results', [])]
+    except Exception as e:
+        print(f"Error fetching works from OpenAlex real-time for {author_id}: {e}")
+        
+    if not works_list:
+        # Emergency fallback to local DB if OpenAlex is unreachable
+        query_local = """
+            SELECT p.id FROM publications p
+            JOIN author_publications ap ON p.id = ap.publication_id
+            WHERE ap.author_id = $1 OR ap.author_id ILIKE '%' || $1
+        """
+        rows = await db.pool.fetch(query_local, author_id)
+        works_list = [r['id'].split('/')[-1] for r in rows if r['id']]
+    
+    if not works_list:
+        return []
+    
+    # 2. Query OpenAlex for citations grouped by country
+    batch_size = 100
+    country_counts = Counter()
+    country_names_map = {}
+    
+    # Get official total citations for the author (lifetime)
+    # Only fetch if no filter is applied to save latency
+    official_total = 0
+    if not since:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                auth_res = await client.get(f"https://api.openalex.org/authors/{alex_id}")
+                if auth_res.status_code == 200:
+                    official_total = auth_res.json().get('cited_by_count', 0)
+        except Exception:
+            pass
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for i in range(0, len(works_list), batch_size):
+            batch = works_list[i:i+batch_size]
+            batch_filter = "|".join(batch)
+            filter_str = f"referenced_works:{batch_filter}"
+            if since and (len(since) == 4 or '-' in since):
+                since_date = since if '-' in since else f"{since}-01-01"
+                filter_str += f",from_publication_date:{since_date}"
+                
+            url = f"https://api.openalex.org/works?filter={filter_str}&group_by=authorships.countries"
+            
+            try:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                    for group in data.get('group_by', []):
+                        cc = group['key'].split('/')[-1].upper()
+                        count = group['count']
+                        display_name = group['key_display_name']
+                        
+                        country_counts[cc] += count
+                        if cc not in country_names_map:
+                            country_names_map[cc] = set()
+                        if display_name:
+                            country_names_map[cc].add(display_name)
+                else:
+                    print(f"OpenAlex API error (batch {i}): {response.status_code}")
+            except Exception as e:
+                print(f"Fetch error in geo-citations (batch {i}): {e}")
+    
+    # Calculate total from distribution if filter is applied OR fetch failed
+    if since or official_total == 0:
+        official_total = sum(country_counts.values())
+
+    # 3. Format response
+    countries = [
+        CountryStat(
+            code=k, 
+            count=v, 
+            names=list(country_names_map.get(k, []))
+        ) for k, v in country_counts.items()
+    ]
+    
+    countries.sort(key=lambda x: x.count, reverse=True)
+    return GeoCitationResponse(total_count=official_total, countries=countries)
+
+@app.get("/authors/{author_id}/geo-collaborations", response_model=List[CountryStat])
+async def get_author_geo_collaborations(author_id: str, since: Optional[int] = Query(None)):
+    """Get aggregated co-author institution countries for an author."""
+    import json
+    from collections import Counter
+
+    # 1. Fetch works with authorship data directly from OpenAlex (Fast discovery)
+    alex_id = author_id if author_id.startswith('A') else f"A{author_id}"
+    if not alex_id.startswith('https://openalex.org/'):
+        alex_id = f"https://openalex.org/{alex_id}"
+        
+    works = []
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            filter_str = f"author.id:{alex_id}"
+            if since:
+                filter_str += f",from_publication_date:{since}-01-01"
+            
+            # Use select to minimize data transfer
+            url = f"https://api.openalex.org/works?filter={filter_str}&select=authorships&per_page=200"
+            res = await client.get(url)
+            if res.status_code == 200:
+                works = res.json().get('results', [])
+    except Exception as e:
+        print(f"Error fetching collaborations real-time for {author_id}: {e}")
+        
+    if not works:
+        # Emergency local fallback
+        query = """
+            SELECT p.authorships_json
+            FROM publications p
+            JOIN author_publications ap ON p.id = ap.publication_id
+            WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
+              AND ($2::int IS NULL OR p.year >= $2)
+        """
+        rows = await db.pool.fetch(query, author_id, since)
+        works = [{"authorships": json.loads(r['authorships_json']) if isinstance(r['authorships_json'], str) else r['authorships_json']} for r in rows]
+
+    country_counts = Counter()
+    country_names_map = {} # Map country code -> set of country names found
+    
+    def get_auth_id(a):
+        return a.get('author', {}).get('id') or a.get('author_id') or a.get('id') or ''
+
+    for work in works:
+        try:
+            authorships = work.get('authorships', [])
+            if not authorships:
+                continue
+                
+            for auth in authorships:
+                alex_id = get_auth_id(auth)
+                
+                # Exclude the queried author themself
+                if alex_id and (author_id in alex_id):
+                    continue
+
+                # Robust country check
+                found_countries = {} # Map code -> name
+                
+                # 1. institutions
+                for inst in auth.get('institutions', []):
+                    cc = inst.get('country_code') or inst.get('country')
+                    if cc and isinstance(cc, str) and len(cc) == 2:
+                        name = inst.get('display_name') or inst.get('name') or inst.get('country_name') or cc.upper()
+                        found_countries[cc.upper()] = name
+                
+                # 2. countries list (modern OpenAlex)
+                for cc in auth.get('countries', []):
+                    if cc and isinstance(cc, str) and len(cc) == 2:
+                        cc_upper = cc.upper()
+                        if cc_upper not in found_countries:
+                            found_countries[cc_upper] = cc_upper
+                
+                # 3. top level fallbacks
+                for key in ['country_code', 'institution_country_code', 'institution_country']:
+                    cc = auth.get(key)
+                    if cc and isinstance(cc, str) and len(cc) == 2:
+                        cc_upper = cc.upper()
+                        if cc_upper not in found_countries:
+                            found_countries[cc_upper] = cc_upper
+                
+                for cc, cname in found_countries.items():
+                    country_counts[cc] += 1
+                    if cc not in country_names_map:
+                        country_names_map[cc] = set()
+                    if cname and cname != cc:
+                        country_names_map[cc].add(cname)
+                        
+        except Exception:
+            pass
+
+    countries = [
+        CountryStat(
+            code=k, 
+            count=v, 
+            names=list(country_names_map.get(k, []))
+        ) for k, v in country_counts.items()
+    ]
+    
+    # Sort by count descending
+    countries.sort(key=lambda x: x.count, reverse=True)
+
+    return countries
 
 # Simple in-memory cache for network graphs
 _network_cache = {}

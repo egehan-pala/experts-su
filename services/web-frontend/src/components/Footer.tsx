@@ -3,7 +3,7 @@ import Link from 'next/link';
 
 export default function Footer() {
     return (
-        <footer style={{ backgroundColor: '#002777', color: 'white', padding: '3rem 0', marginTop: 'auto', borderTop: '1px solid rgba(255,255,255,0.1)' }}>
+        <footer style={{ backgroundColor: '#002777', color: 'white', padding: '3rem 0', marginTop: 'auto' }}>
             <div className="container">
                 <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '2rem' }}>
 

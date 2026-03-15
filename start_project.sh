@@ -34,7 +34,7 @@ cd services/data-service && python3 -m pip install -r requirements.txt && python
 cd ../..
 
 echo "  - Installing Web Frontend dependencies..."
-cd services/web-frontend && npm install
+cd services/web-frontend && npm install --legacy-peer-deps
 cd ../..
 echo "Dependencies installed."
 

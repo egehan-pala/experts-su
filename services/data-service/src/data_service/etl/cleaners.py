@@ -62,8 +62,10 @@ async def clean(db: Database) -> Tuple[
     List[Dict[str, str]],  # author_publications
     List[Dict[str, Any]],  # topics
     List[Dict[str, Any]],  # publication_topics
-    List[Dict[str, int]],  # metrics per author/year
+    List[Dict[str, int]],  # metrics per author/year (old aggregated)
     List[Dict[str, Any]],  # coauthor edges
+    List[Dict[str, Any]],  # author_citations_yearly (new structured)
+    List[Dict[str, Any]],  # publication_citations_yearly (new structured)
 ]:
     """Clean and deduplicate staged data, preserving all OpenAlex fields."""
     from pathlib import Path
@@ -113,6 +115,9 @@ async def clean(db: Database) -> Tuple[
         "faculty_groups": len(faculty_groups),
         "unmatched": len(unmatched_authors),
     })
+
+    # NEW: Structured metrics for authors
+    author_citations_norm: List[Dict[str, Any]] = []
 
     # Merge authors that map to the same scraped faculty name
     dedup_map: Dict[str, AuthorRecord] = {}
@@ -195,6 +200,23 @@ async def clean(db: Database) -> Tuple[
         )
         dedup_map[primary_key] = rec
         
+        # NEW: Extract structured citation metrics for author
+        # We handle merging by summing counts for the same year across merged authors
+        merged_counts: Dict[int, int] = {}
+        for a, _ in group:
+            if a.counts_by_year:
+                for entry in a.counts_by_year:
+                    yr = entry["year"]
+                    cnt = entry["cited_by_count"]
+                    merged_counts[yr] = merged_counts.get(yr, 0) + cnt
+        
+        for yr, cnt in merged_counts.items():
+            author_citations_norm.append({
+                "author_id": primary_key,
+                "year": yr,
+                "count": cnt
+            })
+        
         if len(all_oa_ids) > 1:
             logger.info({
                 "message": "Merged author",
@@ -249,6 +271,8 @@ async def clean(db: Database) -> Tuple[
     publications_norm: List[Dict[str, Any]] = []
     topics_set: Dict[str, Dict[str, Any]] = {}
     publication_topics_norm: List[Dict[str, Any]] = []
+    # NEW: Structured metrics for publications
+    publication_citations_norm: List[Dict[str, Any]] = []
     
     # We will rebuild author_publications from the full authorship data
     # instead of relying on the incomplete stg_author_publications table.
@@ -442,8 +466,22 @@ async def clean(db: Database) -> Tuple[
         )
         publications_norm.append(pub_rec.model_dump())
         
-        # Extract concepts as topics (with full info)
+        # NEW: Extract structured citation metrics for publication
+        if work.counts_by_year:
+            for entry in work.counts_by_year:
+                publication_citations_norm.append({
+                    "publication_id": pub_id,
+                    "year": entry["year"],
+                    "count": entry["cited_by_count"]
+                })
+            
+        # Re-extract concepts as topics (with Precision Improvement)
+        # Threshold at 0.5 to filter out noisy topic assignments as requested
+        TOPIC_THRESHOLD = 0.5
         for concept in work.concepts:
+            if concept.score < TOPIC_THRESHOLD:
+                continue
+                
             name = concept.display_name.strip()
             if name:
                 topics_set[name] = {
@@ -557,4 +595,6 @@ async def clean(db: Database) -> Tuple[
         publication_topics_norm,
         metrics_norm,
         coauthor_edges_norm,
+        author_citations_norm,
+        publication_citations_norm,
     )

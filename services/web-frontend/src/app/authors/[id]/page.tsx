@@ -5,6 +5,7 @@ import { useEffect, useState } from 'react';
 import CoAuthorshipGraph from '@/components/CoAuthorshipGraph';
 import FingerprintChart from '@/components/charts/FingerprintChart';
 import CitationTimelineChart from '@/components/charts/CitationTimelineChart';
+import CollaborationMap from '@/components/CollaborationMap';
 
 interface Author {
     id: string;
@@ -15,6 +16,8 @@ interface Author {
     email?: string | null;
     phone?: string | null;
     areas_of_interest?: string | null;
+    pub_count?: number | null;
+    cited_by_count?: number | null;
     top_publication?: {
         title: string;
         year: number | null;
@@ -83,7 +86,7 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
     return (
         <section style={{
             marginTop: '0',
-            padding: '4rem 0',
+            padding: '4rem 0 2rem 0',
             backgroundColor: '#1e293b',
             color: '#f8fafc',
             width: '100vw',
@@ -93,7 +96,6 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
             marginLeft: '-50vw',
             marginRight: '-50vw',
             borderTop: '1px solid #334155',
-            borderBottom: '1px solid #334155',
             fontFamily: 'var(--font-sans)',
             overflow: 'hidden'
         }}>
@@ -205,7 +207,7 @@ export default function ProfilePage() {
     if (!author) return <div className="container" style={{ paddingTop: '4rem' }}>Author not found</div>;
 
     return (
-        <div style={{ minHeight: '100vh', paddingBottom: '4rem' }}>
+        <div style={{ minHeight: '100vh' }}>
 
             {/* Editorial Profile Header */}
             <div style={{ backgroundColor: '#f4f4f5', padding: '4rem 0', borderBottom: '1px solid #e4e4e7' }}>
@@ -283,10 +285,13 @@ export default function ProfilePage() {
                                     <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>ORCID</span>
                                     <span style={{ fontFamily: 'monospace', color: '#111' }}>{author.orcid || 'N/A'}</span>
                                 </div>
-                                <div>
-                                    <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>Total Citations</span>
-                                    <span style={{ fontWeight: 700, fontSize: '1.5rem', color: '#002855' }}>
-                                        {totalCitations.toLocaleString()}
+                                {/* Citations Total */}
+                                <div style={{ minWidth: '150px' }}>
+                                    <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>
+                                        Total Citations
+                                    </span>
+                                    <span style={{ fontWeight: 700, fontSize: '2.25rem', color: '#002855' }}>
+                                        {(author.cited_by_count ?? totalCitations).toLocaleString()}
                                     </span>
                                 </div>
                             </div>
@@ -323,8 +328,24 @@ export default function ProfilePage() {
             {/* Co-authorship Network Graph (Full-Bleed via component internal styles) */}
             <CoAuthorshipGraph authorId={id} authorName={author.name} />
 
+            {/* Geographical Collaboration Map */}
+            <CollaborationMap authorId={id} />
+
             {/* Recent Publications Section (Full-Bleed Expansion) */}
             <RecentArticlesSection authorId={id} />
+
+            {/* Smooth Footer Transition Gradient */}
+            <div style={{
+                height: '80px',
+                width: '100vw',
+                position: 'relative',
+                left: '50%',
+                right: '50%',
+                marginLeft: '-50vw',
+                marginRight: '-50vw',
+                background: 'linear-gradient(to bottom, #1e293b, #002777)',
+                marginTop: '-1px' // Overlap slightly to prevent tiny line gaps
+            }} />
         </div>
     );
 }
