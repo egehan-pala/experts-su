@@ -289,8 +289,7 @@ async def get_authors(
             try:
                 topics = json.loads(r['top_topics'])
                 for t in topics:
-                    # Use subfield name instead of topic name
-                    name = t.get('subfield', {}).get('display_name')
+                    name = t.get('display_name')
                     if name:
                         cleaned = name.strip().title()
                         if cleaned and cleaned not in tags:

@@ -68,15 +68,15 @@ const SimilarExperts: React.FC<SimilarExpertsProps> = ({ authorId }) => {
       <div className="relative group">
         <div className="flex gap-6 overflow-x-auto pb-6 pt-2 scroll-smooth scrollbar-hide -mx-4 px-4 snap-x">
           {similarAuthors.map((expert) => (
-            <Link 
-              href={`/authors/${expert.id}`} 
+            <Link
+              href={`/authors/${expert.id}`}
               key={expert.id}
               className="min-w-[300px] max-w-[300px] snap-start bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm hover:shadow-xl transition-all duration-300 hover:-translate-y-1 flex flex-col group/card"
             >
               <div className="relative h-40 overflow-hidden bg-slate-100 dark:bg-slate-800">
                 {expert.image_url ? (
-                  <img 
-                    src={expert.image_url} 
+                  <img
+                    src={expert.image_url}
                     alt={expert.name}
                     className="w-full h-full object-cover group-hover/card:scale-110 transition-transform duration-500"
                   />
@@ -103,7 +103,7 @@ const SimilarExperts: React.FC<SimilarExpertsProps> = ({ authorId }) => {
                 <div className="mt-4 flex flex-wrap gap-1.5 flex-1 content-start">
                   {expert.shared_topics.length > 0 ? (
                     expert.shared_topics.map((topic, idx) => (
-                      <span 
+                      <span
                         key={idx}
                         className="px-2 py-0.5 bg-indigo-50 dark:bg-indigo-900/30 text-indigo-600 dark:text-indigo-300 text-[10px] font-semibold rounded-md border border-indigo-100/50 dark:border-indigo-800/50"
                       >
