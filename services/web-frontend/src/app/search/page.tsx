@@ -147,7 +147,7 @@ export default function SearchPage() {
                     {/* TOPIC RESULTS */}
                     {topicResults.length > 0 && (
                         <div>
-                            {response.intent === 'MIXED' && <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', color: '#111' }}>Experts by Topic</h2>}
+                            {response.intent === 'MIXED' && <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', color: '#111' }}>Experts by Research Field</h2>}
                             <div className="experts-grid">
                                 {topicResults.map((expert) => (
                                     <div
