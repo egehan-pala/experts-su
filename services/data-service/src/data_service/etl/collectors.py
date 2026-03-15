@@ -207,7 +207,7 @@ async def collect_targeted(settings: Settings, db: Database, client: OpenAlexCli
                 "email": m.get("email", ""),
                 "phone": m.get("phone", ""),
                 "image_url": m.get("image_url", ""),
-                "dept": m.get("title", ""),
+                "dept": m.get("dept", ""),
             }
     
     match_map_path = Path("data_exports") / "match_map.json"
