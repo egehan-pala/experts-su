@@ -308,6 +308,29 @@ class NetworkGraph(BaseModel):
     nodes: List[NetworkNode]
     links: List[NetworkLink]
 
+class FingerprintConcept(BaseModel):
+    name: str
+    weight: float
+
+class FingerprintField(BaseModel):
+    field: str
+    concepts: List[FingerprintConcept]
+
+class CountryStat(BaseModel):
+    code: str
+    count: int
+    names: List[str] = []
+
+class CoAuthorStat(BaseModel):
+    name: str
+    count: int
+
+class ConceptDetail(BaseModel):
+    concept: str
+    countries: List[CountryStat]
+    co_authors: List[CoAuthorStat]
+    top_paper: Optional[Publication]
+
 # Visualization Endpoints
 
 @app.get("/authors/{author_id}/metrics", response_model=List[YearlyMetric])
@@ -505,15 +528,185 @@ async def get_author_galaxy(
                         count=r['citations'] or 0,
                         children_available=True
                     ))
-            works.sort(key=lambda x: x.count, reverse=True)
-            return works[:10]
-
-        else:
-            return []
-
-
-
     return []
+
+
+@app.get("/authors/{author_id}/fingerprint", response_model=List[FingerprintField])
+async def get_author_fingerprint(author_id: str):
+    """Get summarized research concepts for an author grouped by field."""
+    import json
+    from collections import defaultdict
+
+    # 1. Fetch all publications for this author with topics_json
+    query = """
+        SELECT p.topics_json
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
+          AND p.topics_json IS NOT NULL
+    """
+    rows = await db.pool.fetch(query, author_id)
+    
+    # 2. Aggregate scores by field and concept
+    # Structure: field_name -> concept_name -> cumulative_score
+    field_concept_scores = defaultdict(lambda: defaultdict(float))
+    
+    for row in rows:
+        try:
+            topics = json.loads(row['topics_json']) if isinstance(row['topics_json'], str) else row['topics_json']
+            for t in topics:
+                field_name = t.get('field', {}).get('display_name') or "Other"
+                concept_name = t.get('display_name')
+                score = t.get('score', 0)
+                
+                if not concept_name:
+                    continue
+                    
+                field_concept_scores[field_name][concept_name] += score
+        except (ValueError, TypeError, KeyError):
+            continue
+
+    if not field_concept_scores:
+        return []
+
+    # 3. Find global max score for normalization (to make weights relative)
+    max_concept_score = 0
+    for concepts in field_concept_scores.values():
+        for score in concepts.values():
+            if score > max_concept_score:
+                max_concept_score = score
+    
+    if max_concept_score == 0:
+        max_concept_score = 1.0
+
+    # 4. Format response
+    result = []
+    for field_name, concepts_dict in field_concept_scores.items():
+        concept_list = []
+        for c_name, c_score in concepts_dict.items():
+            # Normalize weight to 0-1 range based on the most dominant concept
+            weight = min(1.0, c_score / max_concept_score)
+            concept_list.append(FingerprintConcept(name=c_name, weight=round(weight, 3)))
+            
+        # Sort concepts by weight descending within field
+        concept_list.sort(key=lambda x: x.weight, reverse=True)
+        
+        result.append(FingerprintField(
+            field=field_name,
+            concepts=concept_list
+        ))
+        
+    # Sort fields by the importance of their top concept
+    result.sort(key=lambda x: x.concepts[0].weight if x.concepts else 0, reverse=True)
+    
+    return result
+
+
+@app.get("/authors/{author_id}/fingerprint/details", response_model=ConceptDetail)
+async def get_concept_details(author_id: str, concept: str = Query(...)):
+    """Get detailed stats (countries, co-authors, top paper) for a specific research concept."""
+    import json
+    from collections import Counter
+
+    # 1. Fetch relevant publications
+    query = """
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date, 
+               p.topics_json, p.authorships_json
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
+          AND p.topics_json IS NOT NULL
+    """
+    rows = await db.pool.fetch(query, author_id)
+    
+    concept_pubs = []
+    for row in rows:
+        try:
+            topics = json.loads(row['topics_json']) if isinstance(row['topics_json'], str) else row['topics_json']
+            if any(t.get('display_name') == concept for t in topics):
+                concept_pubs.append(row)
+        except (ValueError, TypeError, KeyError):
+            continue
+
+    if not concept_pubs:
+        raise HTTPException(status_code=404, detail="Concept not found for this author")
+
+    # 2. Find top paper
+    top_row = max(concept_pubs, key=lambda x: x['citations'] or 0)
+    top_paper = Publication(
+        id=top_row['id'],
+        title=top_row['title'],
+        year=top_row['year'],
+        citations=top_row['citations'],
+        venue=top_row['venue'],
+        pdf_url=top_row['pdf_url'],
+        publication_date=top_row['publication_date']
+    )
+
+    # 3. Aggregate ONLY from the Top Paper
+    country_counts = Counter()
+    country_names_map = {} # Map country code -> set of author names from top paper
+    co_author_counter = Counter()
+    
+    def get_auth_name(a):
+        return a.get('author', {}).get('display_name') or a.get('raw_author_name') or a.get('raw_name') or a.get('name')
+        
+    def get_auth_id(a):
+        return a.get('author', {}).get('id') or a.get('author_id') or a.get('id') or ''
+
+    # Get authorships specifically from the Top Paper
+    try:
+        top_authorships = json.loads(top_row['authorships_json']) if isinstance(top_row['authorships_json'], str) else top_row['authorships_json']
+        if top_authorships:
+            for auth in top_authorships:
+                name = get_auth_name(auth)
+                alex_id = get_auth_id(auth)
+                
+                # Check if this authorship belongs to the requested author
+                is_target = alex_id and (author_id in author_id) # author_id from arg
+                # Note: author_id in author_id is a bug in original code (should be alex_id), fixing below
+                is_target = alex_id and (author_id in alex_id)
+                
+                if not is_target and name:
+                    co_author_counter[name] += 1
+                
+                # Collect countries from THIS AUTHOR in the top paper
+                auth_countries = set()
+                # 1. Direct countries list
+                for c in auth.get('countries', []):
+                    if c: auth_countries.add(c)
+                # 2. Legacy fallback
+                c_code = auth.get('country_code') or auth.get('institution_country_code') or auth.get('institution_country')
+                if c_code: auth_countries.add(c_code)
+                for inst in auth.get('institutions', []):
+                    cc = inst.get('country_code')
+                    if cc: auth_countries.add(cc)
+                
+                # Update global counts for THIS PAPER's countries and map names
+                for cc in auth_countries:
+                    country_counts[cc] = 1 # Only one paper
+                    if not is_target and name:
+                        if cc not in country_names_map: country_names_map[cc] = set()
+                        country_names_map[cc].add(name)
+                        
+    except Exception:
+        pass
+
+    countries = [
+        CountryStat(
+            code=k, 
+            count=v, 
+            names=list(country_names_map.get(k, []))
+        ) for k, v in country_counts.items()
+    ]
+    co_authors = [CoAuthorStat(name=k, count=v) for k, v in co_author_counter.most_common(20)]
+
+    return ConceptDetail(
+        concept=concept,
+        countries=countries,
+        co_authors=co_authors,
+        top_paper=top_paper
+    )
 
 # Simple in-memory cache for network graphs
 _network_cache = {}

@@ -390,26 +390,29 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
     return (
         <div
             style={{
-                marginTop: '2rem',
+                marginTop: '0',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '1.5rem',
                 width: '100vw',
                 position: 'relative',
                 left: '50%',
                 right: '50%',
                 marginLeft: '-50vw',
                 marginRight: '-50vw',
-                padding: '0 5vw',
+                backgroundColor: '#1e293b',
+                borderTop: '1px solid #334155',
+                borderBottom: '1px solid #334155',
+                padding: '3rem 0',
                 boxSizing: 'border-box'
             }}
         >
             <div
                 style={{
-                    background: '#1e293b',
-                    borderRadius: 12,
-                    padding: '1.5rem',
-                    border: '1px solid #334155'
+                    maxWidth: '1200px',
+                    width: '100%',
+                    margin: '0 auto',
+                    padding: '0 5vw',
+                    boxSizing: 'border-box'
                 }}
             >
                 <header
@@ -669,21 +672,21 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                             style={{
                                 position: 'absolute',
                                 top: 20,
-                                right: 20,
+                                right: -10,
                                 zIndex: 10,
-                                background: 'rgba(255, 255, 255, 0.95)',
+                                background: 'rgba(15, 23, 42, 0.95)',
                                 padding: '1.5rem',
                                 borderRadius: 12,
-                                border: '1px solid #e2e8f0',
+                                border: '1px solid #334155',
                                 width: '280px',
-                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
+                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)',
                                 pointerEvents: 'none'
                             }}
                         >
                             <h3
                                 style={{
                                     fontSize: '0.85rem',
-                                    color: '#0f172a',
+                                    color: '#f8fafc',
                                     fontWeight: 800,
                                     borderBottom: '2px solid #3b82f6',
                                     paddingBottom: '0.5rem',
@@ -697,7 +700,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 <div>
                                     <div
                                         style={{
-                                            color: '#64748b',
+                                            color: '#94a3b8',
                                             fontSize: '0.65rem',
                                             fontWeight: 600,
                                             textTransform: 'uppercase'
@@ -705,7 +708,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                     >
                                         Core Researcher
                                     </div>
-                                    <div style={{ color: '#0f172a', fontSize: '1rem', fontWeight: 'bold' }}>
+                                    <div style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold' }}>
                                         {authorName}
                                     </div>
                                 </div>
@@ -742,7 +745,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 <div>
                                     <div
                                         style={{
-                                            color: '#64748b',
+                                            color: '#94a3b8',
                                             fontSize: '0.65rem',
                                             fontWeight: 600,
                                             textTransform: 'uppercase'
@@ -750,7 +753,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                     >
                                         Active Period
                                     </div>
-                                    <div style={{ color: '#0f172a', fontSize: '1rem', fontWeight: 'bold' }}>
+                                    <div style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold' }}>
                                         {yearRange.from} — {yearRange.to}
                                     </div>
                                 </div>
@@ -773,14 +776,14 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                             style={{
                                 position: 'absolute',
                                 top: 20,
-                                right: 320,
+                                right: 300,
                                 zIndex: 10,
-                                background: 'rgba(255, 255, 255, 0.95)',
+                                background: 'rgba(15, 23, 42, 0.95)',
                                 padding: '1rem',
                                 borderRadius: 12,
                                 border: '1px solid #3b82f6',
                                 width: '220px',
-                                boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.2)',
+                                boxShadow: '0 8px 12px -3px rgba(59, 130, 246, 0.3)',
                                 opacity: hoveredNode ? 1 : 0,
                                 transition: 'opacity 0.2s ease',
                                 pointerEvents: 'none'
@@ -790,17 +793,17 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 SELECTED AUTHOR
                             </div>
                             <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                                {hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.name : 'None'}
+                                <span style={{ color: '#f8fafc' }}>{hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.name : 'None'}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                                <span style={{ color: '#64748b' }}>Joint Papers:</span>
-                                <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                                <span style={{ color: '#94a3b8' }}>Joint Papers:</span>
+                                <span style={{ fontWeight: 600, color: '#f8fafc' }}>
                                     {hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.joint_papers : 0}
                                 </span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                                <span style={{ color: '#64748b' }}>Joint Citations:</span>
-                                <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                                <span style={{ color: '#94a3b8' }}>Joint Citations:</span>
+                                <span style={{ fontWeight: 600, color: '#f8fafc' }}>
                                     {hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.joint_citations : 0}
                                 </span>
                             </div>
@@ -849,22 +852,22 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                     position: 'absolute',
                                     bottom: 15,
                                     left: 15,
-                                    background: 'rgba(255, 255, 255, 0.9)',
+                                    background: 'rgba(15, 23, 42, 0.9)',
                                     padding: '0.75rem',
                                     borderRadius: 8,
-                                    border: '1px solid #e2e8f0',
+                                    border: '1px solid #334155',
                                     pointerEvents: 'none',
                                     fontSize: '0.75rem',
-                                    color: '#0f172a',
+                                    color: '#f8fafc',
                                     fontFamily: 'monospace',
-                                    boxShadow: '0 2px 4px rgb(0 0 0 / 0.05)'
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.3)'
                                 }}
                             >
                                 <div
                                     style={{
                                         fontWeight: 'bold',
                                         marginBottom: '0.5rem',
-                                        borderBottom: '1px solid #e2e8f0',
+                                        borderBottom: '1px solid #334155',
                                         paddingBottom: '0.25rem'
                                     }}
                                 >
