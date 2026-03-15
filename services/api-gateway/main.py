@@ -178,6 +178,30 @@ async def get_author_publications(author_id: str):
         for r in rows
     ]
 
+@app.get("/authors/{author_id}/top-publication-by-year", response_model=Optional[Publication])
+async def get_top_publication_by_year(author_id: str, year: int):
+    """Get the most cited publication for an author in a specific year."""
+    query = """
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id ILIKE $1 AND p.year = $2
+        ORDER BY p.citations DESC NULLS LAST
+        LIMIT 1
+    """
+    row = await db.pool.fetchrow(query, author_id, year)
+    if not row:
+        return None
+    return Publication(
+        id=row['id'], 
+        title=row['title'], 
+        year=row['year'], 
+        citations=row['citations'], 
+        venue=row['venue'],
+        pdf_url=row['pdf_url'],
+        publication_date=row['publication_date']
+    )
+
 @app.get("/authors/{author_id}/recent-publications", response_model=List[Publication])
 async def get_recent_publications(author_id: str):
     """Get publications from the last week for an author."""
@@ -213,52 +237,54 @@ async def get_recent_publications(author_id: str):
     ]
 
 @app.get("/authors", response_model=dict)
-async def get_authors(page: int = Query(1, ge=1), limit: int = Query(12, ge=1, le=100)):
-    """Get all authors with pagination."""
+async def get_authors(
+    page: int = Query(1, ge=1), 
+    limit: int = Query(12, ge=1, le=100),
+    dept: Optional[str] = Query(None)
+):
+    """Get all authors with pagination, optionally filtered by department."""
     offset = (page - 1) * limit
     
-    # 1. Get total count
-    count_query = """
-        SELECT COUNT(DISTINCT a.id)
-        FROM authors a
-        JOIN author_metrics_yearly amy ON a.id = amy.author_id
-        GROUP BY a.id
-        HAVING SUM(amy.pub_count) > 0
-    """
-    # Note: The above count query returns a row for each author. We need the count of rows.
-    # Alternatively, simplistic count of authors who have ANY metric entry with pub_count > 0
-    count_query = """
+    # 1. Base WHERE clause
+    where_clause = "WHERE a.is_faculty = TRUE"
+    params = []
+    
+    if dept:
+        where_clause += " AND a.dept = $1"
+        params.append(dept)
+    
+    # 2. Get total count
+    count_query = f"""
         SELECT COUNT(*)
         FROM (
             SELECT a.id
             FROM authors a
             JOIN author_metrics_yearly amy ON a.id = amy.author_id
-            WHERE a.is_faculty = TRUE
+            {where_clause}
             GROUP BY a.id
             HAVING SUM(amy.pub_count) > 0
         ) as sub
     """
-    total_count = await db.pool.fetchval(count_query)
+    total_count = await db.pool.fetchval(count_query, *params)
     
-    # 2. Get paginated data
-    # Sort order: 
-    # - Has Image (image_url IS NOT NULL) -> First
-    # - Publication Count (desc) -> Second
-    # - Alphabetical -> Third
-    query = """
+    # 3. Get paginated data
+    param_idx = len(params) + 1
+    query = f"""
         SELECT a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone, COALESCE(SUM(amy.pub_count), 0) as total_pubs
         FROM authors a
         LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
-        WHERE a.is_faculty = TRUE
+        {where_clause}
         GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone
         HAVING COALESCE(SUM(amy.pub_count), 0) > 0
         ORDER BY 
             total_pubs DESC NULLS LAST,
             (a.image_url IS NOT NULL) DESC,
             a.name ASC
-        LIMIT $1 OFFSET $2
+        LIMIT ${param_idx} OFFSET ${param_idx + 1}
     """
-    rows = await db.pool.fetch(query, limit, offset)
+    
+    final_params = params + [limit, offset]
+    rows = await db.pool.fetch(query, *final_params)
     
     authors = [
          Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url'], email=r['email'], phone=r['phone'], pub_count=r['total_pubs']) 
@@ -271,7 +297,7 @@ async def get_authors(page: int = Query(1, ge=1), limit: int = Query(12, ge=1, l
             "page": page,
             "limit": limit,
             "total_items": total_count,
-            "total_pages": (total_count + limit - 1) // limit
+            "total_pages": (total_count + limit - 1) // limit if total_count else 0
         }
     }
 

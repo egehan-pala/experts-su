@@ -4,6 +4,7 @@ import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import CoAuthorshipGraph from '@/components/CoAuthorshipGraph';
 import FingerprintChart from '@/components/charts/FingerprintChart';
+import CitationTimelineChart from '@/components/charts/CitationTimelineChart';
 import CollaborationMap from '@/components/CollaborationMap';
 
 interface Author {
@@ -98,9 +99,9 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
             fontFamily: 'var(--font-sans)',
             overflow: 'hidden'
         }}>
-            <div style={{ 
-                maxWidth: '1200px', 
-                margin: '0 auto', 
+            <div style={{
+                maxWidth: '1200px',
+                margin: '0 auto',
                 padding: '0 5vw',
                 boxSizing: 'border-box'
             }}>
@@ -113,14 +114,14 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
 
                 <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '2rem' }}>
                     {recentPubs.map(pub => (
-                        <div key={pub.id} style={{ 
-                            display: 'flex', 
-                            flexDirection: 'column', 
-                            gap: '0.75rem', 
-                            padding: '1.5rem', 
-                            backgroundColor: 'rgba(255, 255, 255, 0.03)', 
-                            borderRadius: '16px', 
-                            border: '1px solid #334155', 
+                        <div key={pub.id} style={{
+                            display: 'flex',
+                            flexDirection: 'column',
+                            gap: '0.75rem',
+                            padding: '1.5rem',
+                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
+                            borderRadius: '16px',
+                            border: '1px solid #334155',
                             transition: 'all 0.3s ease',
                             boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
                         }}>
@@ -201,10 +202,6 @@ export default function ProfilePage() {
 
     // Calculate total citations
     const totalCitations = metrics.reduce((acc, m) => acc + (m.citations || 0), 0);
-
-    // Get recent years for sparkline (last 20 years)
-    const recentMetrics = metrics.slice(-20);
-    const maxCitations = Math.max(...recentMetrics.map(m => m.citations || 0), 1);
 
     if (loading) return <div className="container" style={{ paddingTop: '4rem' }}>Loading profile...</div>;
     if (!author) return <div className="container" style={{ paddingTop: '4rem' }}>Author not found</div>;
@@ -303,7 +300,7 @@ export default function ProfilePage() {
                             {author.top_publication && (
                                 <div style={{ marginTop: '2rem', padding: '1.5rem', backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                                        <span style={{ fontSize: '1.25rem' }}>🏆</span>
+                                        <span style={{ fontSize: '1.25rem' }}></span>
                                         <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#111', margin: 0 }}>Top Cited Paper</h3>
                                     </div>
                                     <p style={{ fontSize: '1.1rem', color: '#002855', fontWeight: 500, marginBottom: '0.5rem', lineHeight: 1.4 }}>
@@ -321,6 +318,9 @@ export default function ProfilePage() {
                     </div>
                 </div>
             </div>
+
+            {/* Citation & Publication Timeline */}
+            <CitationTimelineChart authorId={id} data={metrics} />
 
             {/* Discovery Fingerprint Section (Prepared for full-bleed expansion) */}
             <FingerprintChart authorId={id} />

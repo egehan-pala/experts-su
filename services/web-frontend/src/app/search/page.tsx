@@ -134,8 +134,11 @@ export default function SearchPage() {
                                         </div>
                                         <div className="su-card-content">
                                             <h3 className="su-card-title">{expert.name}</h3>
-                                            <p className="su-card-desc" style={{ marginBottom: '0.5rem', fontWeight: 600, color: '#111' }}>
+                                            <p className="su-card-desc" style={{ marginBottom: '0.25rem', fontWeight: 700, color: '#002855' }}>
                                                 {expert.dept || 'Sabanci University'}
+                                            </p>
+                                            <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.5rem' }}>
+                                                Faculty Member
                                             </p>
                                         </div>
                                     </div>
@@ -186,8 +189,11 @@ export default function SearchPage() {
                                         </div>
                                         <div className="su-card-content">
                                             <h3 className="su-card-title">{expert.name}</h3>
-                                            <p className="su-card-desc" style={{ marginBottom: '0.5rem', fontWeight: 600, color: '#111' }}>
+                                            <p className="su-card-desc" style={{ marginBottom: '0.25rem', fontWeight: 700, color: '#002855' }}>
                                                 {expert.dept || 'Sabanci University'}
+                                            </p>
+                                            <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.5rem' }}>
+                                                Faculty Member
                                             </p>
                                             {expert.explanation && expert.explanation.length > 0 && (
                                                 <div style={{ fontSize: '0.8rem', color: '#52525b', marginTop: '0.5rem', borderTop: '1px solid #e4e4e7', paddingTop: '0.5rem' }}>
