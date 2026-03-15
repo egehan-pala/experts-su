@@ -54,7 +54,7 @@ popd
 
 echo   - Installing Web Frontend dependencies (this may take a while)...
 pushd services\web-frontend
-call npm install --no-audit --no-fund >nul
+call npm install --legacy-peer-deps --no-audit --no-fund >nul
 popd
 echo Dependencies installed.
 

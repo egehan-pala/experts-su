@@ -384,3 +384,23 @@ class Database:
         for edge in edges:
             records.append((edge["author_id"], edge["coauthor_id"], edge["weight"]))
         await self._executemany_batched(query, records, label="coauthor_edges")
+
+    async def upsert_author_citations_yearly(self, citations: List[Dict[str, Any]]) -> None:
+        """Upsert author yearly citation counts."""
+        query = """
+            INSERT INTO author_citations_yearly (author_id, year, count)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (author_id, year) DO UPDATE SET count = EXCLUDED.count
+        """
+        records = [(c["author_id"], c["year"], c["count"]) for c in citations]
+        await self._executemany_batched(query, records, label="author_citations_yearly")
+
+    async def upsert_publication_citations_yearly(self, citations: List[Dict[str, Any]]) -> None:
+        """Upsert publication yearly citation counts."""
+        query = """
+            INSERT INTO publication_citations_yearly (publication_id, year, count)
+            VALUES ($1, $2, $3)
+            ON CONFLICT (publication_id, year) DO UPDATE SET count = EXCLUDED.count
+        """
+        records = [(c["publication_id"], c["year"], c["count"]) for c in citations]
+        await self._executemany_batched(query, records, label="publication_citations_yearly")
