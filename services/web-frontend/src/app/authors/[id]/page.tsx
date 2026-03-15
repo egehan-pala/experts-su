@@ -3,6 +3,7 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import CoAuthorshipGraph from '@/components/CoAuthorshipGraph';
+import PublicationList from '@/components/PublicationList';
 
 interface Author {
     id: string;
@@ -566,6 +567,9 @@ export default function ProfilePage() {
 
                     {/* Recent Publications Section (Full Width Below) */}
                     <RecentArticlesSection authorId={id} />
+
+                    {/* Full Publications List with Filters */}
+                    <PublicationList authorId={id} />
                 </div>
 
             {/* Publications section removed - data is stored in backend for future search engine implementation */}

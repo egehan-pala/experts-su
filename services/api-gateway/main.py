@@ -83,6 +83,7 @@ class Publication(BaseModel):
     venue: Optional[str]
     pdf_url: Optional[str] = None
     publication_date: Optional[str] = None
+    is_open_access: Optional[bool] = False
 
 # Endpoints
 @app.get("/")
@@ -138,18 +139,69 @@ async def get_author(author_id: str):
     
     return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'], image_url=row['image_url'], email=row['email'], phone=row['phone'], areas_of_interest=row['areas_of_interest'], top_publication=top_pub)
 
-@app.get("/authors/{author_id}/publications", response_model=List[Publication])
-async def get_author_publications(author_id: str):
-    """Get all publications for an author."""
-    query = """
-        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
+@app.get("/authors/{author_id}/publications")
+async def get_author_publications(
+    author_id: str,
+    page: int = Query(1, ge=1),
+    limit: int = Query(20, ge=1, le=100),
+    sort_by: str = Query("citations", regex="^(citations|year)$"),
+    year_from: Optional[int] = None,
+    year_to: Optional[int] = None,
+    q: Optional[str] = None
+):
+    """Get all publications for an author with pagination, search, and filtering."""
+    offset = (page - 1) * limit
+    
+    # Base query for counting
+    count_query_base = """
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE ap.author_id ILIKE $1
-        ORDER BY p.year DESC, p.citations DESC
     """
-    rows = await db.pool.fetch(query, author_id)
-    return [
+    
+    # Base query for fetching data
+    fetch_query_base = """
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date, p.is_oa
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id ILIKE $1
+    """
+    
+    where_clauses = ""
+    params = [author_id]
+    param_idx = 2
+    
+    if year_from is not None:
+        where_clauses += f" AND p.year >= ${param_idx}"
+        params.append(year_from)
+        param_idx += 1
+        
+    if year_to is not None:
+        where_clauses += f" AND p.year <= ${param_idx}"
+        params.append(year_to)
+        param_idx += 1
+        
+    if q and q.strip():
+        where_clauses += f" AND p.title ILIKE ${param_idx}"
+        params.append(f"%{q.strip()}%")
+        param_idx += 1
+
+    # Sorting
+    if sort_by == "year":
+        order_clause = "ORDER BY p.year DESC NULLS LAST, p.citations DESC NULLS LAST"
+    else:  # default to citations
+        order_clause = "ORDER BY p.citations DESC NULLS LAST, p.year DESC NULLS LAST"
+
+    # Get total count
+    total_count = await db.pool.fetchval(f"SELECT COUNT(p.id) {count_query_base} {where_clauses}", *params)
+    
+    # Fetch paginated data
+    fetch_query = f"{fetch_query_base} {where_clauses} {order_clause} LIMIT ${param_idx} OFFSET ${param_idx + 1}"
+    params.extend([limit, offset])
+    
+    rows = await db.pool.fetch(fetch_query, *params)
+    
+    publications = [
         Publication(
             id=r['id'], 
             title=r['title'], 
@@ -157,10 +209,21 @@ async def get_author_publications(author_id: str):
             citations=r['citations'], 
             venue=r['venue'],
             pdf_url=r['pdf_url'],
-            publication_date=r['publication_date']
+            publication_date=r['publication_date'],
+            is_open_access=r.get('is_oa', False)
         )
         for r in rows
     ]
+    
+    return {
+        "data": publications,
+        "meta": {
+            "page": page,
+            "limit": limit,
+            "total_items": total_count,
+            "total_pages": (total_count + limit - 1) // limit if total_count > 0 else 0
+        }
+    }
 
 @app.get("/authors/{author_id}/recent-publications", response_model=List[Publication])
 async def get_recent_publications(author_id: str):
