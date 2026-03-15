@@ -157,6 +157,7 @@ export default function ProfilePage() {
     const [author, setAuthor] = useState<Author | null>(null);
     const [metrics, setMetrics] = useState<YearlyMetric[]>([]);
     const [loading, setLoading] = useState(true);
+    const [selectedYear, setSelectedYear] = useState<number | null>(null);
 
     // Galaxy state
     const [galaxyCategory, setGalaxyCategory] = useState<GalaxyCategory>('source');
@@ -167,7 +168,8 @@ export default function ProfilePage() {
     const fetchGalaxy = async (cat: GalaxyCategory, drills: string[]) => {
         setGalaxyLoading(true);
         try {
-            let url = `http://localhost:8000/authors/${id}/galaxy?category=${cat}`;
+            const shortId = id.replace('https://openalex.org/', '').split('/').pop() || id;
+            let url = `http://localhost:8000/authors/${shortId}/galaxy?category=${cat}`;
             if (drills.length >= 1) url += `&drill=${encodeURIComponent(drills[0])}`;
             if (drills.length >= 2) url += `&drill2=${encodeURIComponent(drills[1])}`;
             const res = await fetch(url);
@@ -179,16 +181,20 @@ export default function ProfilePage() {
 
     useEffect(() => {
         if (id) {
+            const shortId = id.replace('https://openalex.org/', '').split('/').pop() || id;
             Promise.all([
-                fetch(`http://localhost:8000/authors/${id}`).then(res => res.json()),
-                fetch(`http://localhost:8000/authors/${id}/metrics`).then(res => res.json()),
+                fetch(`http://localhost:8000/authors/${shortId}`).then(res => res.json()),
+                fetch(`http://localhost:8000/authors/${shortId}/metrics`).then(res => res.json()),
             ])
                 .then(([authorData, metricsData]) => {
                     setAuthor(authorData);
                     setMetrics(metricsData);
                     setLoading(false);
                 })
-                .catch((err) => console.error(err));
+                .catch((err) => {
+                    console.error('Error fetching author profile:', err);
+                    setLoading(false);
+                });
         }
     }, [id]);
 
@@ -320,7 +326,12 @@ export default function ProfilePage() {
             </div>
 
             {/* Citation & Publication Timeline */}
-            <CitationTimelineChart authorId={id} data={metrics} />
+            <CitationTimelineChart 
+                authorId={id} 
+                data={metrics} 
+                selectedYear={selectedYear}
+                onYearSelect={setSelectedYear}
+            />
 
             {/* Discovery Fingerprint Section (Prepared for full-bleed expansion) */}
             <FingerprintChart authorId={id} />
@@ -329,7 +340,7 @@ export default function ProfilePage() {
             <CoAuthorshipGraph authorId={id} authorName={author.name} />
 
             {/* Geographical Collaboration Map */}
-            <CollaborationMap authorId={id} />
+            <CollaborationMap authorId={id} selectedYear={selectedYear} />
 
             {/* Recent Publications Section (Full-Bleed Expansion) */}
             <RecentArticlesSection authorId={id} />

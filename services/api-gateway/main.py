@@ -385,55 +385,37 @@ async def get_author_metrics(
     realtime: bool = Query(False),
     since: Optional[str] = Query(None)
 ):
-    """Get yearly publication and citation counts for an author, filled to current year."""
-    import httpx
-    from collections import Counter
+    """Get yearly publication and citation counts for an author using the pre-aggregated metrics table."""
+    import datetime
     
-    # 1. Get local publication counts per year
-    query_pubs = """
-        SELECT year, COUNT(*) as pub_count
-        FROM publications p
-        JOIN author_publications ap ON p.id = ap.publication_id
-        WHERE ap.author_id = $1 OR ap.author_id ILIKE '%' || $1
-        GROUP BY year
-        ORDER BY year ASC
-    """
-    pub_rows = await db.pool.fetch(query_pubs, author_id)
-    pub_counts = {r['year']: r['pub_count'] for r in pub_rows if r['year']}
-    
-    start_year = min(pub_counts.keys()) if pub_counts else 2000
-    if since and since.isdigit():
-        start_year = max(start_year, int(since))
-    
-    end_year = datetime.datetime.now().year
-    citation_counts = Counter()
-    
-    # 2. Use local citation metrics (from structured author_citations_yearly)
-    query_citations = """
-        SELECT year, count as citations_year
-        FROM author_citations_yearly
+    # Query aggregated metrics directly
+    query = """
+        SELECT year, pub_count, citations_year as citations
+        FROM author_metrics_yearly
         WHERE author_id = $1 OR author_id ILIKE '%' || $1
         ORDER BY year ASC
     """
-    cit_rows = await db.pool.fetch(query_citations, author_id)
-    for r in cit_rows:
-        citation_counts[r['year']] = r['citations_year']
+    rows = await db.pool.fetch(query, author_id)
     
-    if cit_rows and not pub_counts:
-        start_year = min(cit_rows[0]['year'], start_year)
+    if not rows:
+        return []
 
-    # 4. Fill and merge
-    filled_metrics = []
-    actual_start = min(start_year, min(citation_counts.keys())) if citation_counts else start_year
-    
-    for y in range(actual_start, end_year + 1):
-        filled_metrics.append(YearlyMetric(
-            year=y,
-            pub_count=pub_counts.get(y, 0),
-            citations=citation_counts.get(y, 0)
-        ))
-            
-    return filled_metrics
+    # Map results
+    metrics = [
+        YearlyMetric(
+            year=r['year'],
+            pub_count=r['pub_count'],
+            citations=r['citations']
+        )
+        for r in rows
+    ]
+
+    # Handle since filter if provided
+    if since and since.isdigit():
+        since_val = int(since)
+        metrics = [m for m in metrics if m.year >= since_val]
+
+    return metrics
 
 class NestedTopicStat(BaseModel):
     name: str
@@ -781,7 +763,11 @@ async def get_concept_details(author_id: str, concept: str = Query(...)):
     )
 
 @app.get("/authors/{author_id}/geo-citations", response_model=GeoCitationResponse)
-async def get_author_geo_citations(author_id: str, since: Optional[str] = Query(None)):
+async def get_author_geo_citations(
+    author_id: str, 
+    since: Optional[str] = Query(None),
+    year: Optional[int] = Query(None)
+):
     """Get aggregated geographic locations of works citing this author's research."""
     import httpx
     from collections import Counter
@@ -836,9 +822,14 @@ async def get_author_geo_citations(author_id: str, since: Optional[str] = Query(
             batch = works_list[i:i+batch_size]
             batch_filter = "|".join(batch)
             filter_str = f"referenced_works:{batch_filter}"
-            if since and (len(since) == 4 or '-' in since):
-                since_date = since if '-' in since else f"{since}-01-01"
-                filter_str += f",from_publication_date:{since_date}"
+            
+            if year:
+                # Precise year filtering: citations received DURING this specific year
+                filter_str += f",publication_year:{year}"
+            elif since:
+                if (len(since) == 4 or '-' in since):
+                    since_date = since if '-' in since else f"{since}-01-01"
+                    filter_str += f",from_publication_date:{since_date}"
                 
             url = f"https://api.openalex.org/works?filter={filter_str}&group_by=authorships.countries"
             

@@ -33,14 +33,15 @@ interface Publication {
 interface Props {
   authorId: string;
   data: YearlyMetric[];
+  selectedYear: number | null;
+  onYearSelect: (year: number | null) => void;
 }
 
 const SABANCI_BLUE = '#002855';
 const SABANCI_RED = '#d6001c';
 
-export default function CitationTimelineChart({ authorId, data }: Props) {
+export default function CitationTimelineChart({ authorId, data, selectedYear, onYearSelect }: Props) {
   const [range, setRange] = useState<number | 'all'>(10);
-  const [selectedYear, setSelectedYear] = useState<number | null>(null);
   const [topPaper, setTopPaper] = useState<Publication | null>(null);
   const [paperLoading, setPaperLoading] = useState(false);
   const [isMounted, setIsMounted] = useState(false);
@@ -157,7 +158,7 @@ export default function CitationTimelineChart({ authorId, data }: Props) {
               margin={{ top: 20, right: 30, left: 20, bottom: 20 }}
               onClick={(e: any) => {
                 if (e && e.activePayload) {
-                  setSelectedYear(e.activePayload[0].payload.year);
+                  onYearSelect(e.activePayload[0].payload.year);
                 }
               }}
             >
@@ -251,7 +252,7 @@ export default function CitationTimelineChart({ authorId, data }: Props) {
                 barSize={32}
                 animationDuration={1500}
                 style={{ cursor: 'pointer' }}
-                onClick={(data: any) => setSelectedYear(data.year)}
+                onClick={(data: any) => onYearSelect(data.year)}
               >
                 {chartData.map((entry, index) => (
                   <Cell
@@ -270,7 +271,7 @@ export default function CitationTimelineChart({ authorId, data }: Props) {
                 barSize={32}
                 animationDuration={1500}
                 style={{ cursor: 'pointer' }}
-                onClick={(data: any) => setSelectedYear(data.year)}
+                onClick={(data: any) => onYearSelect(data.year)}
               >
                 {chartData.map((entry, index) => (
                   <Cell
@@ -365,7 +366,7 @@ export default function CitationTimelineChart({ authorId, data }: Props) {
             </div>
             <div style={{ marginTop: '1.5rem', textAlign: 'right' }}>
               <button
-                onClick={() => setSelectedYear(null)}
+                onClick={() => onYearSelect(null)}
                 style={{ fontSize: '0.85rem', color: '#64748b', border: 'none', background: 'none', cursor: 'pointer', textDecoration: 'underline' }}
               >
                 Close Summary

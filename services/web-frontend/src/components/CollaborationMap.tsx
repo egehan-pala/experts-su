@@ -24,13 +24,14 @@ interface GeoCitationResponse {
 
 interface Props {
   authorId: string;
+  selectedYear: number | null;
 }
 
 const colorScale = scaleLinear<string>()
   .domain([1, 10]) // We will update domain dynamically
   .range(["#fca5a5", "#d6001c"]);
 
-export default function CollaborationMap({ authorId }: Props) {
+export default function CollaborationMap({ authorId, selectedYear }: Props) {
   const [data, setData] = useState<CountryStat[]>([]);
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loading, setLoading] = useState(false);
@@ -56,7 +57,13 @@ export default function CollaborationMap({ authorId }: Props) {
     
     setLoading(true);
     const shortId = authorId.includes('/') ? authorId.split('/').pop()! : authorId;
-    const url = `http://localhost:8000/authors/${shortId}/geo-citations${debouncedSinceYear ? `?since=${debouncedSinceYear}` : ''}`;
+    
+    let url = `http://localhost:8000/authors/${shortId}/geo-citations`;
+    if (selectedYear) {
+      url += `?year=${selectedYear}`;
+    } else if (debouncedSinceYear) {
+      url += `?since=${debouncedSinceYear}`;
+    }
 
     fetch(url)
       .then((res) => res.json())
@@ -71,7 +78,7 @@ export default function CollaborationMap({ authorId }: Props) {
         setLoading(false);
         setInitialLoading(false);
       });
-  }, [authorId, debouncedSinceYear]);
+  }, [authorId, debouncedSinceYear, selectedYear]);
 
   const maxCount = useMemo(() => {
     if (!data.length) return 1;
@@ -207,7 +214,7 @@ export default function CollaborationMap({ authorId }: Props) {
                     marginLeft: '0.5rem',
                     transition: 'all 0.3s'
                 }}>
-                    {totalCount.toLocaleString()} TOTAL CITATIONS
+                    {totalCount.toLocaleString()} {selectedYear ? `CITATIONS IN ${selectedYear}` : 'TOTAL CITATIONS'}
                 </div>
             </div>
             <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
@@ -217,26 +224,41 @@ export default function CollaborationMap({ authorId }: Props) {
                         UPDATING...
                     </div>
                 )}
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                    <label htmlFor="sinceYearMain" style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600 }}>SINCE</label>
-                    <input 
-                        id="sinceYearMain"
-                        type="number" 
-                        placeholder="Year" 
-                        value={sinceYear}
-                        onChange={(e) => setSinceYear(e.target.value)}
-                        style={{
-                            backgroundColor: 'rgba(255, 255, 255, 0.05)',
-                            border: '1px solid #334155',
-                            borderRadius: '6px',
-                            color: '#f8fafc',
-                            padding: '0.4rem 0.6rem',
-                            fontSize: '0.9rem',
-                            width: '80px',
-                            outline: 'none'
-                        }}
-                    />
-                </div>
+                {!selectedYear && (
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                        <label htmlFor="sinceYearMain" style={{ fontSize: '0.85rem', color: '#94a3b8', fontWeight: 600 }}>SINCE</label>
+                        <input 
+                            id="sinceYearMain"
+                            type="number" 
+                            placeholder="Year" 
+                            value={sinceYear}
+                            onChange={(e) => setSinceYear(e.target.value)}
+                            style={{
+                                backgroundColor: 'rgba(255, 255, 255, 0.05)',
+                                border: '1px solid #334155',
+                                borderRadius: '6px',
+                                color: '#f8fafc',
+                                padding: '0.4rem 0.6rem',
+                                fontSize: '0.9rem',
+                                width: '80px',
+                                outline: 'none'
+                            }}
+                        />
+                    </div>
+                )}
+                {selectedYear && (
+                    <div style={{ 
+                        color: '#3b82f6', 
+                        fontSize: '0.85rem', 
+                        fontWeight: 800,
+                        backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                        padding: '0.4rem 1rem',
+                        borderRadius: '6px',
+                        border: '1px solid rgba(59, 130, 246, 0.3)'
+                    }}>
+                        DISPLAYING: {selectedYear}
+                    </div>
+                )}
             </div>
         </div>
 
