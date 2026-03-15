@@ -60,7 +60,7 @@ const SimilarExperts: React.FC<SimilarExpertsProps> = ({ authorId }) => {
             Similar Research Profiles
           </h2>
           <p className="text-slate-500 dark:text-slate-400 mt-2">
-            Experts with overlapping research interests and publication topics.
+            Experts with overlapping research interests and publication subfields.
           </p>
         </div>
       </div>

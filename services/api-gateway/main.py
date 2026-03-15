@@ -289,7 +289,8 @@ async def get_authors(
             try:
                 topics = json.loads(r['top_topics'])
                 for t in topics:
-                    name = t.get('display_name')
+                    # Use subfield name instead of topic name
+                    name = t.get('subfield', {}).get('display_name')
                     if name:
                         cleaned = name.strip().title()
                         if cleaned and cleaned not in tags:
@@ -1058,26 +1059,34 @@ async def get_similar_authors(author_id: str, limit: int = Query(6, ge=1, le=20)
     # 3. Find shared topics for each similar author
     # This is a bit complex. We'll fetch the most frequent topics for the target and each similar author.
     
-    async def get_top_topics(aid):
-        topic_query = """
-            SELECT t.name, COUNT(*) as count
-            FROM topics t
-            JOIN publication_topics pt ON t.id = pt.topic_id
-            JOIN author_publications ap ON pt.publication_id = ap.publication_id
-            WHERE ap.author_id = $1
-            GROUP BY t.name
-            ORDER BY count DESC
-            LIMIT 10
+    async def get_top_subfields(aid):
+        query = """
+            SELECT topics_json
+            FROM publications p
+            JOIN author_publications ap ON p.id = ap.publication_id
+            WHERE ap.author_id = $1 AND p.topics_json IS NOT NULL
         """
-        topic_rows = await db.pool.fetch(topic_query, aid)
-        return {r['name'] for r in topic_rows}
+        rows = await db.pool.fetch(query, aid)
+        subfields = {}
+        for r in rows:
+            try:
+                topics = json.loads(r['topics_json'])
+                for t in topics:
+                    name = t.get('subfield', {}).get('display_name')
+                    if name:
+                        name = name.strip().title()
+                        subfields[name] = subfields.get(name, 0) + 1
+            except:
+                continue
+        # Return top 10 unique subfield names
+        return set(sorted(subfields.keys(), key=lambda x: subfields[x], reverse=True)[:10])
 
-    target_topics = await get_top_topics(author_id)
+    target_topics = await get_top_subfields(author_id)
     
     results = []
     for row in similar_rows:
         sim_id = row['author_id']
-        sim_topics = await get_top_topics(sim_id)
+        sim_topics = await get_top_subfields(sim_id)
         
         # Shared topics = intersection of top topics
         shared = list(target_topics.intersection(sim_topics))
