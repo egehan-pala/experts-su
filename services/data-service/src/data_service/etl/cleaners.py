@@ -468,18 +468,41 @@ async def clean(db: Database) -> Tuple[
     
     # Compute metrics: publications and citations per author per year
     metrics: Dict[Tuple[str, int], Dict[str, int]] = {}
-    pub_info = {pub["id"]: (pub.get("year"), pub.get("citations", 0)) for pub in publications_norm}
+    pub_info = {
+        pub["id"]: {
+            "year": pub.get("year"),
+            "citations": pub.get("citations", 0),
+            "counts_by_year": json.loads(pub.get("counts_by_year_json") or "[]")
+        } 
+        for pub in publications_norm
+    }
     
     for rel in author_publications_norm:
         aid = rel["author_id"]
         pid = rel["publication_id"]
-        year, citations = pub_info.get(pid, (None, 0))
-        if year is None:
+        info = pub_info.get(pid)
+        if not info:
             continue
-        key = (aid, year)
-        entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
-        entry["pub_count"] += 1
-        entry["citations_year"] += citations or 0
+            
+        pub_year = info["year"]
+        if pub_year is not None:
+            key = (aid, pub_year)
+            entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
+            entry["pub_count"] += 1
+
+        counts_by_year = info["counts_by_year"]
+        if counts_by_year:
+            for c_entry in counts_by_year:
+                c_year = c_entry.get("year")
+                c_count = c_entry.get("cited_by_count", 0)
+                if c_year:
+                    key = (aid, c_year)
+                    entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
+                    entry["citations_year"] += c_count
+        elif pub_year:
+            key = (aid, pub_year)
+            entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
+            entry["citations_year"] += info["citations"]
     
     metrics_norm = [
         {"author_id": aid, "year": year, "pub_count": data["pub_count"], "citations_year": data["citations_year"]}
