@@ -48,9 +48,58 @@ interface Publication {
     year: number | null;
     citations: number | null;
     venue: string | null;
+    venue_type?: string | null;
+    type?: string | null;
+    volume?: string | null;
+    issue?: string | null;
+    first_page?: string | null;
+    last_page?: string | null;
+    is_oa?: boolean | null;
     pdf_url?: string | null;
+    landing_page_url?: string | null;
     publication_date?: string | null;
+    authorships_json?: string | null;
+    topics_json?: string | null;
 }
+
+function PublicationDonut({ percentage, color }: { percentage: number; color: string }) {
+    const radius = 7.5;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (percentage * circumference);
+
+    return (
+        <svg width="18" height="18" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+            <circle cx="10" cy="10" r={radius} fill="transparent" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
+            <circle
+                cx="10"
+                cy="10"
+                r={radius}
+                fill="transparent"
+                stroke={color}
+                strokeWidth="3"
+                strokeDasharray={circumference}
+                strokeDashoffset={offset}
+                strokeLinecap="round"
+                transform="rotate(-90 10 10)"
+            />
+        </svg>
+    );
+}
+
+const FIELD_COLORS: Record<string, string> = {
+    'computer science': '#0070c0',
+    'engineering': '#ed7d31',
+    'medicine': '#7030a0',
+    'biology': '#70ad47',
+    'physics': '#c00000',
+    'mathematics': '#00b0f0',
+    'social sciences': '#70ad47',
+    'business': '#00b0f0',
+    'chemistry': '#ffc000',
+    'materials science': '#ed7d31',
+    'psychology': '#7030a0',
+    'default': '#94a3b8'
+};
 
 function RecentArticlesSection({ authorId }: { authorId: string }) {
     const [recentPubs, setRecentPubs] = useState<Publication[]>([]);
@@ -76,7 +125,7 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
         if (!dateStr) return '';
         try {
             const date = new Date(dateStr);
-            return date.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+            return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
         } catch { return dateStr; }
     };
 
@@ -86,8 +135,8 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
     return (
         <section style={{
             marginTop: '0',
-            padding: '4rem 0 2rem 0',
-            backgroundColor: '#1e293b',
+            padding: '4rem 0',
+            backgroundColor: '#1E293B',
             color: '#f8fafc',
             width: '100vw',
             position: 'relative',
@@ -105,44 +154,137 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
                 padding: '0 5vw',
                 boxSizing: 'border-box'
             }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2.5rem', borderBottom: '1px solid #334155', paddingBottom: '1.25rem' }}>
-                    <span style={{ fontSize: '1.5rem' }}>📰</span>
-                    <h3 style={{ fontSize: '1.25rem', fontWeight: 800, color: '#f8fafc', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, fontFamily: 'var(--font-sans)' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '3rem' }}>
+                    <span style={{ fontSize: '1.5rem', color: '#3b82f6' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="2" y="3" width="20" height="18" rx="2" ry="2" />
+                            <line x1="7" y1="8" x2="17" y2="8" />
+                            <line x1="7" y1="12" x2="17" y2="12" />
+                            <line x1="7" y1="16" x2="12" y2="16" />
+                        </svg>
+                    </span>
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#f8fafc', margin: 0, fontFamily: 'var(--font-serif)' }}>
                         Recent Publications
-                    </h3>
+                    </h2>
                 </div>
 
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '2rem' }}>
-                    {recentPubs.map(pub => (
-                        <div key={pub.id} style={{
-                            display: 'flex',
-                            flexDirection: 'column',
-                            gap: '0.75rem',
-                            padding: '1.5rem',
-                            backgroundColor: 'rgba(255, 255, 255, 0.03)',
-                            borderRadius: '16px',
-                            border: '1px solid #334155',
-                            transition: 'all 0.3s ease',
-                            boxShadow: '0 4px 12px rgba(0,0,0,0.1)'
-                        }}>
-                            <span style={{ fontSize: '0.85rem', color: '#94a3b8', fontStyle: 'italic', fontWeight: 500 }}>
-                                {formatDate(pub.publication_date)}
-                            </span>
-                            <h4 style={{ fontSize: '1.1rem', color: '#f8fafc', fontWeight: 700, lineHeight: 1.4, margin: 0, fontFamily: 'var(--font-serif)', minHeight: '2.8em' }}>
-                                {pub.title}
-                            </h4>
-                            <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: 'auto' }}>
-                                <span style={{ fontSize: '0.85rem', color: '#3b82f6', fontWeight: 700, fontFamily: 'var(--font-sans)' }}>
-                                    {pub.venue || 'Unknown Venue'}
-                                </span>
-                            </div>
-                            {pub.pdf_url && (
-                                <a href={pub.pdf_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.8rem', color: '#60a5fa', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.2rem', marginTop: '0.75rem', transition: 'color 0.2s' }}>
-                                    PDF AVAILABLE ↗
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+                    {recentPubs.map(pub => {
+                        let authors: any[] = [];
+                        try {
+                            authors = pub.authorships_json ? JSON.parse(pub.authorships_json) : [];
+                        } catch (e) { console.error('Error parsing authors:', e); }
+
+                        let topics: any[] = [];
+                        try {
+                            topics = pub.topics_json ? JSON.parse(pub.topics_json) : [];
+                        } catch (e) { console.error('Error parsing topics:', e); }
+
+                        const pubLink = pub.landing_page_url || pub.pdf_url || `https://openalex.org/${pub.id}`;
+
+                        return (
+                            <div key={pub.id} style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.8rem',
+                                paddingBottom: '2.5rem',
+                                borderBottom: '1px solid rgba(255,255,255,0.05)'
+                            }}>
+                                <a
+                                    href={pubLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                        fontSize: '1.25rem',
+                                        color: '#60a5fa',
+                                        fontWeight: 600,
+                                        lineHeight: 1.4,
+                                        textDecoration: 'none',
+                                        fontFamily: 'var(--font-serif)',
+                                        transition: 'color 0.2s',
+                                        maxWidth: '1000px'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.color = '#93c5fd'}
+                                    onMouseLeave={(e) => e.currentTarget.style.color = '#60a5fa'}
+                                >
+                                    {pub.title}
                                 </a>
-                            )}
-                        </div>
-                    ))}
+
+                                <div style={{ fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.5 }}>
+                                    {authors.map((a, i) => {
+                                        const shortTargetId = authorId.replace('https://openalex.org/', '').split('/').pop() || authorId;
+                                        const authorFullId = a.author?.id || a.author_id || '';
+                                        const isTarget = authorFullId.includes(shortTargetId);
+                                        const displayName = a.author?.display_name || a.author_name || a.display_name || a.raw_name || 'Unknown Author';
+                                        return (
+                                            <span key={i}>
+                                                <span style={{ color: isTarget ? '#60a5fa' : '#cbd5e1', fontWeight: isTarget ? 700 : 400 }}>
+                                                    {displayName}
+                                                </span>
+                                                {i < authors.length - 1 ? ', ' : ''}
+                                            </span>
+                                        );
+                                    })}
+                                    <span style={{ color: '#94a3b8' }}>, {formatDate(pub.publication_date)}, </span>
+                                    <span style={{ fontStyle: 'italic', color: '#cbd5e1' }}>In: {pub.venue || 'Unknown Venue'}. </span>
+                                    {pub.volume && <span style={{ color: '#94a3b8' }}>{pub.volume}</span>}
+                                    {pub.issue && <span style={{ color: '#94a3b8' }}>, {pub.issue}</span>}
+                                    {(pub.first_page || pub.last_page) && (
+                                        <span style={{ color: '#94a3b8' }}>, p. {pub.first_page}{pub.last_page ? `-${pub.last_page}` : ''}</span>
+                                    )}
+                                </div>
+
+                                <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                                    Research output: {pub.type?.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Publication'}
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.2rem' }}>
+                                    {pub.is_oa && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600 }}>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                                <rect x="3" y="11" width="18" height="11" rx="2" />
+                                            </svg>
+                                            OPEN ACCESS
+                                        </div>
+                                    )}
+                                    {pub.pdf_url && (
+                                        <a href={pub.pdf_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, textDecoration: 'none' }}>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                                            </svg>
+                                            FILE
+                                        </a>
+                                    )}
+                                </div>
+
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.5rem' }}>
+                                    {topics.slice(0, 5).map((t, idx) => {
+                                        const category = (t.field?.display_name || t.field_display_name || 'default').toLowerCase();
+                                        const color = FIELD_COLORS[category] || FIELD_COLORS['default'];
+                                        const topicName = t.display_name || t.name || 'Unknown Topic';
+                                        return (
+                                            <div key={idx} style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                padding: '4px 10px',
+                                                backgroundColor: 'rgba(255,255,255,0.03)',
+                                                border: '1px solid rgba(255,255,255,0.1)',
+                                                borderRadius: '4px',
+                                                fontSize: '0.75rem',
+                                                color: '#f8fafc',
+                                                fontWeight: 500
+                                            }}>
+                                                <PublicationDonut percentage={t.score || 0.5} color={color} />
+                                                {topicName}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })}
                 </div>
             </div>
         </section>

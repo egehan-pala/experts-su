@@ -62,6 +62,8 @@ class TopPublication(BaseModel):
     year: Optional[int]
     citations: Optional[int]
     venue: Optional[str]
+    pdf_url: Optional[str] = None
+    landing_page_url: Optional[str] = None
 
 class Author(BaseModel):
     id: str
@@ -82,8 +84,18 @@ class Publication(BaseModel):
     year: Optional[int]
     citations: Optional[int]
     venue: Optional[str]
+    venue_type: Optional[str] = None
+    type: Optional[str] = None
+    volume: Optional[str] = None
+    issue: Optional[str] = None
+    first_page: Optional[str] = None
+    last_page: Optional[str] = None
+    is_oa: Optional[bool] = None
     pdf_url: Optional[str] = None
+    landing_page_url: Optional[str] = None
     publication_date: Optional[str] = None
+    authorships_json: Optional[str] = None
+    topics_json: Optional[str] = None
 
 # Endpoints
 @app.get("/")
@@ -127,7 +139,7 @@ async def get_author(author_id: str):
         raise HTTPException(status_code=404, detail="Author not found")
         
     pub_query = """
-        SELECT p.title, p.year, p.citations, p.venue
+        SELECT p.title, p.year, p.citations, p.venue, p.pdf_url, p.landing_page_url
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE ap.author_id ILIKE $1
@@ -158,7 +170,10 @@ async def get_author(author_id: str):
 async def get_author_publications(author_id: str):
     """Get all publications for an author."""
     query = """
-        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.venue_type, p.type,
+               p.volume, p.issue, p.first_page, p.last_page, p.is_oa,
+               p.pdf_url, p.landing_page_url, p.publication_date,
+               p.authorships_json, p.topics_json
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE ap.author_id ILIKE $1
@@ -172,8 +187,18 @@ async def get_author_publications(author_id: str):
             year=r['year'], 
             citations=r['citations'], 
             venue=r['venue'],
+            venue_type=r['venue_type'],
+            type=r['type'],
+            volume=r['volume'],
+            issue=r['issue'],
+            first_page=r['first_page'],
+            last_page=r['last_page'],
+            is_oa=r['is_oa'],
             pdf_url=r['pdf_url'],
-            publication_date=r['publication_date']
+            landing_page_url=r['landing_page_url'],
+            publication_date=r['publication_date'],
+            authorships_json=r['authorships_json'],
+            topics_json=r['topics_json']
         )
         for r in rows
     ]
@@ -182,7 +207,7 @@ async def get_author_publications(author_id: str):
 async def get_top_publication_by_year(author_id: str, year: int):
     """Get the most cited publication for an author in a specific year."""
     query = """
-        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.landing_page_url, p.publication_date
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE ap.author_id ILIKE $1 AND p.year = $2
@@ -199,6 +224,7 @@ async def get_top_publication_by_year(author_id: str, year: int):
         citations=row['citations'], 
         venue=row['venue'],
         pdf_url=row['pdf_url'],
+        landing_page_url=row['landing_page_url'],
         publication_date=row['publication_date']
     )
 
@@ -208,7 +234,10 @@ async def get_recent_publications(author_id: str):
     # Since we store publication_date as TEXT (YYYY-MM-DD), we use string comparison
     # or cast to date if Postgres supports it nicely.
     query = """
-        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.venue_type, p.type,
+               p.volume, p.issue, p.first_page, p.last_page, p.is_oa,
+               p.pdf_url, p.landing_page_url, p.publication_date,
+               p.authorships_json, p.topics_json
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
@@ -230,8 +259,18 @@ async def get_recent_publications(author_id: str):
             year=r['year'], 
             citations=r['citations'], 
             venue=r['venue'],
+            venue_type=r['venue_type'],
+            type=r['type'],
+            volume=r['volume'],
+            issue=r['issue'],
+            first_page=r['first_page'],
+            last_page=r['last_page'],
+            is_oa=r['is_oa'],
             pdf_url=r['pdf_url'],
-            publication_date=r['publication_date']
+            landing_page_url=r['landing_page_url'],
+            publication_date=r['publication_date'],
+            authorships_json=r['authorships_json'],
+            topics_json=r['topics_json']
         )
         for r in rows
     ]
@@ -664,7 +703,7 @@ async def get_concept_details(author_id: str, concept: str = Query(...)):
 
     # 1. Fetch relevant publications
     query = """
-        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date, 
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.landing_page_url, p.publication_date, 
                p.topics_json, p.authorships_json
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
@@ -694,6 +733,7 @@ async def get_concept_details(author_id: str, concept: str = Query(...)):
         citations=top_row['citations'],
         venue=top_row['venue'],
         pdf_url=top_row['pdf_url'],
+        landing_page_url=top_row['landing_page_url'],
         publication_date=top_row['publication_date']
     )
 
@@ -717,8 +757,6 @@ async def get_concept_details(author_id: str, concept: str = Query(...)):
                 alex_id = get_auth_id(auth)
                 
                 # Check if this authorship belongs to the requested author
-                is_target = alex_id and (author_id in author_id) # author_id from arg
-                # Note: author_id in author_id is a bug in original code (should be alex_id), fixing below
                 is_target = alex_id and (author_id in alex_id)
                 
                 if not is_target and name:
