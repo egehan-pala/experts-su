@@ -34,6 +34,7 @@ interface ConceptDetail {
         citations: number | null;
         venue: string | null;
         pdf_url?: string | null;
+        landing_page_url?: string | null;
     };
 }
 
@@ -350,7 +351,7 @@ export default function FingerprintChart({ authorId }: FingerprintChartProps) {
                                                                 TOP RECOGNIZED PAPER
                                                             </h4>
                                                             <a
-                                                                href={details.top_paper.pdf_url || '#'}
+                                                                href={details.top_paper.landing_page_url || details.top_paper.pdf_url || details.top_paper.id || '#'}
                                                                 target="_blank" rel="noopener noreferrer"
                                                                 style={{
                                                                     fontSize: '1rem', color: '#f8fafc', fontWeight: 700,
