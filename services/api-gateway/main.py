@@ -96,6 +96,7 @@ class Publication(BaseModel):
     publication_date: Optional[str] = None
     authorships_json: Optional[str] = None
     topics_json: Optional[str] = None
+    sdgs_json: Optional[str] = None
 
 # Endpoints
 @app.get("/")
@@ -173,7 +174,7 @@ async def get_author_publications(author_id: str):
         SELECT p.id, p.title, p.year, p.citations, p.venue, p.venue_type, p.type,
                p.volume, p.issue, p.first_page, p.last_page, p.is_oa,
                p.pdf_url, p.landing_page_url, p.publication_date,
-               p.authorships_json, p.topics_json
+               p.authorships_json, p.topics_json, p.sdgs_json
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE ap.author_id ILIKE $1
@@ -198,7 +199,8 @@ async def get_author_publications(author_id: str):
             landing_page_url=r['landing_page_url'],
             publication_date=r['publication_date'],
             authorships_json=r['authorships_json'],
-            topics_json=r['topics_json']
+            topics_json=r['topics_json'],
+            sdgs_json=r.get('sdgs_json')
         )
         for r in rows
     ]
@@ -237,7 +239,7 @@ async def get_recent_publications(author_id: str):
         SELECT p.id, p.title, p.year, p.citations, p.venue, p.venue_type, p.type,
                p.volume, p.issue, p.first_page, p.last_page, p.is_oa,
                p.pdf_url, p.landing_page_url, p.publication_date,
-               p.authorships_json, p.topics_json
+               p.authorships_json, p.topics_json, p.sdgs_json
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
@@ -270,7 +272,8 @@ async def get_recent_publications(author_id: str):
             landing_page_url=r['landing_page_url'],
             publication_date=r['publication_date'],
             authorships_json=r['authorships_json'],
-            topics_json=r['topics_json']
+            topics_json=r['topics_json'],
+            sdgs_json=r.get('sdgs_json')
         )
         for r in rows
     ]
@@ -356,6 +359,40 @@ async def get_top_authors():
     return [
          Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url'], pub_count=r['total_pubs'] or 0) 
          for r in rows
+    ]
+
+@app.get("/stats/sdg/{sdg_id}/experts", response_model=List[Author])
+async def get_sdg_experts(sdg_id: int):
+    """Get experts related to a specific UN Sustainable Development Goal."""
+    # We look for publications tagged with this SDG ID (1-17)
+    # The URL in sdgs_json is usually like https://metadata.un.org/sdg/X
+    sdg_pattern = f"https://metadata.un.org/sdg/{sdg_id}"
+    
+    query = """
+        SELECT a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone, 
+               COUNT(DISTINCT p.id) as relevant_pubs,
+               SUM(p.citations) as total_citations
+        FROM authors a
+        JOIN author_publications ap ON a.id = ap.author_id
+        JOIN publications p ON ap.publication_id = p.id
+        WHERE p.sdgs_json ILIKE $1 AND a.is_faculty = TRUE
+        GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone
+        ORDER BY relevant_pubs DESC, total_citations DESC
+        LIMIT 20
+    """
+    rows = await db.pool.fetch(query, f"%{sdg_pattern}%")
+    return [
+        Author(
+            id=r['id'], 
+            name=r['name'], 
+            dept=r['dept'], 
+            orcid=r['orcid'], 
+            image_url=r['image_url'],
+            email=r['email'],
+            phone=r['phone'],
+            pub_count=r['relevant_pubs']
+        ) 
+        for r in rows
     ]
 
 # Visualization Models

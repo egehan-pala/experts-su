@@ -18,6 +18,7 @@ interface PersonResult {
     image_url?: string | null;
     score: number;
     match_type: string;
+    pub_count?: number;
 }
 
 interface TopicResult {
@@ -39,12 +40,30 @@ interface SearchResponse {
 export default function SearchPage() {
     const searchParams = useSearchParams();
     const q = searchParams.get('q');
+    const sdg = searchParams.get('sdg');
+    const sdgName = searchParams.get('sdg_name');
     const router = useRouter();
     const [response, setResponse] = useState<SearchResponse | null>(null);
     const [loading, setLoading] = useState(true);
 
     useEffect(() => {
-        if (q) {
+        if (sdg) {
+            setLoading(true);
+            fetch(`http://localhost:8000/stats/sdg/${sdg}/experts`)
+                .then((res) => res.json())
+                .then((data: PersonResult[]) => {
+                    setResponse({
+                        intent: 'PERSON',
+                        person_results: data,
+                        topic_results: []
+                    });
+                    setLoading(false);
+                })
+                .catch((err) => {
+                    console.error(err);
+                    setLoading(false);
+                });
+        } else if (q) {
             setLoading(true);
             fetch(`http://localhost:8000/search`, {
                 method: 'POST',
@@ -61,7 +80,7 @@ export default function SearchPage() {
                     setLoading(false);
                 });
         }
-    }, [q]);
+    }, [q, sdg]);
 
     const personResults = response?.person_results ?? [];
     const topicResults = response?.topic_results ?? [];
@@ -78,10 +97,14 @@ export default function SearchPage() {
 
             <div style={{ borderBottom: '1px solid #e4e4e7', paddingBottom: '1rem', marginBottom: '2rem' }}>
                 <h1 style={{ fontSize: '2.5rem', margin: 0, fontFamily: 'var(--font-serif)', color: '#111' }}>
-                    Expert Search Results
+                    {sdg ? 'SDG Research Experts' : 'Expert Search Results'}
                 </h1>
                 <p style={{ color: '#52525b', marginTop: '0.5rem' }}>
-                    Finding experts in <span style={{ color: '#002855', fontWeight: 600 }}>"{q}"</span>
+                    {sdg ? (
+                        <>Experts contributing to <span style={{ color: '#002855', fontWeight: 600 }}>"{sdgName || `SDG ${sdg}`}"</span></>
+                    ) : (
+                        <>Finding experts in <span style={{ color: '#002855', fontWeight: 600 }}>"{q}"</span></>
+                    )}
                 </p>
                 {response?.intent && (
                     <div style={{ fontSize: '0.8rem', color: '#71717a', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
@@ -94,14 +117,14 @@ export default function SearchPage() {
 
             {loading ? (
                 <p style={{ color: '#52525b', fontStyle: 'italic' }}>Searching for experts...</p>
-            ) : !hasResults ? (
+            ) : (personResults.length === 0 && topicResults.length === 0) ? (
                 <div style={{ padding: '3rem', background: '#f4f4f5', textAlign: 'center', color: '#52525b' }}>
-                    No experts found for "{q}".
+                    No experts found for {sdg ? `"${sdgName || `SDG ${sdg}`}"` : `"${q}"`}.
                 </div>
             ) : (
                 <>
                     {/* PERSON RESULTS */}
-                    {personResults.length > 0 && (
+                    {personResults.length > 0 && response && (
                         <div style={{ marginBottom: '3rem' }}>
                             {response.intent === 'MIXED' && <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', color: '#111' }}>People</h2>}
                             <div className="experts-grid">
@@ -140,6 +163,11 @@ export default function SearchPage() {
                                             <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.5rem' }}>
                                                 Faculty Member
                                             </p>
+                                            {expert.score > 0 && (
+                                                <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 600 }}>
+                                                    {expert.pub_count} relevant works
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -148,7 +176,7 @@ export default function SearchPage() {
                     )}
 
                     {/* TOPIC RESULTS */}
-                    {topicResults.length > 0 && (
+                    {topicResults.length > 0 && response && (
                         <div>
                             {response.intent === 'MIXED' && <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', color: '#111' }}>Experts by Topic</h2>}
                             <div className="experts-grid">

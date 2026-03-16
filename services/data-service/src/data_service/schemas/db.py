@@ -89,6 +89,7 @@ class PublicationRecord(BaseModel):
     # Topics/Concepts stored as JSON
     primary_topic: Optional[str] = None
     topics_json: Optional[str] = None
+    sdgs_json: Optional[str] = None
     concepts_json: Optional[str] = None
     keywords_json: Optional[str] = None
     

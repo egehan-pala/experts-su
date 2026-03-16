@@ -130,6 +130,7 @@ class OAWork(BaseModel):
     host_venue: Optional[Dict[str, Any]] = None
     primary_topic: Optional[Dict[str, Any]] = None
     topics: List[Dict[str, Any]] = Field(default_factory=list)
+    sustainable_development_goals: List[Dict[str, Any]] = Field(default_factory=list)
     
     # Authorship
     authorships: List[OAAuthorship] = Field(default_factory=list)

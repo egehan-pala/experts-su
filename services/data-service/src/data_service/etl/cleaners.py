@@ -444,6 +444,7 @@ async def clean(db: Database) -> Tuple[
             # Topics/Concepts as JSON
             primary_topic=primary_topic_name,
             topics_json=_safe_json(work.topics) if work.topics else None,
+            sdgs_json=_safe_json(work.sustainable_development_goals) if work.sustainable_development_goals else None,
             concepts_json=_safe_json([c.model_dump() for c in work.concepts]) if work.concepts else None,
             keywords_json=_safe_json(work.keywords) if work.keywords else None,
             
