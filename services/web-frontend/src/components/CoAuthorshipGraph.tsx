@@ -663,8 +663,10 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                             height: dimensions.height,
                             position: 'relative',
                             overflow: 'hidden',
-                            background: '#1e293b',
-                            borderRadius: 8
+                            background: '#0f172a', /* Darker background to separate from the outer container */
+                            borderRadius: '12px',
+                            border: '2px solid #334155', /* Visible frame for the network area */
+                            boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
                         }}
                     >
                         {/* Summary Overlay Top Right */}

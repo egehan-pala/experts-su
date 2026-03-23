@@ -300,6 +300,7 @@ export default function ProfilePage() {
     const [metrics, setMetrics] = useState<YearlyMetric[]>([]);
     const [loading, setLoading] = useState(true);
     const [selectedYear, setSelectedYear] = useState<number | null>(null);
+    const [activeTab, setActiveTab] = useState<string>('timeline');
 
     // Galaxy state
     const [galaxyCategory, setGalaxyCategory] = useState<GalaxyCategory>('source');
@@ -467,25 +468,59 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {/* Citation & Publication Timeline */}
-            <CitationTimelineChart 
-                authorId={id} 
-                data={metrics} 
-                selectedYear={selectedYear}
-                onYearSelect={setSelectedYear}
-            />
+            {/* Tabs Navigation */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', borderBottom: '1px solid #e4e4e7', backgroundColor: '#fff', padding: '0 2rem', position: 'sticky', top: 0, zIndex: 10 }}>
+                {['timeline', 'fingerprint', 'network', 'global', 'publications'].map(tab => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        style={{
+                            padding: '1.2rem 1rem',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: activeTab === tab ? '3px solid #002855' : '3px solid transparent',
+                            color: activeTab === tab ? '#002855' : '#71717a',
+                            fontWeight: activeTab === tab ? 600 : 400,
+                            fontSize: '1rem',
+                            cursor: 'pointer',
+                            fontFamily: 'var(--font-sans)',
+                            transition: 'all 0.2s ease',
+                            marginBottom: '-1px',
+                            textTransform: 'capitalize'
+                        }}
+                    >
+                        {tab === 'network' ? 'Network Collaboration' : tab === 'global' ? 'Global Impact' : tab === 'publications' ? 'Recent Publications' : tab}
+                    </button>
+                ))}
+            </div>
 
-            {/* Discovery Fingerprint Section (Prepared for full-bleed expansion) */}
-            <FingerprintChart authorId={id} />
+            {/* Tab Content */}
+            <div style={{ minHeight: '50vh' }}>
+                {activeTab === 'timeline' && (
+                    <CitationTimelineChart
+                        authorId={id}
+                        data={metrics}
+                        selectedYear={selectedYear}
+                        onYearSelect={setSelectedYear}
+                    />
+                )}
 
-            {/* Co-authorship Network Graph (Full-Bleed via component internal styles) */}
-            <CoAuthorshipGraph authorId={id} authorName={author.name} />
+                {activeTab === 'fingerprint' && (
+                    <FingerprintChart authorId={id} />
+                )}
 
-            {/* Geographical Collaboration Map */}
-            <CollaborationMap authorId={id} selectedYear={selectedYear} />
+                {activeTab === 'network' && (
+                    <CoAuthorshipGraph authorId={id} authorName={author.name} />
+                )}
 
-            {/* Recent Publications Section (Full-Bleed Expansion) */}
-            <RecentArticlesSection authorId={id} />
+                {activeTab === 'global' && (
+                    <CollaborationMap authorId={id} selectedYear={selectedYear} />
+                )}
+
+                {activeTab === 'publications' && (
+                    <RecentArticlesSection authorId={id} />
+                )}
+            </div>
 
             {/* Smooth Footer Transition Gradient */}
             <div style={{
