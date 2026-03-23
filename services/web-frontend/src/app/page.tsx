@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
+import DepartmentNetworkGraph from '@/components/DepartmentNetworkGraph';
 
 interface Author {
   id: string;
@@ -175,8 +176,11 @@ export default function Home() {
 
   useEffect(() => {
     setLoading(true);
-    // Scroll to top of list when page changes, if reasonable
-    // window.scrollTo({ top: 0, behavior: 'smooth' });
+    // Skip API call for the network tab
+    if (deptFilter === 'overview' || deptFilter === 'network') {
+      setLoading(false);
+      return;
+    }
     let url = `http://localhost:8000/authors?page=${page}&limit=${limit}`;
     if (deptFilter) {
       url += `&dept=${encodeURIComponent(deptFilter)}`;
@@ -281,6 +285,20 @@ export default function Home() {
           <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
         </svg>
       )
+    },
+    {
+      id: 'network',
+      name: 'Collaboration Network',
+      icon: (
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+          <circle cx="6" cy="6" r="2" />
+          <circle cx="18" cy="6" r="2" />
+          <circle cx="12" cy="18" r="2" />
+          <line x1="6" y1="8" x2="12" y2="16" />
+          <line x1="18" y1="8" x2="12" y2="16" />
+          <line x1="8" y1="6" x2="16" y2="6" />
+        </svg>
+      )
     }
   ];
 
@@ -382,12 +400,14 @@ export default function Home() {
           </div>
         </div>
 
-        {loading ? (
+          {loading ? (
           <p style={{ textAlign: 'center', padding: '3rem 0' }}>Loading directory...</p>
         ) : (
           <div>
             {deptFilter === 'overview' ? (
               <SDGSection />
+            ) : deptFilter === 'network' ? (
+              <DepartmentNetworkGraph />
             ) : !deptFilter ? (
               /* Grouped View for All */
               departments.map(dept => {
@@ -440,7 +460,7 @@ export default function Home() {
         )}
 
         {/* Pagination Controls */}
-        {!loading && deptFilter !== 'overview' && (
+        {!loading && deptFilter !== 'overview' && deptFilter !== 'network' && (
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1.5rem', marginTop: '4rem' }}>
             <button
               onClick={() => goToPage(page - 1)}
