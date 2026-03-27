@@ -1537,6 +1537,117 @@ async def get_global_network():
     _global_network_cache = graph
     return graph
 
+_citation_overlap_cache: Optional[GlobalNetworkGraph] = None
+
+@app.get("/network/citation-overlap", response_model=GlobalNetworkGraph)
+async def get_citation_overlap_network():
+    """Get a bibliographic-coupling network for ALL faculty members.
+
+    Two faculty are connected if they have both cited the same paper(s).
+    Edge weight = number of shared cited papers.
+    """
+    global _citation_overlap_cache
+    import httpx, json, math
+    from collections import defaultdict
+
+    if _citation_overlap_cache is not None:
+        return _citation_overlap_cache
+
+    # 1. All faculty nodes
+    node_rows = await db.pool.fetch(
+        "SELECT id, name, dept, image_url FROM authors WHERE is_faculty = TRUE AND dept IS NOT NULL"
+    )
+    faculty_ids = {r['id'] for r in node_rows}
+    nodes = [
+        GlobalNetworkNode(id=r['id'], name=r['name'], dept=r['dept'], image_url=r['image_url'])
+        for r in node_rows
+    ]
+
+    # 2. Get all publication IDs per faculty member
+    pub_rows = await db.pool.fetch("""
+        SELECT ap.author_id, ap.publication_id
+        FROM author_publications ap
+        WHERE ap.author_id = ANY($1::text[])
+    """, list(faculty_ids))
+
+    # Faculty -> set of publication IDs (OpenAlex format)
+    faculty_pubs: dict[str, set[str]] = defaultdict(set)
+    all_pub_ids: set[str] = set()
+    for r in pub_rows:
+        faculty_pubs[r['author_id']].add(r['publication_id'])
+        all_pub_ids.add(r['publication_id'])
+
+    if not all_pub_ids:
+        graph = GlobalNetworkGraph(nodes=nodes, links=[])
+        _citation_overlap_cache = graph
+        return graph
+
+    # 3. Fetch referenced_works from OpenAlex in batches
+    # publication_id -> list of referenced work IDs
+    pub_references: dict[str, list[str]] = {}
+    all_pub_list = list(all_pub_ids)
+
+    # Clean IDs for OpenAlex filter (extract short ID like W12345)
+    def to_openalex_short(pid: str) -> str:
+        if "/" in pid:
+            return pid.split("/")[-1]
+        return pid
+
+    batch_size = 50  # OpenAlex filter pipe limit
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for i in range(0, len(all_pub_list), batch_size):
+            batch = all_pub_list[i:i + batch_size]
+            short_ids = [to_openalex_short(p) for p in batch]
+            filter_str = "|".join(short_ids)
+            url = f"https://api.openalex.org/works?filter=openalex_id:{filter_str}&select=id,referenced_works&per_page=200"
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    results = resp.json().get("results", [])
+                    for work in results:
+                        work_id = work.get("id", "")
+                        refs = work.get("referenced_works", [])
+                        # Normalize: store full OpenAlex ID
+                        pub_references[work_id] = refs
+                        # Also map short form
+                        short = work_id.split("/")[-1] if "/" in work_id else work_id
+                        pub_references[short] = refs
+                else:
+                    print(f"OpenAlex batch {i} error: {resp.status_code}")
+            except Exception as e:
+                print(f"OpenAlex fetch error (batch {i}): {e}")
+
+    # 4. Build mapping: cited_paper -> set of faculty who cited it
+    cited_by_faculty: dict[str, set[str]] = defaultdict(set)
+    for fac_id, pubs in faculty_pubs.items():
+        for pub_id in pubs:
+            # Try to find referenced works for this publication
+            refs = pub_references.get(pub_id) or pub_references.get(to_openalex_short(pub_id)) or []
+            for ref in refs:
+                cited_by_faculty[ref].add(fac_id)
+
+    # 5. Build edges: for every cited paper that 2+ faculty share, create pairwise edges
+    edge_counts: dict[tuple[str, str], int] = defaultdict(int)
+    for cited_paper, faculties in cited_by_faculty.items():
+        if len(faculties) < 2:
+            continue
+        fac_list = sorted(faculties)
+        for i in range(len(fac_list)):
+            for j in range(i + 1, len(fac_list)):
+                pair = (fac_list[i], fac_list[j])
+                edge_counts[pair] += 1
+
+    links = [
+        GlobalNetworkLink(source=p[0], target=p[1], value=count)
+        for p, count in edge_counts.items()
+        if count >= 2  # Filter out very weak connections (only 1 shared citation)
+    ]
+
+    graph = GlobalNetworkGraph(nodes=nodes, links=links)
+    _citation_overlap_cache = graph
+    return graph
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)

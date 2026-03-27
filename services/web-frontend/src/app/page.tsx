@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 import DepartmentNetworkGraph from '@/components/DepartmentNetworkGraph';
+import CitationOverlapGraph from '@/components/CitationOverlapGraph';
 
 interface Author {
   id: string;
@@ -172,7 +173,7 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [deptFilter, setDeptFilter] = useState<string | null>('overview');
-  const [overviewTab, setOverviewTab] = useState<'sdgs' | 'network'>('sdgs');
+  const [overviewTab, setOverviewTab] = useState<'sdgs' | 'network' | 'citation-overlap'>('sdgs');
   const limit = 12;
 
   useEffect(() => {
@@ -444,13 +445,25 @@ export default function Home() {
                           <line x1="8" y1="6" x2="16" y2="6" />
                         </svg>
                       )
+                    },
+                    {
+                      id: 'citation-overlap',
+                      name: 'Citation Overlap Network',
+                      icon: (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                          <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                          <line x1="8" y1="7" x2="16" y2="7" />
+                          <line x1="8" y1="11" x2="14" y2="11" />
+                        </svg>
+                      )
                     }
                   ].map(tab => {
                     const isActive = overviewTab === tab.id;
                     return (
                       <button
                         key={tab.id}
-                        onClick={() => setOverviewTab(tab.id as 'sdgs' | 'network')}
+                        onClick={() => setOverviewTab(tab.id as 'sdgs' | 'network' | 'citation-overlap')}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
@@ -482,10 +495,16 @@ export default function Home() {
 
                 {overviewTab === 'sdgs' ? (
                   <SDGSection />
-                ) : (
+                ) : overviewTab === 'network' ? (
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
                     <div style={{ width: '100%', maxWidth: '1000px', backgroundColor: 'transparent' }}>
                       <DepartmentNetworkGraph />
+                    </div>
+                  </div>
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ width: '100%', maxWidth: '1000px', backgroundColor: 'transparent' }}>
+                      <CitationOverlapGraph />
                     </div>
                   </div>
                 )}
