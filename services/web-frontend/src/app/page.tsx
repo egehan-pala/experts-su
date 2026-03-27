@@ -172,12 +172,13 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [deptFilter, setDeptFilter] = useState<string | null>('overview');
+  const [overviewTab, setOverviewTab] = useState<'sdgs' | 'network'>('sdgs');
   const limit = 12;
 
   useEffect(() => {
     setLoading(true);
-    // Skip API call for the network tab
-    if (deptFilter === 'overview' || deptFilter === 'network') {
+    // Skip API call for the overview tab
+    if (deptFilter === 'overview') {
       setLoading(false);
       return;
     }
@@ -283,20 +284,6 @@ export default function Home() {
         <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
           <rect x="2" y="7" width="20" height="14" rx="2" ry="2" />
           <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16" />
-        </svg>
-      )
-    },
-    {
-      id: 'network',
-      name: 'Collaboration Network',
-      icon: (
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-          <circle cx="6" cy="6" r="2" />
-          <circle cx="18" cy="6" r="2" />
-          <circle cx="12" cy="18" r="2" />
-          <line x1="6" y1="8" x2="12" y2="16" />
-          <line x1="18" y1="8" x2="12" y2="16" />
-          <line x1="8" y1="6" x2="16" y2="6" />
         </svg>
       )
     }
@@ -405,9 +392,104 @@ export default function Home() {
         ) : (
           <div>
             {deptFilter === 'overview' ? (
-              <SDGSection />
-            ) : deptFilter === 'network' ? (
-              <DepartmentNetworkGraph />
+              <div style={{ maxWidth: '1200px', margin: '0 auto', display: 'flex', flexDirection: 'column', gap: '2rem' }}>
+                {/* Secondary navigation for Overview */}
+                <div style={{
+                  display: 'flex',
+                  justifyContent: 'center',
+                  width: '100vw',
+                  position: 'relative',
+                  left: '50%',
+                  right: '50%',
+                  marginLeft: '-50vw',
+                  marginRight: '-50vw',
+                  backgroundColor: 'transparent',
+                  borderBottom: '1px solid #e2e8f0',
+                  marginTop: '-3rem',
+                  marginBottom: '3rem'
+                }}>
+                  <div style={{
+                    display: 'flex',
+                    gap: '2.5rem',
+                    padding: '0 1.5rem',
+                    maxWidth: '1200px',
+                    width: '100%',
+                    overflowX: 'auto',
+                    msOverflowStyle: 'none',
+                    scrollbarWidth: 'none'
+                  }}>
+                  {[
+                    {
+                      id: 'sdgs',
+                      name: 'SDG Focus',
+                      icon: (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <rect x="3" y="3" width="7" height="7" />
+                          <rect x="14" y="3" width="7" height="7" />
+                          <rect x="14" y="14" width="7" height="7" />
+                          <rect x="3" y="14" width="7" height="7" />
+                        </svg>
+                      )
+                    },
+                    {
+                      id: 'network',
+                      name: 'School Collaboration Network',
+                      icon: (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="6" cy="6" r="2" />
+                          <circle cx="18" cy="6" r="2" />
+                          <circle cx="12" cy="18" r="2" />
+                          <line x1="6" y1="8" x2="12" y2="16" />
+                          <line x1="18" y1="8" x2="12" y2="16" />
+                          <line x1="8" y1="6" x2="16" y2="6" />
+                        </svg>
+                      )
+                    }
+                  ].map(tab => {
+                    const isActive = overviewTab === tab.id;
+                    return (
+                      <button
+                        key={tab.id}
+                        onClick={() => setOverviewTab(tab.id as 'sdgs' | 'network')}
+                        style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: '0.6rem',
+                          padding: '1rem 0.25rem',
+                          backgroundColor: 'transparent',
+                          border: 'none',
+                          borderBottom: isActive ? '3px solid #002855' : '3px solid transparent',
+                          color: isActive ? '#002855' : '#64748b',
+                          fontWeight: isActive ? 700 : 500,
+                          fontSize: '0.95rem',
+                          cursor: 'pointer',
+                          transition: 'all 0.2s',
+                          whiteSpace: 'nowrap',
+                          fontFamily: 'var(--font-sans)',
+                          position: 'relative',
+                          bottom: '-1px'
+                        }}
+                      >
+                        <span style={{ color: isActive ? '#002855' : '#94a3b8' }}>
+                          {tab.icon}
+                        </span>
+                        {tab.name}
+                      </button>
+                    );
+                  })}
+                  </div>
+                </div>
+
+                {overviewTab === 'sdgs' ? (
+                  <SDGSection />
+                ) : (
+                  <div style={{ display: 'flex', justifyContent: 'center' }}>
+                    <div style={{ width: '100%', maxWidth: '1000px', backgroundColor: 'transparent' }}>
+                      <DepartmentNetworkGraph />
+                    </div>
+                  </div>
+                )}
+              </div>
             ) : !deptFilter ? (
               /* Grouped View for All */
               departments.map(dept => {
@@ -460,7 +542,7 @@ export default function Home() {
         )}
 
         {/* Pagination Controls */}
-        {!loading && deptFilter !== 'overview' && deptFilter !== 'network' && (
+        {!loading && deptFilter !== 'overview' && (
           <div style={{ display: 'flex', justifyContent: 'center', alignItems: 'center', gap: '1.5rem', marginTop: '4rem' }}>
             <button
               onClick={() => goToPage(page - 1)}
