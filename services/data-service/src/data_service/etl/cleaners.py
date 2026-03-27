@@ -56,6 +56,88 @@ def _safe_json(data: Any) -> Optional[str]:
         return None
 
 
+def _is_false_positive_work(
+    work: "OAWork",
+    owner_orcid: Optional[str],
+    owner_oa_ids: Set[str],
+    institution_ror: str,
+) -> bool:
+    """Check whether a publication is likely a false positive for the owner author.
+
+    A work is considered a false positive when none of the following
+    confirmation signals are present in the authorship list:
+
+    1. **Author-ID match** — a co-author's OpenAlex ID matches one of the
+       owner's known IDs (primary or merged).
+    2. **ORCID match** — the owner has an ORCID and a co-author shares it.
+    3. **Affiliation match** — at least one co-author is affiliated with the
+       target institution (checked via ROR or raw affiliation string).
+
+    Returns True if the work should be considered a false positive.
+    """
+    sabanci_keywords = {"sabanci", "sabancı", "sabanciuniv"}
+
+    has_author_id_match = False
+    has_orcid_match = False
+    has_affiliation_match = False
+
+    for authorship in work.authorships:
+        # Check 1: Author OpenAlex ID match
+        if authorship.author and authorship.author.id:
+            aid = authorship.author.id.split("/")[-1]
+            if aid in owner_oa_ids:
+                has_author_id_match = True
+                # Also check ORCID while we're here
+                if owner_orcid and authorship.author.orcid:
+                    auth_orcid = authorship.author.orcid.rstrip("/").split("/")[-1]
+                    owner_orcid_clean = owner_orcid.rstrip("/").split("/")[-1]
+                    if auth_orcid == owner_orcid_clean:
+                        has_orcid_match = True
+
+        # Check 2: ORCID match (on any co-author)
+        if owner_orcid and authorship.author and authorship.author.orcid:
+            auth_orcid = authorship.author.orcid.rstrip("/").split("/")[-1]
+            owner_orcid_clean = owner_orcid.rstrip("/").split("/")[-1]
+            if auth_orcid == owner_orcid_clean:
+                has_orcid_match = True
+
+        # Check 3: Affiliation match (institution ROR or string)
+        for inst in (authorship.institutions or []):
+            if inst.ror and institution_ror in inst.ror:
+                has_affiliation_match = True
+                break
+            if inst.display_name:
+                name_lower = inst.display_name.lower()
+                if any(kw in name_lower for kw in sabanci_keywords):
+                    has_affiliation_match = True
+                    break
+        for raw_aff in (authorship.raw_affiliation_strings or []):
+            raw_lower = raw_aff.lower()
+            if any(kw in raw_lower for kw in sabanci_keywords):
+                has_affiliation_match = True
+                break
+
+    # If the author's own OpenAlex ID appears in the authorship list, we trust it.
+    # The extra ORCID/affiliation checks catch edge cases where the ID was
+    # incorrectly merged upstream.
+    if has_author_id_match:
+        # If owner has an ORCID but it doesn't appear on the matching
+        # authorship entry AND no Sabancı affiliation is present, this may
+        # be a name-collision merge in OpenAlex.  Flag it.
+        if owner_orcid and not has_orcid_match and not has_affiliation_match:
+            return True
+        return False
+
+    # No author-ID match at all — only keep if ORCID or affiliation confirms
+    if has_orcid_match:
+        return False
+    if has_affiliation_match:
+        return False
+
+    # No confirming signal found
+    return True
+
+
 async def clean(db: Database) -> Tuple[
     List[Dict[str, Any]],  # authors
     List[Dict[str, Any]],  # publications
@@ -232,13 +314,42 @@ async def clean(db: Database) -> Tuple[
         "multi_id_merges": sum(1 for r in dedup_map.values() if r.openalex_ids_json is not None),
     })
 
+    # Build lookup structures for false-positive detection
+    # owner_orcid_map: primary_author_id → ORCID (if available)
+    owner_orcid_map: Dict[str, Optional[str]] = {}
+    # owner_all_ids_map: primary_author_id → set of all known OA IDs (including merged)
+    owner_all_ids_map: Dict[str, Set[str]] = {}
+    for rec in dedup_map.values():
+        owner_orcid_map[rec.id] = rec.orcid
+        ids = {rec.id}
+        if rec.openalex_ids_json:
+            try:
+                ids.update(json.loads(rec.openalex_ids_json))
+            except (json.JSONDecodeError, TypeError):
+                pass
+        owner_all_ids_map[rec.id] = ids
+
+    # Build work→owner mapping from staging relations
+    # A work can be owned by multiple faculty authors (co-authored by two SU profs)
+    work_owner_map: Dict[str, Set[str]] = {}
+    for row in stg_relations:
+        rel = json.loads(row["payload"])
+        oa_author_id = rel["author_id"].split("/")[-1]
+        work_id = rel["work_id"].split("/")[-1]
+        # Remap to primary ID
+        primary_id = id_remap.get(oa_author_id, oa_author_id)
+        if primary_id in dedup_map:
+            work_owner_map.setdefault(work_id, set()).add(primary_id)
+
     # Parse works — apply quality filters (safety net for API-level filtering)
     settings = get_settings()
+    institution_ror = settings.openalex_ror_id
     allowed_types: Set[str] = set(settings.openalex_work_types)
     works: List[OAWork] = []
     skipped_paratext = 0
     skipped_retracted = 0
     skipped_type = 0
+    skipped_false_positive = 0
     for row in stg_publications:
         payload = json.loads(row["payload"])
         try:
@@ -255,6 +366,27 @@ async def clean(db: Database) -> Tuple[
             if allowed_types and work.type and work.type not in allowed_types:
                 skipped_type += 1
                 continue
+            # False-positive detection: verify the owner author is truly on this paper
+            work_short_id = work.id.split("/")[-1]
+            owners = work_owner_map.get(work_short_id, set())
+            if owners:
+                # Check each owner — the work is legit if ANY owner passes
+                is_fp_for_all = True
+                for owner_id in owners:
+                    orcid = owner_orcid_map.get(owner_id)
+                    all_ids = owner_all_ids_map.get(owner_id, {owner_id})
+                    if not _is_false_positive_work(work, orcid, all_ids, institution_ror):
+                        is_fp_for_all = False
+                        break
+                if is_fp_for_all:
+                    skipped_false_positive += 1
+                    logger.debug({
+                        "message": "Skipped false-positive work",
+                        "work_id": work_short_id,
+                        "title": work.title,
+                        "owners": list(owners),
+                    })
+                    continue
             works.append(work)
         except Exception as exc:
             logger.error({"message": "Invalid work payload", "error": str(exc)})
@@ -265,6 +397,7 @@ async def clean(db: Database) -> Tuple[
         "skipped_paratext": skipped_paratext,
         "skipped_retracted": skipped_retracted,
         "skipped_type": skipped_type,
+        "skipped_false_positive": skipped_false_positive,
     })
 
     # Process publications

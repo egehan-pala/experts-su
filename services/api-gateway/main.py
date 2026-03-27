@@ -1480,6 +1480,63 @@ async def search_suggest(q: str = Query(..., min_length=1)):
     """Autocomplete: top faculty name suggestions for typeahead."""
     return await do_suggest(q, db.pool, limit=5)
 
+class GlobalNetworkNode(BaseModel):
+    id: str
+    name: str
+    dept: Optional[str] = None
+    image_url: Optional[str] = None
+
+class GlobalNetworkLink(BaseModel):
+    source: str
+    target: str
+    value: int  # joint_papers
+
+class GlobalNetworkGraph(BaseModel):
+    nodes: List[GlobalNetworkNode]
+    links: List[GlobalNetworkLink]
+
+_global_network_cache: Optional[GlobalNetworkGraph] = None
+
+@app.get("/network/global", response_model=GlobalNetworkGraph)
+async def get_global_network():
+    """Get the co-authorship network for ALL faculty members, coloured by department."""
+    global _global_network_cache
+
+    if _global_network_cache is not None:
+        return _global_network_cache
+
+    # 1. All faculty nodes
+    node_rows = await db.pool.fetch(
+        "SELECT id, name, dept, image_url FROM authors WHERE is_faculty = TRUE AND dept IS NOT NULL"
+    )
+    faculty_ids = {r['id'] for r in node_rows}
+    nodes = [
+        GlobalNetworkNode(id=r['id'], name=r['name'], dept=r['dept'], image_url=r['image_url'])
+        for r in node_rows
+    ]
+
+    # 2. Co-authorship edges between faculty members only
+    edge_rows = await db.pool.fetch("""
+        SELECT ap1.author_id AS src, ap2.author_id AS tgt, COUNT(*) AS joint_papers
+        FROM author_publications ap1
+        JOIN author_publications ap2
+          ON ap1.publication_id = ap2.publication_id
+         AND ap1.author_id < ap2.author_id
+        WHERE ap1.author_id = ANY($1::text[])
+          AND ap2.author_id = ANY($1::text[])
+        GROUP BY ap1.author_id, ap2.author_id
+        HAVING COUNT(*) >= 1
+    """, list(faculty_ids))
+
+    links = [
+        GlobalNetworkLink(source=r['src'], target=r['tgt'], value=r['joint_papers'])
+        for r in edge_rows
+    ]
+
+    graph = GlobalNetworkGraph(nodes=nodes, links=links)
+    _global_network_cache = graph
+    return graph
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
