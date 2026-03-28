@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
 import DepartmentNetworkGraph from '@/components/DepartmentNetworkGraph';
 import CitationOverlapGraph from '@/components/CitationOverlapGraph';
+import WorldCollaborationMap from '@/components/WorldCollaborationMap';
 
 interface Author {
   id: string;
@@ -39,6 +40,22 @@ const SDG_DATA = [
 
 function SDGSection() {
   const router = useRouter();
+  const [stats, setStats] = useState<Record<number, {authors_count: number, pubs_count: number}>>({});
+  const [hoveredSdg, setHoveredSdg] = useState<number | null>(null);
+
+  useEffect(() => {
+    fetch('http://localhost:8000/stats/sdgs')
+      .then(res => res.json())
+      .then(data => {
+         const statsMap: Record<number, any> = {};
+         data.forEach((item: any) => {
+             statsMap[item.id] = { authors_count: item.authors_count, pubs_count: item.pubs_count };
+         });
+         setStats(statsMap);
+      })
+      .catch(console.error);
+  }, []);
+
   return (
     <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 1rem' }}>
       <h2 style={{ fontSize: '1.25rem', fontWeight: 700, color: '#111827', marginBottom: '0.75rem', fontFamily: 'var(--font-sans)', textTransform: 'uppercase', letterSpacing: '0.025em' }}>
@@ -64,15 +81,17 @@ function SDGSection() {
               borderRadius: '8px',
               border: '1px solid transparent'
             }}
-            onMouseOver={(e) => {
+            onMouseEnter={(e) => {
               e.currentTarget.style.transform = 'translateY(-2px)';
               e.currentTarget.style.backgroundColor = '#f8fafc';
               e.currentTarget.style.borderColor = sdg.color + '40'; // 40 is hex for 25% opacity
+              setHoveredSdg(sdg.id);
             }}
-            onMouseOut={(e) => {
+            onMouseLeave={(e) => {
               e.currentTarget.style.transform = 'translateY(0)';
               e.currentTarget.style.backgroundColor = 'transparent';
               e.currentTarget.style.borderColor = 'transparent';
+              setHoveredSdg(null);
             }}
           >
             <div style={{
@@ -91,6 +110,19 @@ function SDGSection() {
             <div>
               <h3 style={{ fontSize: '0.8rem', fontWeight: 700, color: '#374151', margin: '0 0 0.05rem 0' }}>SDG {sdg.id}</h3>
               <p style={{ fontSize: '0.9rem', color: '#1f2937', margin: 0, fontWeight: 500, lineHeight: 1.2 }}>{sdg.title}</p>
+              <div style={{
+                  marginTop: '0.3rem',
+                  fontSize: '0.75rem',
+                  color: '#4b5563',
+                  opacity: hoveredSdg === sdg.id ? 1 : 0,
+                  transition: 'opacity 0.2s ease',
+                  height: '14px',
+                  pointerEvents: 'none'
+              }}>
+                 {stats[sdg.id] && (
+                    <><span style={{ fontWeight: 700, color: sdg.color }}>{stats[sdg.id].authors_count}</span> experts • <span style={{ fontWeight: 700, color: sdg.color }}>{stats[sdg.id].pubs_count}</span> publications</>
+                 )}
+              </div>
             </div>
           </div>
         ))}
@@ -173,7 +205,7 @@ export default function Home() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [deptFilter, setDeptFilter] = useState<string | null>('overview');
-  const [overviewTab, setOverviewTab] = useState<'sdgs' | 'network' | 'citation-overlap'>('sdgs');
+  const [overviewTab, setOverviewTab] = useState<'sdgs' | 'network' | 'citation-overlap' | 'world-collaborations'>('sdgs');
   const limit = 12;
 
   useEffect(() => {
@@ -419,6 +451,22 @@ export default function Home() {
                     msOverflowStyle: 'none',
                     scrollbarWidth: 'none'
                   }}>
+                  <style>{`
+                    .overview-subtab .subtab-label {
+                      max-width: 0;
+                      opacity: 0;
+                      overflow: hidden;
+                      transition: all 0.3s ease;
+                      display: inline-block;
+                      white-space: nowrap;
+                    }
+                    .overview-subtab:hover .subtab-label,
+                    .overview-subtab.active .subtab-label {
+                      max-width: 300px;
+                      opacity: 1;
+                      margin-left: 0.6rem;
+                    }
+                  `}</style>
                   {[
                     {
                       id: 'sdgs',
@@ -457,17 +505,28 @@ export default function Home() {
                           <line x1="8" y1="11" x2="14" y2="11" />
                         </svg>
                       )
+                    },
+                    {
+                      id: 'world-collaborations',
+                      name: 'World Collaborations',
+                      icon: (
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                          <circle cx="12" cy="12" r="10" />
+                          <line x1="2" y1="12" x2="22" y2="12" />
+                          <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z" />
+                        </svg>
+                      )
                     }
                   ].map(tab => {
                     const isActive = overviewTab === tab.id;
                     return (
                       <button
                         key={tab.id}
-                        onClick={() => setOverviewTab(tab.id as 'sdgs' | 'network' | 'citation-overlap')}
+                        className={`overview-subtab ${isActive ? 'active' : ''}`}
+                        onClick={() => setOverviewTab(tab.id as 'sdgs' | 'network' | 'citation-overlap' | 'world-collaborations')}
                         style={{
                           display: 'flex',
                           alignItems: 'center',
-                          gap: '0.6rem',
                           padding: '1rem 0.25rem',
                           backgroundColor: 'transparent',
                           border: 'none',
@@ -483,10 +542,12 @@ export default function Home() {
                           bottom: '-1px'
                         }}
                       >
-                        <span style={{ color: isActive ? '#002855' : '#94a3b8' }}>
+                        <span style={{ color: isActive ? '#002855' : '#94a3b8', display: 'flex', alignItems: 'center' }}>
                           {tab.icon}
                         </span>
-                        {tab.name}
+                        <span className="subtab-label">
+                          {tab.name}
+                        </span>
                       </button>
                     );
                   })}
@@ -501,12 +562,14 @@ export default function Home() {
                       <DepartmentNetworkGraph />
                     </div>
                   </div>
-                ) : (
+                ) : overviewTab === 'citation-overlap' ? (
                   <div style={{ display: 'flex', justifyContent: 'center' }}>
                     <div style={{ width: '100%', maxWidth: '1000px', backgroundColor: 'transparent' }}>
                       <CitationOverlapGraph />
                     </div>
                   </div>
+                ) : (
+                  <WorldCollaborationMap />
                 )}
               </div>
             ) : !deptFilter ? (

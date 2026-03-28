@@ -163,7 +163,7 @@ export default function SearchPage() {
                                             <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.5rem' }}>
                                                 Faculty Member
                                             </p>
-                                            {expert.score > 0 && (
+                                            {(expert.score > 0 || (expert.pub_count !== undefined && expert.pub_count > 0)) && (
                                                 <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 600 }}>
                                                     {expert.pub_count} relevant works
                                                 </div>

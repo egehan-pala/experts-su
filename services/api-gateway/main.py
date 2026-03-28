@@ -361,6 +361,33 @@ async def get_top_authors():
          for r in rows
     ]
 
+class SDGStat(BaseModel):
+    id: int
+    authors_count: int
+    pubs_count: int
+
+@app.get("/stats/sdgs", response_model=List[SDGStat])
+async def get_all_sdgs_stats():
+    """Get aggregated stats (authors count, pubs count) for all SDGs."""
+    import asyncio
+    async def fetch_sdg(i):
+        sdg_pattern = f"%https://metadata.un.org/sdg/{i}%"
+        query = """
+            SELECT 
+                COUNT(DISTINCT a.id) as acount, 
+                COUNT(DISTINCT p.id) as pcount
+            FROM authors a
+            JOIN author_publications ap ON a.id = ap.author_id
+            JOIN publications p ON ap.publication_id = p.id
+            WHERE p.sdgs_json ILIKE $1 AND a.is_faculty = TRUE
+        """
+        row = await db.pool.fetchrow(query, sdg_pattern)
+        return SDGStat(id=i, authors_count=row['acount'], pubs_count=row['pcount'])
+        
+    tasks = [fetch_sdg(i) for i in range(1, 18)]
+    results = await asyncio.gather(*tasks)
+    return results
+
 @app.get("/stats/sdg/{sdg_id}/experts", response_model=List[Author])
 async def get_sdg_experts(sdg_id: int):
     """Get experts related to a specific UN Sustainable Development Goal."""
@@ -1643,9 +1670,115 @@ async def get_citation_overlap_network():
         if count >= 2  # Filter out very weak connections (only 1 shared citation)
     ]
 
+    # Remove isolated nodes (no links)
+    connected_ids = set()
+    for l in links:
+        connected_ids.add(l.source)
+        connected_ids.add(l.target)
+    nodes = [n for n in nodes if n.id in connected_ids]
+
     graph = GlobalNetworkGraph(nodes=nodes, links=links)
     _citation_overlap_cache = graph
     return graph
+
+
+# ═══════════════════════════════════════════════════════════════
+#  GLOBAL COLLABORATION MAP — World-level collaboration geography
+# ═══════════════════════════════════════════════════════════════
+
+class GlobalCollaborationCountry(BaseModel):
+    code: str
+    count: int
+    names: List[str] = []
+
+class GlobalCollaborationResponse(BaseModel):
+    total_collaborations: int
+    total_countries: int
+    countries: List[GlobalCollaborationCountry]
+
+_global_collab_cache: Optional[GlobalCollaborationResponse] = None
+
+@app.get("/network/global-collaborations", response_model=GlobalCollaborationResponse)
+async def get_global_collaborations():
+    """Get aggregated collaboration countries for ALL faculty members (last 5 years).
+
+    For each faculty member, queries OpenAlex for co-author institution countries
+    from the last 5 years, then aggregates across the entire university.
+    count = number of distinct faculty members who have collaborators in that country.
+    """
+    global _global_collab_cache
+    import httpx
+    import datetime
+    from collections import Counter, defaultdict
+
+    if _global_collab_cache is not None:
+        return _global_collab_cache
+
+    # 1. Fetch all faculty with OpenAlex IDs
+    faculty_rows = await db.pool.fetch(
+        "SELECT id, name FROM authors WHERE is_faculty = TRUE AND dept IS NOT NULL"
+    )
+
+    since_year = datetime.datetime.now().year - 5
+    country_faculty_count: dict[str, set[str]] = defaultdict(set)  # country_code -> set of faculty_ids
+    country_names_map: dict[str, set[str]] = defaultdict(set)  # country_code -> set of display names
+
+    # 2. For each faculty member, query OpenAlex for their works' co-author countries
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for fac in faculty_rows:
+            fac_id = fac['id']
+            # Build OpenAlex author ID
+            alex_id = fac_id if fac_id.startswith('A') else f"A{fac_id}"
+            if not alex_id.startswith('https://openalex.org/'):
+                alex_id = f"https://openalex.org/{alex_id}"
+
+            filter_str = f"author.id:{alex_id},from_publication_date:{since_year}-01-01"
+            url = f"https://api.openalex.org/works?filter={filter_str}&group_by=authorships.countries"
+
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    data = resp.json()
+                    for group in data.get('group_by', []):
+                        cc = group['key'].split('/')[-1].upper()
+                        display_name = group.get('key_display_name', cc)
+
+                        # Skip Turkey (home country) — we'll add the marker separately
+                        if cc == 'TR':
+                            continue
+
+                        country_faculty_count[cc].add(fac_id)
+                        if display_name and display_name != cc:
+                            country_names_map[cc].add(display_name)
+                elif resp.status_code == 429:
+                    # Rate limited — wait and retry
+                    import asyncio
+                    await asyncio.sleep(1)
+            except Exception as e:
+                print(f"GlobalCollab: error for {fac['name']}: {e}")
+                continue
+
+    # 3. Build response
+    countries = []
+    total_collabs = 0
+    for cc, fac_set in country_faculty_count.items():
+        count = len(fac_set)
+        total_collabs += count
+        countries.append(GlobalCollaborationCountry(
+            code=cc,
+            count=count,
+            names=list(country_names_map.get(cc, []))
+        ))
+
+    countries.sort(key=lambda x: x.count, reverse=True)
+
+    result = GlobalCollaborationResponse(
+        total_collaborations=total_collabs,
+        total_countries=len(countries),
+        countries=countries
+    )
+    _global_collab_cache = result
+    return result
 
 
 if __name__ == "__main__":
