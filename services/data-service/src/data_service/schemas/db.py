@@ -47,6 +47,9 @@ class AuthorRecord(BaseModel):
     openalex_created_date: Optional[str] = None
     openalex_updated_date: Optional[str] = None
 
+    # Career start (from ORCID education/employment)
+    career_start_year: Optional[int] = None
+
 
 class PublicationRecord(BaseModel):
     """Complete publication record preserving all OpenAlex data."""

@@ -251,5 +251,4 @@ uncomment database calls in `loaders.py`.
 ## License
 
 This project is provided for academic purposes and does not carry a specific
-software license. Please adapt and extend it according to your institution's
-needs.
+software license. 
