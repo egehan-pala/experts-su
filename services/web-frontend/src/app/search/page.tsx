@@ -45,6 +45,7 @@ export default function SearchPage() {
     const router = useRouter();
     const [response, setResponse] = useState<SearchResponse | null>(null);
     const [loading, setLoading] = useState(true);
+    const [departmentFilter, setDepartmentFilter] = useState('');
 
     useEffect(() => {
         if (sdg) {
@@ -68,7 +69,12 @@ export default function SearchPage() {
             fetch(`http://localhost:8000/search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: q, limit: 10, debug: true })
+                body: JSON.stringify({ 
+                    query: q, 
+                    limit: 10, 
+                    debug: true,
+                    filters: departmentFilter ? { department: departmentFilter } : null 
+                })
             })
                 .then((res) => res.json())
                 .then((data: SearchResponse) => {
@@ -80,7 +86,7 @@ export default function SearchPage() {
                     setLoading(false);
                 });
         }
-    }, [q, sdg]);
+    }, [q, sdg, departmentFilter]);
 
     const personResults = response?.person_results ?? [];
     const topicResults = response?.topic_results ?? [];
@@ -95,22 +101,50 @@ export default function SearchPage() {
                 <span>←</span> BACK TO HOME
             </button>
 
-            <div style={{ borderBottom: '1px solid #e4e4e7', paddingBottom: '1rem', marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '2.5rem', margin: 0, fontFamily: 'var(--font-serif)', color: '#111' }}>
-                    {sdg ? 'SDG Research Experts' : 'Expert Search Results'}
-                </h1>
-                <p style={{ color: '#52525b', marginTop: '0.5rem' }}>
-                    {sdg ? (
-                        <>Experts contributing to <span style={{ color: '#002855', fontWeight: 600 }}>"{sdgName || `SDG ${sdg}`}"</span></>
-                    ) : (
-                        <>Finding experts in <span style={{ color: '#002855', fontWeight: 600 }}>"{q}"</span></>
+            <div style={{ borderBottom: '1px solid #e4e4e7', paddingBottom: '1rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                    <h1 style={{ fontSize: '2.5rem', margin: 0, fontFamily: 'var(--font-serif)', color: '#111' }}>
+                        {sdg ? 'SDG Research Experts' : 'Expert Search Results'}
+                    </h1>
+                    <p style={{ color: '#52525b', marginTop: '0.5rem' }}>
+                        {sdg ? (
+                            <>Experts contributing to <span style={{ color: '#002855', fontWeight: 600 }}>"{sdgName || `SDG ${sdg}`}"</span></>
+                        ) : (
+                            <>Finding experts in <span style={{ color: '#002855', fontWeight: 600 }}>"{q}"</span></>
+                        )}
+                    </p>
+                    {response?.intent && (
+                        <div style={{ fontSize: '0.8rem', color: '#71717a', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ padding: '0.1rem 0.5rem', background: '#f1f5f9', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                                Detected Intent: {response.intent}
+                            </span>
+                        </div>
                     )}
-                </p>
-                {response?.intent && (
-                    <div style={{ fontSize: '0.8rem', color: '#71717a', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ padding: '0.1rem 0.5rem', background: '#f1f5f9', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
-                            Detected Intent: {response.intent}
-                        </span>
+                </div>
+
+                {!sdg && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', minWidth: '220px' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#52525b' }}>Filter by Department</label>
+                        <select 
+                            value={departmentFilter}
+                            onChange={(e) => setDepartmentFilter(e.target.value)}
+                            style={{
+                                padding: '0.6rem',
+                                borderRadius: '6px',
+                                border: '1px solid #d4d4d8',
+                                backgroundColor: 'white',
+                                color: '#111',
+                                fontSize: '0.9rem',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                fontFamily: 'inherit'
+                            }}
+                        >
+                            <option value="">All Departments</option>
+                            <option value="FENS">Engineering and Natural Sciences (FENS)</option>
+                            <option value="FASS">Arts and Social Sciences (FASS)</option>
+                            <option value="SBS">Sabancı Business School (SBS)</option>
+                        </select>
                     </div>
                 )}
             </div>
@@ -163,7 +197,7 @@ export default function SearchPage() {
                                             <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.5rem' }}>
                                                 Faculty Member
                                             </p>
-                                            {expert.score > 0 && (
+                                            {(expert.score > 0 || (expert.pub_count !== undefined && expert.pub_count > 0)) && (
                                                 <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 600 }}>
                                                     {expert.pub_count} relevant works
                                                 </div>

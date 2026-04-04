@@ -54,3 +54,7 @@ collect-strict:
 # This is the production workflow you'll use after development
 full-run:
 	python3 -m data_service.cli full-run
+
+# Generate embeddings for semantic search
+generate-embeddings:
+	python3 -m data_service.cli generate-embeddings

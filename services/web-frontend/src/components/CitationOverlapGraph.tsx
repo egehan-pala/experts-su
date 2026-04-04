@@ -53,7 +53,6 @@ function getDeptColor(dept: string | null): string {
     return DEPT_COLORS[dept] || '#94a3b8';
 }
 
-// Logarithmic scale helper for link widths
 function logScale(value: number, minVal: number, maxVal: number, minScale: number, maxScale: number) {
     if (value <= minVal) return minScale;
     if (value >= maxVal) return maxScale;
@@ -65,7 +64,7 @@ function logScale(value: number, minVal: number, maxVal: number, minScale: numbe
     return minScale + ratio * (maxScale - minScale);
 }
 
-export default function DepartmentNetworkGraph() {
+export default function CitationOverlapGraph() {
     const [graphData, setGraphData] = useState<GlobalGraph | null>(null);
     const [loading, setLoading] = useState(true);
     const [searchQuery, setSearchQuery] = useState('');
@@ -91,19 +90,41 @@ export default function DepartmentNetworkGraph() {
         return () => ro.disconnect();
     }, []);
 
-    // Fetch global network
+    // Fetch citation overlap network (with retry — first call is slow due to OpenAlex)
     useEffect(() => {
+        let cancelled = false;
+
+        async function fetchWithRetry(retries = 2) {
+            for (let attempt = 0; attempt <= retries; attempt++) {
+                try {
+                    const controller = new AbortController();
+                    const timeout = setTimeout(() => controller.abort(), 90_000); // 90s timeout
+                    const res = await fetch('http://localhost:8000/network/citation-overlap', {
+                        signal: controller.signal
+                    });
+                    clearTimeout(timeout);
+                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+                    const data: GlobalGraph = await res.json();
+                    if (!cancelled) {
+                        setGraphData(data);
+                        setLoading(false);
+                    }
+                    return;
+                } catch (err) {
+                    console.warn(`Citation overlap fetch attempt ${attempt + 1} failed:`, err);
+                    if (attempt === retries) {
+                        if (!cancelled) setLoading(false);
+                    }
+                    // Wait 2s before retry
+                    await new Promise(r => setTimeout(r, 2000));
+                }
+            }
+        }
+
         setLoading(true);
-        fetch('http://localhost:8000/network/global')
-            .then(res => res.json())
-            .then((data: GlobalGraph) => {
-                setGraphData(data);
-                setLoading(false);
-            })
-            .catch(err => {
-                console.error('Failed to load global network:', err);
-                setLoading(false);
-            });
+        fetchWithRetry();
+
+        return () => { cancelled = true; };
     }, []);
 
     // Visible graph data
@@ -131,13 +152,15 @@ export default function DepartmentNetworkGraph() {
     }, [graphData, activeDept]);
 
     const totalStats = useMemo(() => {
-        if (!visibleData.nodes.length) return { fens: 0, fass: 0, sbs: 0, total: 0, links: 0 };
+        if (!visibleData.nodes.length) return { fens: 0, fass: 0, sbs: 0, total: 0, links: 0, totalSharedCitations: 0 };
+        const totalSharedCitations = visibleData.links.reduce((sum, l) => sum + (l.value || 0), 0);
         return {
             fens: visibleData.nodes.filter(n => n.dept === 'FENS').length,
             fass: visibleData.nodes.filter(n => n.dept === 'FASS').length,
             sbs: visibleData.nodes.filter(n => n.dept === 'SBS').length,
             total: visibleData.nodes.length,
-            links: visibleData.links.length
+            links: visibleData.links.length,
+            totalSharedCitations
         };
     }, [visibleData]);
 
@@ -150,7 +173,7 @@ export default function DepartmentNetworkGraph() {
         };
     }, [visibleData]);
 
-    const nodeJointPapers = useMemo(() => {
+    const nodeSharedCitations = useMemo(() => {
         const counts: Record<string, number> = {};
         for (const l of visibleData.links) {
             const s = typeof l.source === 'object' ? (l.source as GlobalNode).id : l.source;
@@ -178,13 +201,11 @@ export default function DepartmentNetworkGraph() {
         fg.d3Force('gravityY', d3Force.forceY(0).strength(0.06));
         fg.d3ReheatSimulation();
 
-        // Fit after a small delay to let forces settle
         const t = setTimeout(() => {
             try { fg.zoomToFit(500, 80); } catch { }
         }, 1200);
         return () => clearTimeout(t);
     }, [visibleData]);
-
 
     const nodeCanvasObject = useCallback(
         (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -280,14 +301,12 @@ export default function DepartmentNetworkGraph() {
         return 'rgba(148, 163, 184, 0.65)';
     }, [searchQuery]);
 
-
-    // Extract hovered node full details
     const hoveredNodeData = useMemo(() => {
         if (!hoveredNode) return null;
         return visibleData.nodes.find(n => n.id === hoveredNode) || null;
     }, [hoveredNode, visibleData]);
 
-    const hoveredCollaborators = useMemo(() => {
+    const hoveredPeers = useMemo(() => {
         if (!hoveredNode) return 0;
         return visibleData.links.reduce((count, l) => {
             const s = typeof l.source === 'object' ? (l.source as GlobalNode).id : l.source;
@@ -343,10 +362,10 @@ export default function DepartmentNetworkGraph() {
                                 fontWeight: 800
                             }}
                         >
-                            Global Collaboration Network
+                            Citation Overlap Network
                         </h2>
                         <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-                            Visualizing joint publications across all faculties.
+                            Connecting faculty who cite the same research papers.
                         </p>
                     </div>
 
@@ -442,13 +461,14 @@ export default function DepartmentNetworkGraph() {
                         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
                             <div style={{ textAlign: 'center' }}>
                                 <div style={{ fontSize: '2rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⟳</div>
-                                <div>Building global network...</div>
-                                <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Connecting all researchers based on shared publications</div>
+                                <div>Building citation overlap network...</div>
+                                <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Analyzing shared references across all faculty publications</div>
+                                <div style={{ fontSize: '0.7rem', marginTop: '0.25rem', color: '#334155' }}>First load may take up to a minute</div>
                             </div>
                         </div>
                     ) : !graphData || graphData.nodes.length === 0 ? (
                         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                            No collaboration data available.
+                            No citation overlap data available.
                         </div>
                     ) : (
                         <>
@@ -473,29 +493,37 @@ export default function DepartmentNetworkGraph() {
                                         fontSize: '0.85rem',
                                         color: '#1e293b',
                                         fontWeight: 800,
-                                        borderBottom: '2px solid #3b82f6',
+                                        borderBottom: '2px solid #a855f7',
                                         paddingBottom: '0.5rem',
                                         fontFamily: 'var(--font-heading)',
                                         margin: '0 0 1rem 0'
                                     }}
                                 >
-                                    NETWORK SUMMARY
+                                    CITATION OVERLAP SUMMARY
                                 </h3>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                     <div>
                                         <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
                                             Total Faculty
                                         </div>
-                                        <div style={{ color: '#3b82f6', fontSize: '1.25rem', fontWeight: 'bold' }}>
+                                        <div style={{ color: '#a855f7', fontSize: '1.25rem', fontWeight: 'bold' }}>
                                             {totalStats.total}
                                         </div>
                                     </div>
                                     <div>
                                         <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Total Links
+                                            Intellectual Links
                                         </div>
                                         <div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>
                                             {totalStats.links.toLocaleString()}
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
+                                            Total Shared Citations
+                                        </div>
+                                        <div style={{ color: '#f59e0b', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                                            {totalStats.totalSharedCitations.toLocaleString()}
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '1rem' }}>
@@ -515,17 +543,17 @@ export default function DepartmentNetworkGraph() {
                                 </div>
                             </div>
 
-                            {/* Node Hover Box (Absolute center or follow cursor? Let's fix to right block like before) */}
+                            {/* Node Hover Box */}
                             <div
                                 style={{
                                     position: 'absolute',
-                                    top: 250,
+                                    top: 280,
                                     right: 20,
                                     zIndex: 10,
                                     background: 'rgba(255, 255, 255, 0.95)',
                                     padding: '1rem',
                                     borderRadius: 12,
-                                    border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6'}`,
+                                    border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#a855f7'}`,
                                     width: '220px',
                                     boxShadow: '0 8px 12px -3px rgba(0, 0, 0, 0.3)',
                                     opacity: hoveredNodeData ? 1 : 0,
@@ -533,22 +561,22 @@ export default function DepartmentNetworkGraph() {
                                     pointerEvents: 'none'
                                 }}
                             >
-                                <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
+                                <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#a855f7', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
                                     {hoveredNodeData?.dept ? `${hoveredNodeData.dept} AUTHOR` : 'SELECTED AUTHOR'}
                                 </div>
                                 <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
                                     <span style={{ color: '#1e293b' }}>{hoveredNodeData?.name || 'None'}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                                    <span style={{ color: '#94a3b8' }}>Joint Papers:</span>
+                                    <span style={{ color: '#94a3b8' }}>Shared Citations:</span>
                                     <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        {hoveredNode ? nodeJointPapers[hoveredNode] || 0 : 0}
+                                        {hoveredNode ? nodeSharedCitations[hoveredNode] || 0 : 0}
                                     </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                                    <span style={{ color: '#94a3b8' }}>Collaborators:</span>
+                                    <span style={{ color: '#94a3b8' }}>Intellectual Peers:</span>
                                     <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        {hoveredCollaborators}
+                                        {hoveredPeers}
                                     </span>
                                 </div>
                             </div>
@@ -631,7 +659,7 @@ export default function DepartmentNetworkGraph() {
                                 ))}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', marginTop: '6px' }}>
                                     <div style={{ width: 20, height: 2, background: '#94a3b8' }} />
-                                    <span>Edge width ∝ Shared works</span>
+                                    <span>Edge width ∝ Shared citations</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                                     <div
@@ -639,7 +667,7 @@ export default function DepartmentNetworkGraph() {
                                             width: 10,
                                             height: 10,
                                             borderRadius: '50%',
-                                            background: '#3b82f6',
+                                            background: '#a855f7',
                                             border: '2px solid #fff',
                                             boxSizing: 'border-box'
                                         }}
@@ -654,4 +682,3 @@ export default function DepartmentNetworkGraph() {
         </div>
     );
 }
-

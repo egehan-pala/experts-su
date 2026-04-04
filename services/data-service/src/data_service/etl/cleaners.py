@@ -14,6 +14,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import httpx
 import unicodedata
 
 from ..config import get_settings
@@ -29,6 +30,7 @@ from ..schemas.db import (
 )
 from ..scrapers.faculty import scrape_all_faculty
 from ..logging import get_logger
+from .orcid import fetch_career_start_year
 
 
 logger = get_logger(__name__)
@@ -61,6 +63,7 @@ def _is_false_positive_work(
     owner_orcid: Optional[str],
     owner_oa_ids: Set[str],
     institution_ror: str,
+    career_start_year: Optional[int] = None,
 ) -> bool:
     """Check whether a publication is likely a false positive for the owner author.
 
@@ -75,6 +78,13 @@ def _is_false_positive_work(
 
     Returns True if the work should be considered a false positive.
     """
+    # Temporal check: reject publications that predate the researcher's career.
+    # We allow a 4-year window before the earliest recorded education start in
+    # case the researcher co-authored something during their undergraduate studies.
+    if career_start_year is not None and work.publication_year is not None:
+        if work.publication_year < career_start_year - 4:
+            return True  # Cannot be this person's work
+
     sabanci_keywords = {"sabanci", "sabancı", "sabanciuniv"}
 
     has_author_id_match = False
@@ -307,6 +317,20 @@ async def clean(db: Database) -> Tuple[
                 "merged_ids": all_oa_ids,
             })
 
+    # --- ORCID enrichment: fetch career start year ---
+    logger.info({"message": "Starting ORCID career-start-year enrichment"})
+    orcid_enriched = 0
+    async with httpx.AsyncClient(timeout=10.0) as orcid_http:
+        for rec in dedup_map.values():
+            if not rec.is_faculty or not rec.orcid:
+                continue
+            year = await fetch_career_start_year(rec.orcid, orcid_http)
+            if year is not None:
+                rec.career_start_year = year
+                orcid_enriched += 1
+    logger.info({"message": "ORCID enrichment complete", "enriched": orcid_enriched})
+    # --- end ORCID enrichment ---
+
     authors_norm = [rec.model_dump() for rec in dedup_map.values()]
     logger.info({
         "message": "Cleaning complete (authors)",
@@ -328,6 +352,11 @@ async def clean(db: Database) -> Tuple[
             except (json.JSONDecodeError, TypeError):
                 pass
         owner_all_ids_map[rec.id] = ids
+
+    # Build career_start_year lookup (primary_author_id → year)
+    career_start_map: Dict[str, Optional[int]] = {
+        rec.id: rec.career_start_year for rec in dedup_map.values()
+    }
 
     # Build work→owner mapping from staging relations
     # A work can be owned by multiple faculty authors (co-authored by two SU profs)
@@ -375,7 +404,13 @@ async def clean(db: Database) -> Tuple[
                 for owner_id in owners:
                     orcid = owner_orcid_map.get(owner_id)
                     all_ids = owner_all_ids_map.get(owner_id, {owner_id})
-                    if not _is_false_positive_work(work, orcid, all_ids, institution_ror):
+                    if not _is_false_positive_work(
+                        work,
+                        orcid,
+                        all_ids,
+                        institution_ror,
+                        career_start_year=career_start_map.get(owner_id),
+                    ):
                         is_fp_for_all = False
                         break
                 if is_fp_for_all:
