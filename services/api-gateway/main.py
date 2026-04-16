@@ -1907,14 +1907,46 @@ async def get_author_news(author_id: str):
         *[loop.run_in_executor(None, _fetch_rss_url, url) for url in feed_urls]
     )
 
-    # Merge, de-duplicate by URL, sort by date descending, top 10
+    # Merge, de-duplicate by URL
     seen_urls: set = set()
     all_items: list[NewsItem] = []
+
+    # General media / tabloid domains that might publish non-academic/personal news.
+    RISKY_DOMAINS = [
+        "milliyet", "sabah", "hurriyet", "sozcu", "posta", 
+        "haberturk", "ahaber", "takvim", "ensonhaber", 
+        "yeniakit", "aksam", "yenisafak"
+    ]
+
+    ACADEMIC_KEYWORDS = [
+        "araştırma", "proje", "makale", "yayın", "akademi",
+        "bilim", "konferans", "sempozyum", "laboratuvar", "burs", "tez",
+        "doktora", "patent", "teknoloji", "inovasyon", "keşif", "çalışma",
+        "ödül", "bilimsel", "öğretim", "eğitim", "fakülte", "enstitü",
+        "mühendislik", "fizik", "kimya", "biyoloji", "tıp", "matematik",
+        "sabancı üniversitesi", "research", "project", "paper", "publication", 
+        "university", "academic", "science", "conference", "symposium", 
+        "laboratory", "scholarship", "thesis", "phd", "patent", "technology", 
+        "innovation", "discovery", "study", "award", "grant", "faculty", 
+        "institute", "engineering", "professor", "journal", "peer-reviewed"
+    ]
+
     for batch in results:
         for item in batch:
             if item.url not in seen_urls:
-                seen_urls.add(item.url)
-                all_items.append(item)
+                is_risky = any(d in item.url for d in RISKY_DOMAINS)
+                
+                if is_risky:
+                    # If it's a risky general media site, it MUST have an academic keyword in title
+                    title_lower = (item.title or "").lower()
+                    has_keyword = any(kw in title_lower for kw in ACADEMIC_KEYWORDS)
+                    if has_keyword:
+                        seen_urls.add(item.url)
+                        all_items.append(item)
+                else:
+                    # Not a risky domain, accept automatically
+                    seen_urls.add(item.url)
+                    all_items.append(item)
 
     all_items.sort(key=lambda x: x.published_at or "", reverse=True)
     articles = all_items  # frontend handles pagination

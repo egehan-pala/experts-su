@@ -22,8 +22,8 @@ DB_DSN = (
 
 
 def build_name_sabancu_url(name: str) -> str:
-    """Search for author name AND Sabancı together."""
-    q = urllib.parse.quote(f'"{name}" Sabancı')
+    """Search for author name AND exact phrase 'Sabancı Üniversitesi'."""
+    q = urllib.parse.quote(f'"{name}" "Sabancı Üniversitesi"')
     return f"https://news.google.com/rss/search?q={q}&hl=tr&gl=TR&ceid=TR:tr"
 
 
