@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState } from 'react';
+import { API_URL } from '@/lib/config';
 
 interface NewsItem {
     title: string;
@@ -37,7 +38,7 @@ export default function NewsSection({ authorId, authorName }: { authorId: string
 
     useEffect(() => {
         const shortId = authorId.replace('https://openalex.org/', '').split('/').pop() || authorId;
-        fetch(`http://localhost:8000/authors/${shortId}/news`)
+        fetch(`${API_URL}/authors/${shortId}/news`)
             .then(res => res.json())
             .then(data => {
                 setNews(Array.isArray(data) ? data : []);

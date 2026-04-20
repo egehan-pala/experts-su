@@ -1,0 +1,17 @@
+FROM python:3.11-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    libpq-dev \
+    && rm -rf /var/lib/apt/lists/* \
+    && pip install --no-cache-dir psycopg2-binary python-dotenv asyncpg
+
+# Copy migration scripts and seed scripts
+COPY services/data-service /app/data-service
+COPY services/api-gateway/seed_news_feeds.py /app/api-gateway/seed_news_feeds.py
+COPY infra/docker/init.sh /app/init.sh
+
+RUN chmod +x /app/init.sh
+
+CMD ["bash", "/app/init.sh"]

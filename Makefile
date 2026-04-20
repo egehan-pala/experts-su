@@ -1,4 +1,4 @@
-.PHONY: dev db backend frontend
+.PHONY: dev db backend frontend docker-up docker-down
 
 # Start all services
 dev:
@@ -22,3 +22,10 @@ backend:
 
 frontend:
 	$(MAKE) -C services/web-frontend dev
+
+# Docker: run everything in containers
+docker-up:
+	docker compose -f infra/docker/docker-compose.yml up --build
+
+docker-down:
+	docker compose -f infra/docker/docker-compose.yml down

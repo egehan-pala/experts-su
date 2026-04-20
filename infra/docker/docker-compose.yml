@@ -1,6 +1,5 @@
-version: '3.8'
-
 services:
+  # ── PostgreSQL with pgvector ──────────────────────────────────────
   db:
     image: pgvector/pgvector:pg15
     container_name: experts-su-db
@@ -12,11 +11,38 @@ services:
       - "5432:5432"
     volumes:
       - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
 
+  # ── One-shot init: migrations + seed data ─────────────────────────
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.migrate
+    container_name: experts-su-migrate
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: experts_su
+      DB_USER: postgres
+      DB_PASSWORD: password
+
+  # ── FastAPI backend (API Gateway) ─────────────────────────────────
   api-gateway:
     build:
       context: ../../services/api-gateway
     container_name: experts-su-api-gateway
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
     environment:
       DB_HOST: db
       DB_PORT: 5432
@@ -25,8 +51,18 @@ services:
       DB_PASSWORD: password
     ports:
       - "8000:8000"
+
+  # ── Next.js frontend ──────────────────────────────────────────────
+  web-frontend:
+    build:
+      context: ../../services/web-frontend
+      args:
+        NEXT_PUBLIC_API_URL: http://localhost:8000
+    container_name: experts-su-web
     depends_on:
-      - db
+      - api-gateway
+    ports:
+      - "3000:3000"
 
 volumes:
   db_data:

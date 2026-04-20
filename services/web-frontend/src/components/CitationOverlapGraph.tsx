@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { API_URL } from '@/lib/config';
 import dynamic from 'next/dynamic';
 import * as d3Force from 'd3-force';
 
@@ -99,7 +100,7 @@ export default function CitationOverlapGraph() {
                 try {
                     const controller = new AbortController();
                     const timeout = setTimeout(() => controller.abort(), 90_000); // 90s timeout
-                    const res = await fetch('http://localhost:8000/network/citation-overlap', {
+                    const res = await fetch(`${API_URL}/network/citation-overlap`, {
                         signal: controller.signal
                     });
                     clearTimeout(timeout);

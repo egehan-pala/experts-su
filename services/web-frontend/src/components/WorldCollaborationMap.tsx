@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
+import { API_URL } from '@/lib/config';
 import {
   ComposableMap,
   Geographies,
@@ -100,7 +101,7 @@ export default function WorldCollaborationMap() {
     setLoading(true);
     setError(false);
 
-    fetch('http://localhost:8000/network/global-collaborations')
+    fetch(`${API_URL}/network/global-collaborations`)
       .then(res => {
         if (!res.ok) throw new Error(`HTTP ${res.status}`);
         return res.json();

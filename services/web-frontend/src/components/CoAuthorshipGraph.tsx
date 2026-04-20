@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { API_URL } from '@/lib/config';
 import dynamic from 'next/dynamic';
 import * as d3Force from 'd3-force';
 
@@ -122,7 +123,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         params.append('year_to', yearRange.to.toString());
         params.append('limit', collaboratorLimit.toString());
 
-        fetch(`http://localhost:8000/authors/${shortId}/network?${params.toString()}`)
+        fetch(`${API_URL}/authors/${shortId}/network?${params.toString()}`)
             .then((res) => res.json())
             .then((data: NetworkData) => {
                 // Critical Safety Filter: Ensure all links point to existing nodes
