@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useEffect, useState, useMemo } from 'react';
+import { API_URL } from '@/lib/config';
 import {
   ComposableMap,
   Geographies,
@@ -58,7 +59,7 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
     setLoading(true);
     const shortId = authorId.includes('/') ? authorId.split('/').pop()! : authorId;
 
-    let url = `http://localhost:8000/authors/${shortId}/geo-citations`;
+    let url = `${API_URL}/authors/${shortId}/geo-citations`;
     if (selectedYear) {
       url += `?year=${selectedYear}`;
     } else if (debouncedSinceYear) {

@@ -1,6 +1,7 @@
 'use client';
 
 import React, { useMemo, useState, useEffect } from 'react';
+import { API_URL } from '@/lib/config';
 import {
   BarChart,
   Bar,
@@ -77,7 +78,7 @@ export default function CitationTimelineChart({ authorId, data, selectedYear, on
     if (selectedYear) {
       setPaperLoading(true);
       const shortId = authorId.replace('https://openalex.org/', '').split('/').pop() || authorId;
-      fetch(`http://localhost:8000/authors/${shortId}/top-publication-by-year?year=${selectedYear}`)
+      fetch(`${API_URL}/authors/${shortId}/top-publication-by-year?year=${selectedYear}`)
         .then(res => res.json())
         .then(json => {
           setTopPaper(json);

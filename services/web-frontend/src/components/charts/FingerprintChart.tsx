@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { API_URL } from '@/lib/config';
 
 interface Concept {
     name: string;
@@ -90,7 +91,7 @@ export default function FingerprintChart({ authorId }: FingerprintChartProps) {
     useEffect(() => {
         if (authorId) {
             const shortId = authorId.replace('https://openalex.org/', '').split('/').pop() || authorId;
-            fetch(`http://localhost:8000/authors/${shortId}/fingerprint`)
+            fetch(`${API_URL}/authors/${shortId}/fingerprint`)
                 .then(res => res.json())
                 .then(json => {
                     setData(json || []);
@@ -117,7 +118,7 @@ export default function FingerprintChart({ authorId }: FingerprintChartProps) {
         setDetailsLoading(true);
         try {
             const shortId = authorId.replace('https://openalex.org/', '').split('/').pop() || authorId;
-            const res = await fetch(`http://localhost:8000/authors/${shortId}/fingerprint/details?concept=${encodeURIComponent(conceptName)}`);
+            const res = await fetch(`${API_URL}/authors/${shortId}/fingerprint/details?concept=${encodeURIComponent(conceptName)}`);
             const json = await res.json();
             setDetails(json);
         } catch (err) {

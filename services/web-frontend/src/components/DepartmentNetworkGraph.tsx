@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { API_URL } from '@/lib/config';
 import dynamic from 'next/dynamic';
 import * as d3Force from 'd3-force';
 
@@ -94,7 +95,7 @@ export default function DepartmentNetworkGraph() {
     // Fetch global network
     useEffect(() => {
         setLoading(true);
-        fetch('http://localhost:8000/network/global')
+        fetch(`${API_URL}/network/global`)
             .then(res => res.json())
             .then((data: GlobalGraph) => {
                 setGraphData(data);

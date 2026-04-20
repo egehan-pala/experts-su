@@ -1,7 +1,8 @@
 'use client';
 
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
+import { API_URL } from '@/lib/config';
 
 interface MatchSnippet {
     publication_title?: string | null;
@@ -37,7 +38,7 @@ interface SearchResponse {
     topic_results: TopicResult[];
 }
 
-export default function SearchPage() {
+function SearchPageContent() {
     const searchParams = useSearchParams();
     const q = searchParams.get('q');
     const sdg = searchParams.get('sdg');
@@ -50,7 +51,7 @@ export default function SearchPage() {
     useEffect(() => {
         if (sdg) {
             setLoading(true);
-            fetch(`http://localhost:8000/stats/sdg/${sdg}/experts`)
+            fetch(`${API_URL}/stats/sdg/${sdg}/experts`)
                 .then((res) => res.json())
                 .then((data: PersonResult[]) => {
                     setResponse({
@@ -66,7 +67,7 @@ export default function SearchPage() {
                 });
         } else if (q) {
             setLoading(true);
-            fetch(`http://localhost:8000/search`, {
+            fetch(`${API_URL}/search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ 
@@ -272,5 +273,13 @@ export default function SearchPage() {
                 </>
             )}
         </div>
+    );
+}
+
+export default function SearchPage() {
+    return (
+        <Suspense fallback={<div className="container" style={{ padding: '2rem 1.5rem 4rem' }}><p style={{ color: '#52525b', fontStyle: 'italic' }}>Loading search...</p></div>}>
+            <SearchPageContent />
+        </Suspense>
     );
 }

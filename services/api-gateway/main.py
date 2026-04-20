@@ -1781,6 +1781,183 @@ async def get_global_collaborations():
     return result
 
 
+# ─────────────────────────────────────────
+# News Endpoint  (DB-backed RSS feeds + 6h cache)
+# ─────────────────────────────────────────
+
+import time
+import xml.etree.ElementTree as ET
+import urllib.request
+import urllib.parse
+from email.utils import parsedate_to_datetime
+
+class NewsItem(BaseModel):
+    title: str
+    url: str
+    source: str
+    published_at: Optional[str] = None
+    thumbnail: Optional[str] = None
+    summary: Optional[str] = None
+
+# Simple in-memory cache: {short_author_id: (fetched_at_timestamp, [NewsItem])}
+_news_cache: dict = {}
+_NEWS_CACHE_TTL = 6 * 60 * 60  # 6 hours
+
+
+def _fetch_rss_url(feed_url: str) -> list[NewsItem]:
+    """Fetch and parse a single RSS feed URL, return list of NewsItems."""
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; ExpertsSU/1.0)"}
+    req = urllib.request.Request(feed_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read()
+    except Exception as e:
+        print(f"[news] RSS fetch error for '{feed_url}': {e}")
+        return []
+
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as e:
+        print(f"[news] RSS parse error: {e}")
+        return []
+
+    channel = root.find("channel")
+    if channel is None:
+        return []
+
+    items = []
+    for item in channel.findall("item"):
+        title_el = item.find("title")
+        link_el = item.find("link")
+        source_el = item.find("source")
+        pubdate_el = item.find("pubDate")
+        desc_el = item.find("description")
+
+        title = title_el.text if title_el is not None else ""
+        link = link_el.text if link_el is not None else ""
+        source = source_el.text if source_el is not None else "Google News"
+        pubdate_raw = pubdate_el.text if pubdate_el is not None else None
+        description = desc_el.text if desc_el is not None else None
+
+        # Parse date to ISO string
+        published_at = None
+        if pubdate_raw:
+            try:
+                published_at = parsedate_to_datetime(pubdate_raw).isoformat()
+            except Exception:
+                published_at = pubdate_raw
+
+        # Extract thumbnail from <media:content> if available
+        thumbnail = None
+        media_content = item.find("{http://search.yahoo.com/mrss/}content")
+        if media_content is not None:
+            thumbnail = media_content.get("url")
+
+        # Strip HTML tags from description for summary
+        summary = None
+        if description:
+            import re
+            summary = re.sub(r"<[^>]+>", "", description).strip()[:300] or None
+
+        if title and link:
+            items.append(NewsItem(
+                title=title,
+                url=link,
+                source=source,
+                published_at=published_at,
+                thumbnail=thumbnail,
+                summary=summary,
+            ))
+
+    return items
+
+
+@app.get("/authors/{author_id}/news", response_model=List[NewsItem])
+async def get_author_news(author_id: str):
+    """
+    Return recent news articles for this author.
+    Feed URLs are stored in the author_news_feeds table.
+    Results are fetched in real-time from each stored URL and cached for 6 hours.
+    """
+    import asyncio
+
+    short_id = author_id.replace("https://openalex.org/", "").split("/")[-1]
+
+    # Check cache first
+    cached = _news_cache.get(short_id)
+    if cached:
+        fetched_at, articles = cached
+        if time.time() - fetched_at < _NEWS_CACHE_TTL:
+            return articles
+
+    # Fetch feed URLs from DB
+    feed_rows = await db.pool.fetch(
+        "SELECT feed_url FROM author_news_feeds WHERE author_id ILIKE $1 OR author_id = $2",
+        f"%{short_id}%",
+        author_id,
+    )
+    if not feed_rows:
+        return []
+
+    feed_urls = [r["feed_url"] for r in feed_rows]
+
+    # Fetch all feeds in parallel (sync I/O → thread pool)
+    loop = asyncio.get_event_loop()
+    results = await asyncio.gather(
+        *[loop.run_in_executor(None, _fetch_rss_url, url) for url in feed_urls]
+    )
+
+    # Merge, de-duplicate by URL
+    seen_urls: set = set()
+    all_items: list[NewsItem] = []
+
+    # General media / tabloid domains that might publish non-academic/personal news.
+    RISKY_DOMAINS = [
+        "milliyet", "sabah", "hurriyet", "sozcu", "posta", 
+        "haberturk", "ahaber", "takvim", "ensonhaber", 
+        "yeniakit", "aksam", "yenisafak"
+    ]
+
+    ACADEMIC_KEYWORDS = [
+        "araştırma", "proje", "makale", "yayın", "akademi",
+        "bilim", "konferans", "sempozyum", "laboratuvar", "burs", "tez",
+        "doktora", "patent", "teknoloji", "inovasyon", "keşif", "çalışma",
+        "ödül", "bilimsel", "öğretim", "eğitim", "fakülte", "enstitü",
+        "mühendislik", "fizik", "kimya", "biyoloji", "tıp", "matematik",
+        "sabancı üniversitesi", "research", "project", "paper", "publication", 
+        "university", "academic", "science", "conference", "symposium", 
+        "laboratory", "scholarship", "thesis", "phd", "patent", "technology", 
+        "innovation", "discovery", "study", "award", "grant", "faculty", 
+        "institute", "engineering", "professor", "journal", "peer-reviewed"
+    ]
+
+    for batch in results:
+        for item in batch:
+            if item.url not in seen_urls:
+                is_risky = any(d in item.url for d in RISKY_DOMAINS)
+                
+                if is_risky:
+                    # If it's a risky general media site, it MUST have an academic keyword in title
+                    title_lower = (item.title or "").lower()
+                    has_keyword = any(kw in title_lower for kw in ACADEMIC_KEYWORDS)
+                    if has_keyword:
+                        seen_urls.add(item.url)
+                        all_items.append(item)
+                else:
+                    # Not a risky domain, accept automatically
+                    seen_urls.add(item.url)
+                    all_items.append(item)
+
+    all_items.sort(key=lambda x: x.published_at or "", reverse=True)
+    articles = all_items  # frontend handles pagination
+
+    # Store in cache
+    _news_cache[short_id] = (time.time(), articles)
+    return articles
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+

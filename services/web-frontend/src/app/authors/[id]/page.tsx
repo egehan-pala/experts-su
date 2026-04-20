@@ -6,6 +6,8 @@ import CoAuthorshipGraph from '@/components/CoAuthorshipGraph';
 import FingerprintChart from '@/components/charts/FingerprintChart';
 import CitationTimelineChart from '@/components/charts/CitationTimelineChart';
 import CollaborationMap from '@/components/CollaborationMap';
+import NewsSection from '@/components/NewsSection';
+import { API_URL } from '@/lib/config';
 
 interface Author {
     id: string;
@@ -108,7 +110,7 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
     useEffect(() => {
         if (authorId) {
             const shortId = authorId.replace('https://openalex.org/', '').split('/').pop() || authorId;
-            fetch(`http://localhost:8000/authors/${shortId}/recent-publications`)
+            fetch(`${API_URL}/authors/${shortId}/recent-publications`)
                 .then(res => res.json())
                 .then(data => {
                     setRecentPubs(data || []);
@@ -312,7 +314,7 @@ export default function ProfilePage() {
         setGalaxyLoading(true);
         try {
             const shortId = id.replace('https://openalex.org/', '').split('/').pop() || id;
-            let url = `http://localhost:8000/authors/${shortId}/galaxy?category=${cat}`;
+            let url = `${API_URL}/authors/${shortId}/galaxy?category=${cat}`;
             if (drills.length >= 1) url += `&drill=${encodeURIComponent(drills[0])}`;
             if (drills.length >= 2) url += `&drill2=${encodeURIComponent(drills[1])}`;
             const res = await fetch(url);
@@ -326,8 +328,8 @@ export default function ProfilePage() {
         if (id) {
             const shortId = id.replace('https://openalex.org/', '').split('/').pop() || id;
             Promise.all([
-                fetch(`http://localhost:8000/authors/${shortId}`).then(res => res.json()),
-                fetch(`http://localhost:8000/authors/${shortId}/metrics`).then(res => res.json()),
+                fetch(`${API_URL}/authors/${shortId}`).then(res => res.json()),
+                fetch(`${API_URL}/authors/${shortId}/metrics`).then(res => res.json()),
             ])
                 .then(([authorData, metricsData]) => {
                     setAuthor(authorData);
@@ -470,7 +472,7 @@ export default function ProfilePage() {
 
             {/* Tabs Navigation */}
             <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', borderBottom: '1px solid #e4e4e7', backgroundColor: '#fff', padding: '0 2rem', position: 'sticky', top: 0, zIndex: 10 }}>
-                {['timeline', 'fingerprint', 'network', 'global', 'publications'].map(tab => (
+                {['timeline', 'fingerprint', 'network', 'global', 'publications', 'news'].map(tab => (
                     <button
                         key={tab}
                         onClick={() => setActiveTab(tab)}
@@ -489,7 +491,7 @@ export default function ProfilePage() {
                             textTransform: 'capitalize'
                         }}
                     >
-                        {tab === 'network' ? 'Network Collaboration' : tab === 'global' ? 'Global Impact' : tab === 'publications' ? 'Recent Publications' : tab}
+                        {tab === 'network' ? 'Network Collaboration' : tab === 'global' ? 'Global Impact' : tab === 'publications' ? 'Recent Publications' : tab === 'news' ? 'News' : tab}
                     </button>
                 ))}
             </div>
@@ -519,6 +521,10 @@ export default function ProfilePage() {
 
                 {activeTab === 'publications' && (
                     <RecentArticlesSection authorId={id} />
+                )}
+
+                {activeTab === 'news' && author && (
+                    <NewsSection authorId={id} authorName={author.name} />
                 )}
             </div>
 

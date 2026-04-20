@@ -3,6 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import styles from './page.module.css';
+import { API_URL } from '@/lib/config';
 import DepartmentNetworkGraph from '@/components/DepartmentNetworkGraph';
 import CitationOverlapGraph from '@/components/CitationOverlapGraph';
 import WorldCollaborationMap from '@/components/WorldCollaborationMap';
@@ -44,7 +45,7 @@ function SDGSection() {
   const [hoveredSdg, setHoveredSdg] = useState<number | null>(null);
 
   useEffect(() => {
-    fetch('http://localhost:8000/stats/sdgs')
+    fetch(`${API_URL}/stats/sdgs`)
       .then(res => res.json())
       .then(data => {
          const statsMap: Record<number, any> = {};
@@ -215,7 +216,7 @@ export default function Home() {
       setLoading(false);
       return;
     }
-    let url = `http://localhost:8000/authors?page=${page}&limit=${limit}`;
+    let url = `${API_URL}/authors?page=${page}&limit=${limit}`;
     if (deptFilter) {
       url += `&dept=${encodeURIComponent(deptFilter)}`;
     }
