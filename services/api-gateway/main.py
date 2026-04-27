@@ -1795,6 +1795,7 @@ class NewsItem(BaseModel):
     title: str
     url: str
     source: str
+    source_url: Optional[str] = None  # actual outlet URL (from RSS <source url=...>)
     published_at: Optional[str] = None
     thumbnail: Optional[str] = None
     summary: Optional[str] = None
@@ -1836,6 +1837,8 @@ def _fetch_rss_url(feed_url: str) -> list[NewsItem]:
         title = title_el.text if title_el is not None else ""
         link = link_el.text if link_el is not None else ""
         source = source_el.text if source_el is not None else "Google News"
+        # source_url is the <source url="..."> attribute — the real outlet domain
+        source_url = source_el.get("url") if source_el is not None else None
         pubdate_raw = pubdate_el.text if pubdate_el is not None else None
         description = desc_el.text if desc_el is not None else None
 
@@ -1864,6 +1867,7 @@ def _fetch_rss_url(feed_url: str) -> list[NewsItem]:
                 title=title,
                 url=link,
                 source=source,
+                source_url=source_url,
                 published_at=published_at,
                 thumbnail=thumbnail,
                 summary=summary,
@@ -1872,12 +1876,181 @@ def _fetch_rss_url(feed_url: str) -> list[NewsItem]:
     return items
 
 
+# ── News filtering keyword dictionaries ────────────────────────────────────────
+
+# Trusted news domains — BOTH conditions must pass: trusted source AND keyword match.
+# Articles from domains NOT in this list are rejected outright.
+_TRUSTED_NEWS_DOMAINS = [
+    # ── Institutional / Academic publishers / Sci-Tech ──────────────────
+    "sabanciuniv.edu", "yok.gov.tr", "yokak.gov.tr", "tubitak.gov.tr",
+    "nature.com", "science.org", "sciencemag.org", "cell.com", "pnas.org",
+    "thelancet.com", "nejm.org", "bmj.com",
+    "ieee.org", "acm.org", "arxiv.org", "asme.org", "acs.org", "rsc.org", "iop.org",
+    "sciencedirect.com", "springer.com", "wiley.com", "elsevier.com", "plos.org",
+    "frontiersin.org", "mdpi.com", "biomedcentral.com", "hindawi.com",
+    "tandfonline.com", "worldscientific.com", "spiedigitallibrary.org", "scientific.net",
+    "oup.com", "cambridge.org", "mit.edu",
+    "eurekalert.org", "sciencedaily.com", "phys.org", "livescience.com", "space.com",
+    "newscientist.com", "scientificamerican.com", "discovermagazine.com",
+    "popularmechanics.com", "popsci.com", "quantamagazine.org",
+    "technologyreview.com", "wired.com", "arstechnica.com",
+    "thenextweb.com", "techcrunch.com", "gizmodo.com", "engadget.com", "theverge.com",
+    # ── Global mainstream press & Business ──────────────────────────────
+    "reuters.com", "apnews.com", "afp.com", "xinhuanet.com", "kyodonews.net",
+    "bbc.com", "bbc.co.uk", "dw.com", "france24.com", "aljazeera.com",
+    "theguardian.com", "nytimes.com", "washingtonpost.com", "latimes.com",
+    "independent.co.uk", "telegraph.co.uk", "chicagotribune.com",
+    "cnn.com", "nbcnews.com", "cbsnews.com", "abcnews.go.com", "foxnews.com", "npr.org",
+    "usatoday.com", "time.com",
+    "ft.com", "economist.com", "bloomberg.com", "wsj.com", "cnbc.com",
+    "forbes.com", "businessinsider.com", "fortune.com", "hbr.org", "marketwatch.com",
+    # ── Turkish mainstream press & Agencies ─────────────────────────────
+    "aa.com.tr",          # Anadolu Ajansı
+    "iha.com.tr",         # İhlas Haber Ajansı
+    "dha.com.tr",         # Demirören Haber Ajansı
+    "anka.org.tr",        # Anka Haber Ajansı
+    "trt.net.tr", "trthaber.com", "trtworld.com",
+    "ntv.com.tr", "ntvmsnbc.com",
+    "cnnturk.com", "haberturk.com",
+    "hurriyet.com.tr", "milliyet.com.tr", "sabah.com.tr",
+    "cumhuriyet.com.tr", "sozcu.com.tr", "aksam.com.tr",
+    "star.com.tr", "turkiyegazetesi.com.tr", "yenicaggazetesi.com.tr",
+    "karar.com", "ensonhaber.com", "gazeteduvar.com.tr", "t24.com.tr",
+    "posta.com.tr", "vatan.com.tr",
+    # ── Turkish Business & Tech ─────────────────────────────────────────
+    "dunya.com", "ekonomim.com", "bloomberght.com", "apara.com.tr",
+    "uzmanpara.com", "finansgundem.com", "borsagundem.com", "para.com.tr",
+    "turkishtimedergi.com", "platinonline.com",
+    "webtekno.com", "shiftdelete.net", "donanimhaber.com", "chip.com.tr",
+    "teknoblog.com", "webrazzi.com", "egirisim.com",
+    # ── Google News aggregator (carries vetted sources) ─────────────────
+    # NOTE: news.google.com is intentionally NOT listed here.
+    # Google News RSS <link> elements are redirect URLs (news.google.com/articles/...)
+    # so we check trust via the <source url="..."> attribute (source_url) instead.
+]
+
+# Universal academic keywords — apply to ALL authors regardless of faculty.
+_NEWS_KEYWORDS_UNIVERSAL = [
+    # Turkish
+    "araştırma", "proje", "makale", "yayın", "akademi", "bilimsel",
+    "konferans", "sempozyum", "burs", "tez", "doktora", "patent",
+    "keşif", "ödül", "öğretim üyesi", "fakülte", "enstitü", "inovasyon",
+    "sabancı üniversitesi", "sabancı university", "tübitak", "avrupa birliği projesi",
+    "erasmus", "ab projesi",
+    # English
+    "research", "project", "paper", "publication", "academic", "science",
+    "conference", "symposium", "scholarship", "thesis", "phd", "patent",
+    "discovery", "award", "grant", "faculty", "institute", "peer-reviewed",
+    "journal", "professor", "university", "study", "findings",
+]
+
+# FENS — Faculty of Engineering and Natural Sciences
+_NEWS_KEYWORDS_FENS = [
+    # Turkish
+    "mühendislik", "yapay zeka", "makine öğrenmesi", "derin öğrenme",
+    "algoritma", "yazılım", "donanım", "robot", "otomasyon", "enerji",
+    "malzeme", "nanoteknoloji", "elektrik", "elektronik", "biyomedikal",
+    "kimya", "fizik", "biyoloji", "matematik", "istatistik", "bilgisayar",
+    "hesaplama", "simülasyon", "laboratuvar", "teknoloji", "sensör",
+    "drone", "insansız", "nöral", "optimizasyon",
+    # English
+    "engineering", "artificial intelligence", "machine learning", "deep learning",
+    "algorithm", "software", "hardware", "robotics", "automation", "energy",
+    "materials", "nanotechnology", "electrical", "electronics", "biomedical",
+    "chemistry", "physics", "biology", "mathematics", "statistics",
+    "computer science", "computation", "simulation", "laboratory", "technology",
+    "sensor", "neural network", "optimization", "cybersecurity", "quantum",
+    "genome", "protein", "polymer", "semiconductor",
+]
+
+# FASS — Faculty of Arts and Social Sciences
+_NEWS_KEYWORDS_FASS = [
+    # Turkish
+    "sosyoloji", "tarih", "psikoloji", "felsefe", "sanat", "toplum",
+    "siyaset bilimi", "edebiyat", "kültür", "antropoloji", "arkeoloji",
+    "dil bilimi", "iletişim", "medya", "eğitim bilimleri", "hukuk",
+    "uluslararası ilişkiler", "göç", "kimlik", "gender", "toplumsal",
+    "eleştirel", "söylem", "feminist", "post-kolonyalizm",
+    # English
+    "sociology", "history", "psychology", "philosophy", "art history",
+    "political science", "literature", "cultural studies", "anthropology",
+    "archaeology", "linguistics", "communication studies", "media studies",
+    "law", "international relations", "migration", "identity",
+    "gender studies", "critical theory", "discourse", "feminism",
+    "postcolonialism", "urban studies", "heritage", "democracy",
+]
+
+# SBS — School of Management (Sabancı Business School)
+_NEWS_KEYWORDS_SBS = [
+    # Turkish
+    "ekonomi", "finans", "yönetim", "pazarlama", "işletme", "girişim",
+    "strateji", "muhasebe", "liderlik", "organizasyon", "tedarik zinciri",
+    "sürdürülebilirlik", "kurumsal", "inovasyon yönetimi", "piyasa",
+    "borsa", "yatırım", "sermaye", "büyüme",
+    # English
+    "finance", "economics", "management", "marketing", "business",
+    "entrepreneurship", "strategy", "accounting", "leadership", "organization",
+    "supply chain", "sustainability", "corporate", "innovation management",
+    "market", "investment", "capital", "growth", "startup", "venture",
+    "governance", "mergers", "acquisitions",
+]
+
+# Map dept strings (lowercase substrings) to their keyword lists
+_FACULTY_KEYWORD_MAP = {
+    "fens": _NEWS_KEYWORDS_FENS,
+    "engineering": _NEWS_KEYWORDS_FENS,
+    "natural sciences": _NEWS_KEYWORDS_FENS,
+    "fass": _NEWS_KEYWORDS_FASS,
+    "arts": _NEWS_KEYWORDS_FASS,
+    "social sciences": _NEWS_KEYWORDS_FASS,
+    "sbs": _NEWS_KEYWORDS_SBS,
+    "management": _NEWS_KEYWORDS_SBS,
+    "business": _NEWS_KEYWORDS_SBS,
+}
+
+
+def _get_faculty_keywords(dept: str | None) -> list[str]:
+    """Return the faculty-specific keyword list for this dept string."""
+    if not dept:
+        return []
+    dept_lower = dept.lower()
+    for key, kws in _FACULTY_KEYWORD_MAP.items():
+        if key in dept_lower:
+            return kws
+    return []
+
+
+def _is_trusted_source(item: "NewsItem") -> bool:
+    """
+    Check trust against source_url (the real outlet domain from <source url=...>).
+    Falls back to item.url if source_url is not available.
+    """
+    check_url = (item.source_url or item.url or "").lower()
+    return any(domain in check_url for domain in _TRUSTED_NEWS_DOMAINS)
+
+
+def _article_is_academic(item: "NewsItem", faculty_keywords: list[str]) -> bool:
+    """
+    Return True only if BOTH conditions are met:
+    1. The article comes from a trusted news domain (checked via source_url).
+    2. The article title+summary contains at least one keyword from the
+       universal list OR the author's faculty-specific list.
+    Untrusted sources (e.g. bianet.org, activist blogs) are rejected outright.
+    """
+    if not _is_trusted_source(item):
+        return False
+    text = ((item.title or "") + " " + (item.summary or "")).lower()
+    all_keywords = _NEWS_KEYWORDS_UNIVERSAL + faculty_keywords
+    return any(kw in text for kw in all_keywords)
+
 @app.get("/authors/{author_id}/news", response_model=List[NewsItem])
 async def get_author_news(author_id: str):
     """
-    Return recent news articles for this author.
+    Return recent news articles for this author filtered by academic relevance.
     Feed URLs are stored in the author_news_feeds table.
     Results are fetched in real-time from each stored URL and cached for 6 hours.
+    Every article must contain at least one universal academic keyword OR a
+    faculty-specific keyword (FENS / FASS / SBS) to pass the filter.
     """
     import asyncio
 
@@ -1890,9 +2063,14 @@ async def get_author_news(author_id: str):
         if time.time() - fetched_at < _NEWS_CACHE_TTL:
             return articles
 
-    # Fetch feed URLs from DB
+    # Fetch feed URLs and author dept in one query
     feed_rows = await db.pool.fetch(
-        "SELECT feed_url FROM author_news_feeds WHERE author_id ILIKE $1 OR author_id = $2",
+        """
+        SELECT anf.feed_url, a.dept
+        FROM author_news_feeds anf
+        LEFT JOIN authors a ON a.id ILIKE $1 OR a.id = $2
+        WHERE anf.author_id ILIKE $1 OR anf.author_id = $2
+        """,
         f"%{short_id}%",
         author_id,
     )
@@ -1900,6 +2078,9 @@ async def get_author_news(author_id: str):
         return []
 
     feed_urls = [r["feed_url"] for r in feed_rows]
+    # All rows share the same author so grab dept from first row
+    dept = feed_rows[0]["dept"] if feed_rows else None
+    faculty_keywords = _get_faculty_keywords(dept)
 
     # Fetch all feeds in parallel (sync I/O → thread pool)
     loop = asyncio.get_event_loop()
@@ -1907,53 +2088,24 @@ async def get_author_news(author_id: str):
         *[loop.run_in_executor(None, _fetch_rss_url, url) for url in feed_urls]
     )
 
-    # Merge, de-duplicate by URL
+    # Merge, de-duplicate by URL, apply strict keyword filter
     seen_urls: set = set()
     all_items: list[NewsItem] = []
-
-    # General media / tabloid domains that might publish non-academic/personal news.
-    RISKY_DOMAINS = [
-        "milliyet", "sabah", "hurriyet", "sozcu", "posta", 
-        "haberturk", "ahaber", "takvim", "ensonhaber", 
-        "yeniakit", "aksam", "yenisafak"
-    ]
-
-    ACADEMIC_KEYWORDS = [
-        "araştırma", "proje", "makale", "yayın", "akademi",
-        "bilim", "konferans", "sempozyum", "laboratuvar", "burs", "tez",
-        "doktora", "patent", "teknoloji", "inovasyon", "keşif", "çalışma",
-        "ödül", "bilimsel", "öğretim", "eğitim", "fakülte", "enstitü",
-        "mühendislik", "fizik", "kimya", "biyoloji", "tıp", "matematik",
-        "sabancı üniversitesi", "research", "project", "paper", "publication", 
-        "university", "academic", "science", "conference", "symposium", 
-        "laboratory", "scholarship", "thesis", "phd", "patent", "technology", 
-        "innovation", "discovery", "study", "award", "grant", "faculty", 
-        "institute", "engineering", "professor", "journal", "peer-reviewed"
-    ]
 
     for batch in results:
         for item in batch:
             if item.url not in seen_urls:
-                is_risky = any(d in item.url for d in RISKY_DOMAINS)
-                
-                if is_risky:
-                    # If it's a risky general media site, it MUST have an academic keyword in title
-                    title_lower = (item.title or "").lower()
-                    has_keyword = any(kw in title_lower for kw in ACADEMIC_KEYWORDS)
-                    if has_keyword:
-                        seen_urls.add(item.url)
-                        all_items.append(item)
-                else:
-                    # Not a risky domain, accept automatically
+                if _article_is_academic(item, faculty_keywords):
                     seen_urls.add(item.url)
                     all_items.append(item)
 
     all_items.sort(key=lambda x: x.published_at or "", reverse=True)
-    articles = all_items  # frontend handles pagination
+    articles = all_items
 
     # Store in cache
     _news_cache[short_id] = (time.time(), articles)
     return articles
+
 
 
 if __name__ == "__main__":
