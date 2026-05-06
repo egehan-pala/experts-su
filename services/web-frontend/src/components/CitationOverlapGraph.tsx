@@ -458,99 +458,99 @@ export default function CitationOverlapGraph() {
                         boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
                     }}
                 >
-                    {loading ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '2rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⟳</div>
-                                <div>Building citation overlap network...</div>
-                                <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Analyzing shared references across all faculty publications</div>
-                                <div style={{ fontSize: '0.7rem', marginTop: '0.25rem', color: '#334155' }}>First load may take up to a minute</div>
+                        {loading ? (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '2rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⟳</div>
+                                    <div>Building citation overlap network...</div>
+                                    <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Analyzing shared references across all faculty publications</div>
+                                    <div style={{ fontSize: '0.7rem', marginTop: '0.25rem', color: '#334155' }}>First load may take up to a minute</div>
+                                </div>
                             </div>
-                        </div>
-                    ) : !graphData || graphData.nodes.length === 0 ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                            No citation overlap data available.
-                        </div>
-                    ) : (
-                        <>
-                            {/* Summary Overlay Top Right */}
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    top: 20,
-                                    right: -10,
-                                    zIndex: 10,
-                                    background: 'rgba(255, 255, 255, 0.95)',
-                                    padding: '1.5rem',
-                                    borderRadius: 12,
-                                    border: '1px solid #e2e8f0',
-                                    width: '280px',
-                                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)',
-                                    pointerEvents: 'none'
-                                }}
-                            >
-                                <h3
+                        ) : !graphData || graphData.nodes.length === 0 ? (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                                No citation overlap data available.
+                            </div>
+                        ) : (
+                            <>
+                                {/* Summary Overlay Top Right */}
+                                <div
                                     style={{
-                                        fontSize: '0.85rem',
-                                        color: '#1e293b',
-                                        fontWeight: 800,
-                                        borderBottom: '2px solid #a855f7',
-                                        paddingBottom: '0.5rem',
-                                        fontFamily: 'var(--font-heading)',
-                                        margin: '0 0 1rem 0'
+                                        position: 'absolute',
+                                        top: 20,
+                                        right: -10,
+                                        zIndex: 2,
+                                        background: 'rgba(255, 255, 255, 0.95)',
+                                        padding: '1.5rem',
+                                        borderRadius: 12,
+                                        border: '1px solid #e2e8f0',
+                                        width: '280px',
+                                        boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)',
+                                        pointerEvents: 'none'
                                     }}
                                 >
-                                    CITATION OVERLAP SUMMARY
-                                </h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    <div>
-                                        <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Total Faculty
-                                        </div>
-                                        <div style={{ color: '#a855f7', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                                            {totalStats.total}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Intellectual Links
-                                        </div>
-                                        <div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                                            {totalStats.links.toLocaleString()}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Total Shared Citations
-                                        </div>
-                                        <div style={{ color: '#f59e0b', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                                            {totalStats.totalSharedCitations.toLocaleString()}
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '1rem' }}>
+                                    <h3
+                                        style={{
+                                            fontSize: '0.85rem',
+                                            color: '#1e293b',
+                                            fontWeight: 800,
+                                            borderBottom: '2px solid #a855f7',
+                                            paddingBottom: '0.5rem',
+                                            fontFamily: 'var(--font-heading)',
+                                            margin: '0 0 1rem 0'
+                                        }}
+                                    >
+                                        CITATION OVERLAP SUMMARY
+                                    </h3>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                         <div>
-                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FENS</div>
-                                            <div style={{ color: getDeptColor('FENS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fens}</div>
+                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
+                                                Total Faculty
+                                            </div>
+                                            <div style={{ color: '#a855f7', fontSize: '1.25rem', fontWeight: 'bold' }}>
+                                                {totalStats.total}
+                                            </div>
                                         </div>
                                         <div>
-                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FASS</div>
-                                            <div style={{ color: getDeptColor('FASS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fass}</div>
+                                            <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
+                                                Intellectual Links
+                                            </div>
+                                            <div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                                                {totalStats.links.toLocaleString()}
+                                            </div>
                                         </div>
                                         <div>
-                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>SBS</div>
-                                            <div style={{ color: getDeptColor('SBS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.sbs}</div>
+                                            <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
+                                                Total Shared Citations
+                                            </div>
+                                            <div style={{ color: '#f59e0b', fontSize: '1.1rem', fontWeight: 'bold' }}>
+                                                {totalStats.totalSharedCitations.toLocaleString()}
+                                            </div>
+                                        </div>
+                                        <div style={{ display: 'flex', gap: '1rem' }}>
+                                            <div>
+                                                <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FENS</div>
+                                                <div style={{ color: getDeptColor('FENS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fens}</div>
+                                            </div>
+                                            <div>
+                                                <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FASS</div>
+                                                <div style={{ color: getDeptColor('FASS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fass}</div>
+                                            </div>
+                                            <div>
+                                                <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>SBS</div>
+                                                <div style={{ color: getDeptColor('SBS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.sbs}</div>
+                                            </div>
                                         </div>
                                     </div>
                                 </div>
-                            </div>
 
-                            {/* Node Hover Box */}
+                                {/* Node Hover Box */}
                             <div
                                 style={{
                                     position: 'absolute',
                                     top: 280,
                                     right: 20,
-                                    zIndex: 10,
+                                    zIndex: 2,
                                     background: 'rgba(255, 255, 255, 0.95)',
                                     padding: '1rem',
                                     borderRadius: 12,
@@ -676,6 +676,47 @@ export default function CitationOverlapGraph() {
                                     <span>Hover for profile info</span>
                                 </div>
                             </div>
+
+                            {/* Recenter Button */}
+                            <button
+                                onClick={() => {
+                                    try {
+                                        fgRef.current?.zoomToFit(400, 80);
+                                    } catch { }
+                                }}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: 15,
+                                    right: 15,
+                                    zIndex: 2,
+                                    background: 'rgba(255, 255, 255, 0.95)',
+                                    padding: '0.6rem 1rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid #e2e8f0',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    color: '#0f172a',
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.1)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 6px 12px rgb(0 0 0 / 0.15)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = '0 4px 6px rgb(0 0 0 / 0.1)';
+                                }}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                </svg>
+                                Recenter Network
+                            </button>
                         </>
                     )}
                 </div>

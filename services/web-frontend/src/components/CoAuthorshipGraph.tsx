@@ -676,7 +676,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 position: 'absolute',
                                 top: 20,
                                 right: -10,
-                                zIndex: 10,
+                                zIndex: 2,
                                 background: 'rgba(15, 23, 42, 0.95)',
                                 padding: '1.5rem',
                                 borderRadius: 12,
@@ -780,7 +780,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 position: 'absolute',
                                 top: 20,
                                 right: 300,
-                                zIndex: 10,
+                                zIndex: 2,
                                 background: 'rgba(15, 23, 42, 0.95)',
                                 padding: '1rem',
                                 borderRadius: 12,
@@ -848,8 +848,9 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 linkDirectionalParticleWidth={2}
                                 linkDirectionalParticleSpeed={0.005}
                             />
+                        </div>
 
-                            {/* Legend */}
+                        {/* Legend */}
                             <div
                                 style={{
                                     position: 'absolute',
@@ -908,8 +909,48 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                     Clusters are compacted for readability
                                 </div>
                             </div>
+                            
+                            {/* Recenter Button */}
+                            <button
+                                onClick={() => {
+                                    try {
+                                        fgRef.current?.zoomToFit(400, 80);
+                                    } catch { }
+                                }}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: 15,
+                                    right: 15,
+                                    zIndex: 2,
+                                    background: 'rgba(15, 23, 42, 0.95)',
+                                    padding: '0.6rem 1rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid #334155',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    color: '#f8fafc',
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.1)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 6px 12px rgb(0 0 0 / 0.15)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = '0 4px 6px rgb(0 0 0 / 0.1)';
+                                }}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                </svg>
+                                Recenter Network
+                            </button>
                         </div>
-                    </div>
                 )}
             </div>
         </div>
