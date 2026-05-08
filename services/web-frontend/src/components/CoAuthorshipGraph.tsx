@@ -670,109 +670,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                             boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
                         }}
                     >
-                        {/* Summary Overlay Top Right */}
-                        <div
-                            style={{
-                                position: 'absolute',
-                                top: 20,
-                                right: -10,
-                                zIndex: 2,
-                                background: 'rgba(15, 23, 42, 0.95)',
-                                padding: '1.5rem',
-                                borderRadius: 12,
-                                border: '1px solid #334155',
-                                width: '280px',
-                                boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)',
-                                pointerEvents: 'none'
-                            }}
-                        >
-                            <h3
-                                style={{
-                                    fontSize: '0.85rem',
-                                    color: '#f8fafc',
-                                    fontWeight: 800,
-                                    borderBottom: '2px solid #3b82f6',
-                                    paddingBottom: '0.5rem',
-                                    fontFamily: 'var(--font-heading)',
-                                    margin: '0 0 1rem 0'
-                                }}
-                            >
-                                NETWORK SUMMARY
-                            </h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                <div>
-                                    <div
-                                        style={{
-                                            color: '#94a3b8',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 600,
-                                            textTransform: 'uppercase'
-                                        }}
-                                    >
-                                        Core Researcher
-                                    </div>
-                                    <div style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold' }}>
-                                        {authorName}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div
-                                        style={{
-                                            color: '#64748b',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 600,
-                                            textTransform: 'uppercase'
-                                        }}
-                                    >
-                                        Filtered Collaborators
-                                    </div>
-                                    <div style={{ color: '#3b82f6', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                                        {networkData.nodes.length}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div
-                                        style={{
-                                            color: '#64748b',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 600,
-                                            textTransform: 'uppercase'
-                                        }}
-                                    >
-                                        Total Joint Citations
-                                    </div>
-                                    <div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                                        {totalCitations.toLocaleString()}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div
-                                        style={{
-                                            color: '#94a3b8',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 600,
-                                            textTransform: 'uppercase'
-                                        }}
-                                    >
-                                        Active Period
-                                    </div>
-                                    <div style={{ color: '#f8fafc', fontSize: '1rem', fontWeight: 'bold' }}>
-                                        {yearRange.from} — {yearRange.to}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div
-                                style={{
-                                    marginTop: '1rem',
-                                    fontSize: '0.65rem',
-                                    color: '#94a3b8',
-                                    lineHeight: 1.4
-                                }}
-                            >
-                                * Central researcher is omitted.
-                            </div>
-                        </div>
+                        {/* Summary Overlay removed and moved below */}
 
                         {/* Hover Overlay */}
                         <div
@@ -951,6 +849,74 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 Recenter Network
                             </button>
                         </div>
+                )}
+
+                {/* New Summary Row Below Network */}
+                {!loading && networkData && networkData.nodes.length > 0 && (
+                    <div
+                        style={{
+                            marginTop: '1.5rem',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            background: '#0f172a',
+                            padding: '1.5rem 2rem',
+                            borderRadius: '12px',
+                            border: '1px solid #334155',
+                            flexWrap: 'wrap',
+                            gap: '1.5rem',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2)'
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '2.5rem', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Core Researcher
+                                </div>
+                                <div style={{ color: '#f8fafc', fontSize: '1.5rem', fontWeight: 'bold', lineHeight: 1.2 }}>
+                                    {authorName}
+                                </div>
+                            </div>
+                            
+                            <div style={{ width: '1px', height: '40px', background: '#334155' }} />
+                            
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Filtered Collaborators
+                                </div>
+                                <div style={{ color: '#3b82f6', fontSize: '1.5rem', fontWeight: 'bold', lineHeight: 1.2 }}>
+                                    {networkData.nodes.length}
+                                </div>
+                            </div>
+                            
+                            <div style={{ width: '1px', height: '40px', background: '#334155' }} />
+                            
+                            <div style={{ display: 'flex', gap: '2.5rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Total Joint Citations</div>
+                                    <div style={{ color: '#10b981', fontSize: '1.25rem', fontWeight: 'bold' }}>{totalCitations.toLocaleString()}</div>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Active Period</div>
+                                    <div style={{ color: '#f8fafc', fontSize: '1.25rem', fontWeight: 'bold' }}>{yearRange.from} — {yearRange.to}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ color: '#f8fafc', fontSize: '0.9rem', fontWeight: 700 }}>Network Overview</div>
+                                <div style={{ color: '#64748b', fontSize: '0.8rem' }}>* Central researcher omitted</div>
+                            </div>
+                        </div>
+                    </div>
                 )}
             </div>
         </div>
