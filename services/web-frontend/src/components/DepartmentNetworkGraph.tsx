@@ -110,26 +110,8 @@ export default function DepartmentNetworkGraph() {
     // Visible graph data
     const visibleData = useMemo(() => {
         if (!graphData) return { nodes: [], links: [] };
-        if (!activeDept) return graphData;
-
-        const deptNodeIds = new Set(graphData.nodes.filter(n => n.dept === activeDept).map(n => n.id));
-        const neighbourIds = new Set<string>();
-        for (const l of graphData.links) {
-            const s = typeof l.source === 'object' ? (l.source as GlobalNode).id : l.source;
-            const t = typeof l.target === 'object' ? (l.target as GlobalNode).id : l.target;
-            if (deptNodeIds.has(s)) neighbourIds.add(t);
-            if (deptNodeIds.has(t)) neighbourIds.add(s);
-        }
-        const allVisible = new Set([...deptNodeIds, ...neighbourIds]);
-        return {
-            nodes: graphData.nodes.filter(n => allVisible.has(n.id)),
-            links: graphData.links.filter(l => {
-                const s = typeof l.source === 'object' ? (l.source as GlobalNode).id : l.source;
-                const t = typeof l.target === 'object' ? (l.target as GlobalNode).id : l.target;
-                return allVisible.has(s) && allVisible.has(t);
-            })
-        };
-    }, [graphData, activeDept]);
+        return graphData;
+    }, [graphData]);
 
     const totalStats = useMemo(() => {
         if (!visibleData.nodes.length) return { fens: 0, fass: 0, sbs: 0, total: 0, links: 0 };
@@ -271,11 +253,25 @@ export default function DepartmentNetworkGraph() {
             return isRelated ? 'rgba(148, 163, 184, 0.95)' : 'rgba(226, 232, 240, 0.18)';
         }
 
-        // Color by department if both share the same dept
-        const s = typeof l.source === 'object' ? l.source.dept : null;
-        const t = typeof l.target === 'object' ? l.target.dept : null;
-        if (s && t && s === t) {
-            return getDeptColor(s).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(s).startsWith('#') ? '88' : '');
+        // Color by department
+        const sDept = typeof l.source === 'object' ? l.source.dept : null;
+        const tDept = typeof l.target === 'object' ? l.target.dept : null;
+
+        if (activeDept) {
+            const isSourceActive = sDept === activeDept;
+            const isTargetActive = tDept === activeDept;
+            
+            if (isSourceActive && isTargetActive) {
+                return getDeptColor(sDept).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(sDept).startsWith('#') ? '88' : '');
+            } else if (isSourceActive || isTargetActive) {
+                return 'rgba(148, 163, 184, 0.4)';
+            } else {
+                return 'rgba(226, 232, 240, 0.1)';
+            }
+        }
+
+        if (sDept && tDept && sDept === tDept) {
+            return getDeptColor(sDept).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(sDept).startsWith('#') ? '88' : '');
         }
 
         return 'rgba(148, 163, 184, 0.65)';
@@ -439,90 +435,30 @@ export default function DepartmentNetworkGraph() {
                         boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
                     }}
                 >
-                    {loading ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '2rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⟳</div>
-                                <div>Building global network...</div>
-                                <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Connecting all researchers based on shared publications</div>
-                            </div>
-                        </div>
-                    ) : !graphData || graphData.nodes.length === 0 ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                            No collaboration data available.
-                        </div>
-                    ) : (
-                        <>
-                            {/* Summary Overlay Top Right */}
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    top: 20,
-                                    right: -10,
-                                    zIndex: 10,
-                                    background: 'rgba(255, 255, 255, 0.95)',
-                                    padding: '1.5rem',
-                                    borderRadius: 12,
-                                    border: '1px solid #e2e8f0',
-                                    width: '280px',
-                                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)',
-                                    pointerEvents: 'none'
-                                }}
-                            >
-                                <h3
-                                    style={{
-                                        fontSize: '0.85rem',
-                                        color: '#1e293b',
-                                        fontWeight: 800,
-                                        borderBottom: '2px solid #3b82f6',
-                                        paddingBottom: '0.5rem',
-                                        fontFamily: 'var(--font-heading)',
-                                        margin: '0 0 1rem 0'
-                                    }}
-                                >
-                                    NETWORK SUMMARY
-                                </h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    <div>
-                                        <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Total Faculty
-                                        </div>
-                                        <div style={{ color: '#3b82f6', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                                            {totalStats.total}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Total Links
-                                        </div>
-                                        <div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                                            {totalStats.links.toLocaleString()}
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '1rem' }}>
-                                        <div>
-                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FENS</div>
-                                            <div style={{ color: getDeptColor('FENS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fens}</div>
-                                        </div>
-                                        <div>
-                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FASS</div>
-                                            <div style={{ color: getDeptColor('FASS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fass}</div>
-                                        </div>
-                                        <div>
-                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>SBS</div>
-                                            <div style={{ color: getDeptColor('SBS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.sbs}</div>
-                                        </div>
-                                    </div>
+                        {loading ? (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                                <div style={{ textAlign: 'center' }}>
+                                    <div style={{ fontSize: '2rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⟳</div>
+                                    <div>Building global network...</div>
+                                    <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Connecting all researchers based on shared publications</div>
                                 </div>
                             </div>
+                        ) : !graphData || graphData.nodes.length === 0 ? (
+                            <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                                No collaboration data available.
+                            </div>
+                        ) : (
+                            <>
+                                {/* Summary Overlay removed and moved below */}
 
-                            {/* Node Hover Box (Absolute center or follow cursor? Let's fix to right block like before) */}
+
+                                {/* Node Hover Box (Absolute center or follow cursor? Let's fix to right block like before) */}
                             <div
                                 style={{
                                     position: 'absolute',
                                     top: 250,
                                     right: 20,
-                                    zIndex: 10,
+                                    zIndex: 2,
                                     background: 'rgba(255, 255, 255, 0.95)',
                                     padding: '1rem',
                                     borderRadius: 12,
@@ -648,9 +584,122 @@ export default function DepartmentNetworkGraph() {
                                     <span>Hover for profile info</span>
                                 </div>
                             </div>
+
+                            {/* Recenter Button */}
+                            <button
+                                onClick={() => {
+                                    try {
+                                        fgRef.current?.zoomToFit(400, 80);
+                                    } catch { }
+                                }}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: 15,
+                                    right: 15,
+                                    zIndex: 2,
+                                    background: 'rgba(255, 255, 255, 0.95)',
+                                    padding: '0.6rem 1rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid #e2e8f0',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    color: '#0f172a',
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.1)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 6px 12px rgb(0 0 0 / 0.15)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = '0 4px 6px rgb(0 0 0 / 0.1)';
+                                }}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                </svg>
+                                Recenter Network
+                            </button>
                         </>
                     )}
                 </div>
+
+                {/* New Summary Row Below Network */}
+                {!loading && graphData && graphData.nodes.length > 0 && (
+                    <div
+                        style={{
+                            marginTop: '1.5rem',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            background: '#f8fafc',
+                            padding: '1.5rem 2rem',
+                            borderRadius: '12px',
+                            border: '1px solid #e2e8f0',
+                            flexWrap: 'wrap',
+                            gap: '1.5rem',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)'
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '2.5rem', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Total Faculty
+                                </div>
+                                <div style={{ color: '#3b82f6', fontSize: '1.75rem', fontWeight: 'bold', lineHeight: 1.2 }}>
+                                    {totalStats.total}
+                                </div>
+                            </div>
+                            
+                            <div style={{ width: '1px', height: '40px', background: '#e2e8f0' }} />
+                            
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Total Links
+                                </div>
+                                <div style={{ color: '#10b981', fontSize: '1.5rem', fontWeight: 'bold', lineHeight: 1.2 }}>
+                                    {totalStats.links.toLocaleString()}
+                                </div>
+                            </div>
+                            
+                            <div style={{ width: '1px', height: '40px', background: '#e2e8f0' }} />
+                            
+                            <div style={{ display: 'flex', gap: '2rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>FENS</div>
+                                    <div style={{ color: getDeptColor('FENS'), fontSize: '1.25rem', fontWeight: 'bold' }}>{totalStats.fens}</div>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>FASS</div>
+                                    <div style={{ color: getDeptColor('FASS'), fontSize: '1.25rem', fontWeight: 'bold' }}>{totalStats.fass}</div>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>SBS</div>
+                                    <div style={{ color: getDeptColor('SBS'), fontSize: '1.25rem', fontWeight: 'bold' }}>{totalStats.sbs}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ color: '#1e293b', fontSize: '0.9rem', fontWeight: 700 }}>Network Overview</div>
+                                <div style={{ color: '#64748b', fontSize: '0.8rem' }}>Global collaboration metrics</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );
