@@ -240,6 +240,18 @@ export default function CitationOverlapGraph() {
         return counts;
     }, [visibleData]);
 
+    const topAuthors = useMemo(() => {
+        if (!visibleData.nodes.length) return [];
+        const sorted = [...visibleData.nodes].sort((a, b) => {
+            const countA = nodeSharedCitations[a.id] || 0;
+            const countB = nodeSharedCitations[b.id] || 0;
+            return countB - countA;
+        });
+        return sorted.slice(0, 12);
+    }, [visibleData.nodes, nodeSharedCitations]);
+
+    const maxAuthorCount = topAuthors.length > 0 ? (nodeSharedCitations[topAuthors[0].id] || 1) : 1;
+
     // Dual search derived values
     const hasPathSearch = searchQuery1.length > 0 && searchQuery2.length > 0;
     const singleSearchQuery = hasPathSearch ? '' : (searchQuery1 || searchQuery2);
@@ -256,11 +268,11 @@ export default function CitationOverlapGraph() {
 
         fg.d3Force('link', d3Force.forceLink()
             .id((d: any) => d.id)
-            .distance(120)
-            .strength(0.4)
+            .distance(300)
+            .strength(0.3)
         );
-        fg.d3Force('charge', d3Force.forceManyBody().strength(-120));
-        fg.d3Force('collide', d3Force.forceCollide().radius(14).strength(0.8));
+        fg.d3Force('charge', d3Force.forceManyBody().strength(-800));
+        fg.d3Force('collide', d3Force.forceCollide().radius(50).strength(0.8));
         fg.d3Force('center', d3Force.forceCenter(0, 0));
         fg.d3Force('gravityX', d3Force.forceX(0).strength(0.06));
         fg.d3Force('gravityY', d3Force.forceY(0).strength(0.06));
@@ -287,7 +299,7 @@ export default function CitationOverlapGraph() {
             else if (hasSearch) alpha = isMatch ? 1 : 0.08;
             else if (isDeptFiltered && !isDeptNode) alpha = 0.3;
 
-            const radius = isHovered ? 7 / globalScale : (isOnPath ? 6.5 / globalScale : 5 / globalScale);
+            const radius = isHovered ? 7 : (isOnPath ? 6.5 : 5);
             const clusterColor = getDeptColor(node.dept);
             const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
             const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
@@ -298,15 +310,16 @@ export default function CitationOverlapGraph() {
             ctx.fillStyle = fillColor;
             ctx.fill();
 
-            const borderW = isHovered ? 2.5 / globalScale : (isMatch ? 2.0 / globalScale : 1.2 / globalScale);
+            const borderW = isHovered ? 2.5 : (isMatch ? 2.0 : 1.2);
             ctx.lineWidth = borderW;
             ctx.strokeStyle = borderColor;
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            if (isHovered || isMatch || isOnPath) {
+            const showLabel = alpha > 0.1;
+            if (showLabel) {
                 const label = node.name;
-                const fontSize = 12 / globalScale;
+                const fontSize = 5;
 
                 ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
                 ctx.textAlign = 'center';
@@ -315,19 +328,31 @@ export default function CitationOverlapGraph() {
                 const textX = node.x || 0;
                 const textY = (node.y || 0) + radius + 4;
                 const metrics = ctx.measureText(label);
-                const paddingX = 4 / globalScale;
-                const paddingY = 2 / globalScale;
+                const paddingX = 4;
+                const paddingY = 2;
                 const textHeight = fontSize + paddingY * 2;
 
-                ctx.fillStyle = 'rgba(255,255,255,0.92)';
-                ctx.fillRect(
-                    textX - metrics.width / 2 - paddingX,
-                    textY - paddingY,
-                    metrics.width + paddingX * 2,
-                    textHeight
-                );
+                if (isHovered || isMatch || isOnPath) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+                    ctx.fillRect(
+                        textX - metrics.width / 2 - paddingX,
+                        textY - paddingY,
+                        metrics.width + paddingX * 2,
+                        textHeight
+                    );
+                    ctx.fillStyle = '#0f172a';
+                } else {
+                    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                    ctx.fillRect(
+                        textX - metrics.width / 2 - paddingX,
+                        textY - paddingY,
+                        metrics.width + paddingX * 2,
+                        textHeight
+                    );
+                    ctx.fillStyle = '#475569';
+                }
 
-                ctx.fillStyle = '#0f172a';
+                ctx.globalAlpha = alpha;
                 ctx.fillText(label, textX, textY);
             }
         },
@@ -761,6 +786,107 @@ export default function CitationOverlapGraph() {
                         </>
                     )}
                 </div>
+
+                {/* Top Connected Faculty Table */}
+                {!loading && graphData && graphData.nodes.length > 0 && (
+                    <div style={{
+                        marginTop: '1.5rem',
+                        backgroundColor: '#f8fafc',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        overflow: 'hidden',
+                    }}>
+                        <div style={{
+                            padding: '0.75rem 1rem',
+                            borderBottom: '1px solid #e2e8f0',
+                            backgroundColor: '#f1f5f9',
+                        }}>
+                            <h3 style={{
+                                fontSize: '0.85rem',
+                                fontWeight: 700,
+                                color: '#334155',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                margin: 0,
+                            }}>
+                                Top Connected Faculty (Shared Citations)
+                            </h3>
+                        </div>
+                        <div style={{ padding: '0.5rem 0' }}>
+                            {topAuthors.map((author, idx) => {
+                                const count = nodeSharedCitations[author.id] || 0;
+                                const barWidth = Math.max(4, (count / maxAuthorCount) * 100);
+                                return (
+                                    <div
+                                        key={author.id}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            padding: '0.4rem 1rem',
+                                            gap: '0.75rem',
+                                            transition: 'background 0.15s',
+                                            cursor: 'pointer',
+                                        }}
+                                        onMouseOver={(e) => {
+                                            e.currentTarget.style.backgroundColor = '#faf5ff';
+                                        }}
+                                        onMouseOut={(e) => {
+                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                        }}
+                                        onClick={() => router.push(`/authors/${author.id}`)}
+                                    >
+                                        <span style={{
+                                            fontSize: '0.7rem',
+                                            color: '#94a3b8',
+                                            fontWeight: 600,
+                                            width: '1.5rem',
+                                            textAlign: 'right',
+                                        }}>
+                                            {idx + 1}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            color: '#1e293b',
+                                            fontWeight: 600,
+                                            width: '200px',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                        }}>
+                                            {author.name}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '0.7rem',
+                                            color: getDeptColor(author.dept),
+                                            fontWeight: 700,
+                                            width: '3rem',
+                                        }}>
+                                            {author.dept || ''}
+                                        </span>
+                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                width: `${barWidth}%`,
+                                                height: '100%',
+                                                backgroundColor: '#a855f7',
+                                                borderRadius: '3px',
+                                                transition: 'width 0.6s ease',
+                                            }} />
+                                        </div>
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            color: '#a855f7',
+                                            fontWeight: 700,
+                                            minWidth: '3rem',
+                                            textAlign: 'right',
+                                        }}>
+                                            {count}
+                                        </span>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    </div>
+                )}
             </div>
         </div>
     );

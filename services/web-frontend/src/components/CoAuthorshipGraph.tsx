@@ -246,12 +246,20 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
             return { minPapers: 0, maxPapers: 0 };
         }
 
-        const papers = networkData.links.map(l => l.value);
+        const linkPapers = networkData.links.map(l => l.value);
         return {
-            minPapers: Math.min(...papers),
-            maxPapers: Math.max(...papers)
+            minPapers: Math.min(...linkPapers),
+            maxPapers: Math.max(...linkPapers)
         };
     }, [networkData]);
+
+    const topAuthors = useMemo(() => {
+        if (!networkData?.nodes?.length) return [];
+        const sorted = [...networkData.nodes].sort((a, b) => (b.joint_papers || 0) - (a.joint_papers || 0));
+        return sorted.slice(0, 12);
+    }, [networkData]);
+
+    const maxAuthorCount = topAuthors.length > 0 ? (topAuthors[0].joint_papers || 1) : 1;
 
     // Dual search derived values
     const hasPathSearch = searchQuery1.length > 0 && searchQuery2.length > 0;
@@ -280,8 +288,8 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
             return centers;
         }
 
-        // Small ring so all components stay visually close, like Rankless
-        const ringRadius = Math.max(30, Math.min(70, clusterIds.length * 10));
+        // Larger ring so components can spread out without overlapping
+        const ringRadius = Math.max(150, clusterIds.length * 50);
 
         clusterIds.forEach((cid, i) => {
             const angle = (i / clusterIds.length) * Math.PI * 2;
@@ -308,11 +316,11 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                 .id((d: any) => d.id)
                 .distance((link: any) => {
                     const w = link.value || 1;
-                    if (w >= 6) return 7;
-                    if (w >= 4) return 8;
-                    if (w >= 3) return 9;
-                    if (w === 2) return 11;
-                    return 13;
+                    if (w >= 6) return 120;
+                    if (w >= 4) return 160;
+                    if (w >= 3) return 200;
+                    if (w === 2) return 250;
+                    return 300;
                 })
                 .strength((link: any) => {
                     const w = link.value || 1;
@@ -327,13 +335,13 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         // Low repulsion so clusters do not push away too much
         fg.d3Force(
             'charge',
-            d3Force.forceManyBody().strength(-10)
+            d3Force.forceManyBody().strength(-1500)
         );
 
         // Small collision so nodes don't overlap but can stay tightly packed
         fg.d3Force(
             'collide',
-            d3Force.forceCollide().radius(5.5).strength(0.95)
+            d3Force.forceCollide().radius(45).strength(0.95)
         );
 
         // Global center
@@ -351,8 +359,9 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
             // Let's use the nodes reachable via the fg instance.
             for (const node of networkData.nodes as any[]) {
                 const target = clusterCenters.get(node.cluster_id) || { x: 0, y: 0 };
-                node.vx += (target.x - (node.x || 0)) * 0.20 * alpha;
-                node.vy += (target.y - (node.y || 0)) * 0.20 * alpha;
+                // Gentle pull so nodes can still repel each other
+                node.vx += (target.x - (node.x || 0)) * 0.05 * alpha;
+                node.vy += (target.y - (node.y || 0)) * 0.05 * alpha;
             }
         });
 
@@ -382,8 +391,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
 
             const alpha = pathData ? (isOnPath ? 1 : 0.08) : (hasActiveSearch ? (isMatch ? 1 : 0.12) : 1);
 
-            // Slightly stable screen-space radius
-            const radius = isOnPath ? 5.5 / globalScale : 4.5 / globalScale;
+            const radius = isOnPath ? 7.5 : 5;
 
             // Use cluster color when available, otherwise default blue
             const clusterColor =
@@ -400,31 +408,30 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
 
             // Border width can still hint at center-joint paper count
             const borderW = isHovered
-                ? 2.5 / globalScale
-                : logScale(node.joint_papers, bounds.minPapers, bounds.maxPapers, 1.2, 2.4) / globalScale;
+                ? 2.5
+                : logScale(node.joint_papers, bounds.minPapers, bounds.maxPapers, 1.2, 2.4);
 
             ctx.lineWidth = borderW;
             ctx.strokeStyle = borderColor;
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            const showLabel = isHovered || isMatch || isOnPath;
-            if (showLabel) {
-                const label = node.name;
-                const fontSize = 12 / globalScale;
+            const label = node.name;
+            const fontSize = 5;
 
-                ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
+            ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
 
-                // soft white background for readability
-                const textX = node.x || 0;
-                const textY = (node.y || 0) + radius + 4;
-                const metrics = ctx.measureText(label);
-                const paddingX = 4 / globalScale;
-                const paddingY = 2 / globalScale;
-                const textHeight = fontSize + paddingY * 2;
+            // soft white background for readability
+            const textX = node.x || 0;
+            const textY = (node.y || 0) + radius + 4;
+            const metrics = ctx.measureText(label);
+            const paddingX = 4;
+            const paddingY = 2;
+            const textHeight = fontSize + paddingY * 2;
 
+            if (isHovered || isMatch || isOnPath) {
                 ctx.fillStyle = 'rgba(255,255,255,0.92)';
                 ctx.fillRect(
                     textX - metrics.width / 2 - paddingX,
@@ -432,10 +439,20 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                     metrics.width + paddingX * 2,
                     textHeight
                 );
-
                 ctx.fillStyle = '#0f172a';
-                ctx.fillText(label, textX, textY);
+            } else {
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.fillRect(
+                    textX - metrics.width / 2 - paddingX,
+                    textY - paddingY,
+                    metrics.width + paddingX * 2,
+                    textHeight
+                );
+                ctx.fillStyle = '#475569';
             }
+
+            ctx.globalAlpha = alpha;
+            ctx.fillText(label, textX, textY);
         },
         [hoveredNode, singleSearchQuery, bounds, pathData]
     );
@@ -870,7 +887,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 }}
                                 nodeCanvasObject={nodeCanvasObject}
                                 nodePointerAreaPaint={(node: any, color, ctx, globalScale) => {
-                                    const radius = 6 / globalScale;
+                                    const radius = 6;
                                     ctx.fillStyle = color;
                                     ctx.beginPath();
                                     ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
@@ -1058,6 +1075,115 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 <div style={{ color: '#f8fafc', fontSize: '0.9rem', fontWeight: 700 }}>Network Overview</div>
                                 <div style={{ color: '#64748b', fontSize: '0.8rem' }}>* Central researcher omitted</div>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Top Connected Faculty Table */}
+                {!loading && networkData && networkData.nodes.length > 0 && (
+                    <div style={{
+                        marginTop: '1.5rem',
+                        backgroundColor: '#f8fafc',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        overflow: 'hidden',
+                    }}>
+                        <div style={{
+                            padding: '0.75rem 1rem',
+                            borderBottom: '1px solid #e2e8f0',
+                            backgroundColor: '#f1f5f9',
+                        }}>
+                            <h3 style={{
+                                fontSize: '0.85rem',
+                                fontWeight: 700,
+                                color: '#334155',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                margin: 0,
+                            }}>
+                                Top Collaborators (Joint Papers)
+                            </h3>
+                        </div>
+                        <div style={{ padding: '0.5rem 0' }}>
+                            {topAuthors.map((author, idx) => {
+                                const count = author.joint_papers || 0;
+                                const barWidth = Math.max(4, (count / maxAuthorCount) * 100);
+                                return (
+                                    <div
+                                        key={author.id}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            padding: '0.4rem 1rem',
+                                            gap: '0.75rem',
+                                            transition: 'background 0.15s',
+                                            cursor: author.is_faculty ? 'pointer' : 'default',
+                                        }}
+                                        onMouseOver={(e) => {
+                                            if (author.is_faculty) {
+                                                e.currentTarget.style.backgroundColor = '#eff6ff';
+                                            }
+                                        }}
+                                        onMouseOut={(e) => {
+                                            if (author.is_faculty) {
+                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                            }
+                                        }}
+                                        onClick={() => {
+                                            if (author.is_faculty) {
+                                                router.push(`/authors/${author.id}`);
+                                            }
+                                        }}
+                                    >
+                                        <span style={{
+                                            fontSize: '0.7rem',
+                                            color: '#94a3b8',
+                                            fontWeight: 600,
+                                            width: '1.5rem',
+                                            textAlign: 'right',
+                                        }}>
+                                            {idx + 1}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            color: '#1e293b',
+                                            fontWeight: 600,
+                                            width: '200px',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                        }}>
+                                            {author.name}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '0.7rem',
+                                            color: author.is_faculty ? '#3b82f6' : '#94a3b8',
+                                            fontWeight: 700,
+                                            width: '3rem',
+                                        }}>
+                                            {author.is_faculty ? 'Faculty' : 'External'}
+                                        </span>
+                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                width: `${barWidth}%`,
+                                                height: '100%',
+                                                backgroundColor: '#3b82f6',
+                                                borderRadius: '3px',
+                                                transition: 'width 0.6s ease',
+                                            }} />
+                                        </div>
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            color: '#3b82f6',
+                                            fontWeight: 700,
+                                            minWidth: '2rem',
+                                            textAlign: 'right',
+                                        }}>
+                                            {count}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 )}

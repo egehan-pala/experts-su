@@ -379,7 +379,7 @@ async def get_all_sdgs_stats():
             FROM authors a
             JOIN author_publications ap ON a.id = ap.author_id
             JOIN publications p ON ap.publication_id = p.id
-            WHERE p.sdgs_json ILIKE $1 AND a.is_faculty = TRUE
+            WHERE p.sdgs_json::text ILIKE $1 AND a.is_faculty = TRUE
         """
         row = await db.pool.fetchrow(query, sdg_pattern)
         return SDGStat(id=i, authors_count=row['acount'], pubs_count=row['pcount'])
@@ -402,7 +402,7 @@ async def get_sdg_experts(sdg_id: int):
         FROM authors a
         JOIN author_publications ap ON a.id = ap.author_id
         JOIN publications p ON ap.publication_id = p.id
-        WHERE p.sdgs_json ILIKE $1 AND a.is_faculty = TRUE
+        WHERE p.sdgs_json::text ILIKE $1 AND a.is_faculty = TRUE
         GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone
         ORDER BY relevant_pubs DESC, total_citations DESC
         LIMIT 20
@@ -1771,89 +1771,100 @@ class GlobalCollaborationResponse(BaseModel):
     total_countries: int
     countries: List[GlobalCollaborationCountry]
 
-_global_collab_cache: Optional[GlobalCollaborationResponse] = None
+from typing import Tuple, Dict, Set, Any
+_raw_global_collab_cache: Optional[Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Set[str]]]] = None
 
 @app.get("/network/global-collaborations", response_model=GlobalCollaborationResponse)
-async def get_global_collaborations():
-    """Get aggregated collaboration countries for ALL faculty members (last 5 years).
-
-    For each faculty member, queries OpenAlex for co-author institution countries
-    from the last 5 years, then aggregates across the entire university.
-    count = number of distinct faculty members who have collaborators in that country.
+async def get_global_collaborations(
+    dept: Optional[str] = Query(None, description="Filter by department (e.g., FENS, FASS, SBS)"),
+    author_name: Optional[str] = Query(None, description="Filter by author name")
+):
+    """Get aggregated collaboration countries for faculty members (last 5 years).
+    Filters by dept and author_name instantly using an in-memory raw cache.
     """
-    global _global_collab_cache
+    global _raw_global_collab_cache
     import httpx
     import datetime
-    from collections import Counter, defaultdict
+    from collections import defaultdict
 
-    if _global_collab_cache is not None:
-        return _global_collab_cache
+    if _raw_global_collab_cache is None:
+        # 1. Fetch all faculty with OpenAlex IDs
+        faculty_rows = await db.pool.fetch(
+            "SELECT id, name, dept FROM authors WHERE is_faculty = TRUE AND dept IS NOT NULL"
+        )
 
-    # 1. Fetch all faculty with OpenAlex IDs
-    faculty_rows = await db.pool.fetch(
-        "SELECT id, name FROM authors WHERE is_faculty = TRUE AND dept IS NOT NULL"
-    )
+        since_year = datetime.datetime.now().year - 5
+        countries_faculty_map: dict[str, list[dict]] = defaultdict(list)
+        country_names_map: dict[str, set[str]] = defaultdict(set)
 
-    since_year = datetime.datetime.now().year - 5
-    country_faculty_count: dict[str, set[str]] = defaultdict(set)  # country_code -> set of faculty_ids
-    country_names_map: dict[str, set[str]] = defaultdict(set)  # country_code -> set of display names
+        # 2. For each faculty member, query OpenAlex for their works' co-author countries
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            for fac in faculty_rows:
+                fac_id = fac['id']
+                fac_name = fac['name']
+                fac_dept = fac['dept']
+                
+                alex_id = fac_id if fac_id.startswith('A') else f"A{fac_id}"
+                if not alex_id.startswith('https://openalex.org/'):
+                    alex_id = f"https://openalex.org/{alex_id}"
 
-    # 2. For each faculty member, query OpenAlex for their works' co-author countries
-    async with httpx.AsyncClient(timeout=20.0) as client:
-        for fac in faculty_rows:
-            fac_id = fac['id']
-            # Build OpenAlex author ID
-            alex_id = fac_id if fac_id.startswith('A') else f"A{fac_id}"
-            if not alex_id.startswith('https://openalex.org/'):
-                alex_id = f"https://openalex.org/{alex_id}"
+                filter_str = f"author.id:{alex_id},from_publication_date:{since_year}-01-01"
+                url = f"https://api.openalex.org/works?filter={filter_str}&group_by=authorships.countries"
 
-            filter_str = f"author.id:{alex_id},from_publication_date:{since_year}-01-01"
-            url = f"https://api.openalex.org/works?filter={filter_str}&group_by=authorships.countries"
+                try:
+                    resp = await client.get(url)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for group in data.get('group_by', []):
+                            cc = group['key'].split('/')[-1].upper()
+                            display_name = group.get('key_display_name', cc)
 
-            try:
-                resp = await client.get(url)
-                if resp.status_code == 200:
-                    data = resp.json()
-                    for group in data.get('group_by', []):
-                        cc = group['key'].split('/')[-1].upper()
-                        display_name = group.get('key_display_name', cc)
+                            if cc == 'TR':
+                                continue
 
-                        # Skip Turkey (home country) — we'll add the marker separately
-                        if cc == 'TR':
-                            continue
+                            countries_faculty_map[cc].append({'id': fac_id, 'name': fac_name, 'dept': fac_dept})
+                            if display_name and display_name != cc:
+                                country_names_map[cc].add(display_name)
+                    elif resp.status_code == 429:
+                        import asyncio
+                        await asyncio.sleep(1)
+                except Exception as e:
+                    print(f"GlobalCollab: error for {fac_name}: {e}")
+                    continue
+                    
+        _raw_global_collab_cache = (countries_faculty_map, country_names_map)
 
-                        country_faculty_count[cc].add(fac_id)
-                        if display_name and display_name != cc:
-                            country_names_map[cc].add(display_name)
-                elif resp.status_code == 429:
-                    # Rate limited — wait and retry
-                    import asyncio
-                    await asyncio.sleep(1)
-            except Exception as e:
-                print(f"GlobalCollab: error for {fac['name']}: {e}")
-                continue
-
-    # 3. Build response
-    countries = []
+    # 3. Filter the cached raw data
+    countries_faculty_map, country_names_map = _raw_global_collab_cache
+    filtered_countries = []
     total_collabs = 0
-    for cc, fac_set in country_faculty_count.items():
-        count = len(fac_set)
-        total_collabs += count
-        countries.append(GlobalCollaborationCountry(
-            code=cc,
-            count=count,
-            names=list(country_names_map.get(cc, []))
-        ))
 
-    countries.sort(key=lambda x: x.count, reverse=True)
+    for cc, faculty_list in countries_faculty_map.items():
+        # Apply filters
+        matched_faculty = []
+        for fac in faculty_list:
+            if dept and fac['dept'] != dept:
+                continue
+            if author_name and author_name.lower() not in fac['name'].lower():
+                continue
+            matched_faculty.append(fac)
+            
+        count = len(matched_faculty)
+        if count > 0:
+            total_collabs += count
+            filtered_countries.append(GlobalCollaborationCountry(
+                code=cc,
+                count=count,
+                names=list(country_names_map.get(cc, []))
+            ))
 
-    result = GlobalCollaborationResponse(
+    filtered_countries.sort(key=lambda x: x.count, reverse=True)
+
+    return GlobalCollaborationResponse(
         total_collaborations=total_collabs,
-        total_countries=len(countries),
-        countries=countries
+        total_countries=len(filtered_countries),
+        countries=filtered_countries
     )
-    _global_collab_cache = result
-    return result
 
 
 # ─────────────────────────────────────────
