@@ -116,7 +116,7 @@ export default function WorldCollaborationMap() {
         console.error('Failed to fetch global collaborations:', err);
         setError(true);
         setLoading(false);
-      });
+    });
   }, [retryCount]);
 
   const maxCount = useMemo(() => {
@@ -124,18 +124,26 @@ export default function WorldCollaborationMap() {
     return Math.max(...data.map(d => d.count));
   }, [data]);
 
-  // Compute marker radius using sqrt scale for better visual balance
-  const getMarkerRadius = (count: number) => {
-    const minR = 3;
-    const maxR = 18;
+  // Compute marker opacity based on collaboration count to prevent overlapping sizes
+  const getMarkerOpacity = (count: number) => {
+    const minOpacity = 0.15;
+    const maxOpacity = 0.95;
     const ratio = Math.sqrt(count) / Math.sqrt(maxCount);
-    return minR + ratio * (maxR - minR);
+    return minOpacity + ratio * (maxOpacity - minOpacity);
+  };
+
+  const getMarkerRadius = (count: number) => {
+    const minRadius = 5;
+    const maxRadius = 16;
+    const ratio = Math.sqrt(count) / Math.sqrt(maxCount);
+    return minRadius + ratio * (maxRadius - minRadius);
   };
 
   if (loading) {
     return (
       <div style={{
-        maxWidth: '1200px',
+        maxWidth: '100%',
+        width: '100%',
         margin: '0 auto',
         padding: '2rem 1rem',
       }}>
@@ -183,7 +191,8 @@ export default function WorldCollaborationMap() {
   if (error || !data.length) {
     return (
       <div style={{
-        maxWidth: '1200px',
+        maxWidth: '100%',
+        width: '100%',
         margin: '0 auto',
         padding: '2rem 1rem',
       }}>
@@ -234,29 +243,36 @@ export default function WorldCollaborationMap() {
 
   return (
     <div style={{
-      maxWidth: '1200px',
+      maxWidth: '100%',
+      width: '100%',
       margin: '0 auto',
       padding: '0 1rem',
     }}>
       {/* Header */}
-      <h2 style={{
-        fontSize: '1.35rem',
-        fontWeight: 400,
-        color: '#1f2937',
-        marginBottom: '0.25rem',
-        fontFamily: 'var(--font-sans)',
+      <header style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'flex-start',
+          marginBottom: '1rem',
+          flexWrap: 'wrap',
+          gap: '1rem'
       }}>
-        Collaborations and top research areas from the last five years
-      </h2>
-      <p style={{
-        fontSize: '0.85rem',
-        color: '#6b7280',
-        marginBottom: '1.5rem',
-      }}>
-        Click dots to bring up details or hover to see country information.
-        Showing collaborations across <strong>{totalCountries}</strong> countries.
-      </p>
-
+          <div>
+              <h2 style={{
+                fontSize: '1.35rem',
+                fontWeight: 400,
+                color: '#1f2937',
+                marginBottom: '0.25rem',
+                fontFamily: 'var(--font-sans)',
+              }}>
+                Collaborations and top research areas from the last five years
+              </h2>
+              <p style={{ fontSize: '0.85rem', color: '#6b7280', margin: 0 }}>
+                Click dots to bring up details or hover to see country information.
+                Showing collaborations across <strong>{totalCountries}</strong> countries.
+              </p>
+          </div>
+      </header>
       {/* Summary Stats Row */}
       <div style={{
         display: 'flex',
@@ -323,14 +339,16 @@ export default function WorldCollaborationMap() {
         overflow: 'hidden',
         position: 'relative',
         boxShadow: '0 1px 3px rgba(0,0,0,0.08)',
+        width: '100%',
+        minHeight: '750px',
       }}>
         <ComposableMap
           projectionConfig={{
-            scale: 150,
+            scale: 280,
             center: [15, 20],
           }}
-          width={900}
-          height={440}
+          width={1600}
+          height={800}
           style={{ width: '100%', height: 'auto', display: 'block' }}
         >
           <ZoomableGroup>
@@ -358,6 +376,7 @@ export default function WorldCollaborationMap() {
             {data.map((country) => {
               const coords = COUNTRY_CENTROIDS[country.code];
               if (!coords) return null;
+              const opacity = getMarkerOpacity(country.count);
               const r = getMarkerRadius(country.count);
               return (
                 <Marker
@@ -378,19 +397,19 @@ export default function WorldCollaborationMap() {
                 >
                   <circle
                     r={r}
-                    fill="rgba(59, 130, 246, 0.7)"
-                    stroke="rgba(59, 130, 246, 0.9)"
+                    fill={`rgba(37, 99, 235, ${opacity})`}
+                    stroke={`rgba(37, 99, 235, ${Math.min(opacity + 0.2, 1)})`}
                     strokeWidth={1}
                     style={{
                       cursor: 'pointer',
                       transition: 'all 0.3s ease',
                     }}
                     onMouseOver={(e) => {
-                      (e.target as SVGCircleElement).setAttribute('fill', 'rgba(37, 99, 235, 0.85)');
-                      (e.target as SVGCircleElement).setAttribute('r', String(r * 1.2));
+                      (e.target as SVGCircleElement).setAttribute('fill', 'rgba(29, 78, 216, 1)');
+                      (e.target as SVGCircleElement).setAttribute('r', String(r * 1.5));
                     }}
                     onMouseOut={(e) => {
-                      (e.target as SVGCircleElement).setAttribute('fill', 'rgba(59, 130, 246, 0.7)');
+                      (e.target as SVGCircleElement).setAttribute('fill', `rgba(37, 99, 235, ${opacity})`);
                       (e.target as SVGCircleElement).setAttribute('r', String(r));
                     }}
                   />
@@ -502,8 +521,8 @@ export default function WorldCollaborationMap() {
         flexWrap: 'wrap',
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-          <svg width="12" height="12"><circle cx="6" cy="6" r="5" fill="rgba(59, 130, 246, 0.7)" stroke="rgba(59, 130, 246, 0.9)" strokeWidth="1" /></svg>
-          <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>Collaboration partner (size ∝ faculty count)</span>
+          <svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="rgba(37, 99, 235, 0.7)" stroke="rgba(37, 99, 235, 0.9)" strokeWidth="1" /></svg>
+          <span style={{ fontSize: '0.75rem', color: '#6b7280' }}>Collaboration partner (opacity ∝ faculty count)</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
           <svg width="12" height="16" viewBox="0 0 16 21">

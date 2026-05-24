@@ -66,10 +66,65 @@ function logScale(value: number, minVal: number, maxVal: number, minScale: numbe
     return minScale + ratio * (maxScale - minScale);
 }
 
+function findShortestPath(
+    nodes: { id: string; name: string }[],
+    links: { source: any; target: any }[],
+    query1: string,
+    query2: string
+): { pathNodeIds: Set<string>; pathEdgeKeys: Set<string> } | null {
+    const q1 = query1.toLowerCase();
+    const q2 = query2.toLowerCase();
+    const startNodes = nodes.filter(n => n.name.toLowerCase().includes(q1));
+    const endNodes = nodes.filter(n => n.name.toLowerCase().includes(q2));
+    if (startNodes.length === 0 || endNodes.length === 0) return null;
+
+    const adj: Record<string, string[]> = {};
+    for (const n of nodes) adj[n.id] = [];
+    for (const l of links) {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        if (adj[s]) adj[s].push(t);
+        if (adj[t]) adj[t].push(s);
+    }
+
+    const endIds = new Set(endNodes.map(n => n.id));
+    let bestPath: string[] | null = null;
+
+    for (const startNode of startNodes) {
+        const visited = new Set<string>([startNode.id]);
+        const parent = new Map<string, string>();
+        const queue: string[] = [startNode.id];
+        let found: string | null = null;
+
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            if (endIds.has(current) && current !== startNode.id) { found = current; break; }
+            for (const nb of (adj[current] || [])) {
+                if (!visited.has(nb)) { visited.add(nb); parent.set(nb, current); queue.push(nb); }
+            }
+        }
+        if (found) {
+            const path: string[] = [];
+            let cur: string | undefined = found;
+            while (cur !== undefined) { path.unshift(cur); cur = parent.get(cur); }
+            if (!bestPath || path.length < bestPath.length) bestPath = path;
+        }
+    }
+    if (!bestPath) return null;
+
+    const pathNodeIds = new Set(bestPath);
+    const pathEdgeKeys = new Set<string>();
+    for (let i = 0; i < bestPath.length - 1; i++) {
+        pathEdgeKeys.add([bestPath[i], bestPath[i + 1]].sort().join('--'));
+    }
+    return { pathNodeIds, pathEdgeKeys };
+}
+
 export default function DepartmentNetworkGraph() {
     const [graphData, setGraphData] = useState<GlobalGraph | null>(null);
     const [loading, setLoading] = useState(true);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery1, setSearchQuery1] = useState('');
+    const [searchQuery2, setSearchQuery2] = useState('');
     const [hoveredNode, setHoveredNode] = useState<string | null>(null);
     const [activeDept, setActiveDept] = useState<string | null>(null);
 
@@ -144,6 +199,18 @@ export default function DepartmentNetworkGraph() {
         return counts;
     }, [visibleData]);
 
+    const topAuthors = useMemo(() => {
+        if (!visibleData.nodes.length) return [];
+        const sorted = [...visibleData.nodes].sort((a, b) => {
+            const countA = nodeJointPapers[a.id] || 0;
+            const countB = nodeJointPapers[b.id] || 0;
+            return countB - countA;
+        });
+        return sorted.slice(0, 12);
+    }, [visibleData.nodes, nodeJointPapers]);
+
+    const maxAuthorCount = topAuthors.length > 0 ? (nodeJointPapers[topAuthors[0].id] || 1) : 1;
+
     // Force configuration
     useEffect(() => {
         if (!fgRef.current || !visibleData?.nodes?.length) return;
@@ -151,11 +218,11 @@ export default function DepartmentNetworkGraph() {
 
         fg.d3Force('link', d3Force.forceLink()
             .id((d: any) => d.id)
-            .distance(120)
-            .strength(0.4)
+            .distance(300)
+            .strength(0.3)
         );
-        fg.d3Force('charge', d3Force.forceManyBody().strength(-120));
-        fg.d3Force('collide', d3Force.forceCollide().radius(14).strength(0.8));
+        fg.d3Force('charge', d3Force.forceManyBody().strength(-800));
+        fg.d3Force('collide', d3Force.forceCollide().radius(50).strength(0.8));
         fg.d3Force('center', d3Force.forceCenter(0, 0));
         fg.d3Force('gravityX', d3Force.forceX(0).strength(0.06));
         fg.d3Force('gravityY', d3Force.forceY(0).strength(0.06));
@@ -168,24 +235,33 @@ export default function DepartmentNetworkGraph() {
         return () => clearTimeout(t);
     }, [visibleData]);
 
+    const hasPathSearch = searchQuery1.length > 0 && searchQuery2.length > 0;
+    const singleSearchQuery = hasPathSearch ? '' : (searchQuery1 || searchQuery2);
+
+    const pathData = useMemo(() => {
+        if (!hasPathSearch || !visibleData?.nodes.length) return null;
+        return findShortestPath(visibleData.nodes, visibleData.links, searchQuery1, searchQuery2);
+    }, [searchQuery1, searchQuery2, visibleData, hasPathSearch]);
 
     const nodeCanvasObject = useCallback(
         (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const node = obj as GlobalNode;
             const isHovered = hoveredNode === node.id;
-            const isMatch = searchQuery && node.name.toLowerCase().includes(searchQuery.toLowerCase());
-            const hasSearch = searchQuery.length > 0;
+            const isOnPath = pathData?.pathNodeIds.has(node.id);
+            const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
+            const hasSearch = singleSearchQuery.length > 0;
             const isDeptFiltered = !!activeDept;
             const isDeptNode = node.dept === activeDept;
 
             let alpha = 1;
-            if (hasSearch) alpha = isMatch ? 1 : 0.08;
+            if (pathData) alpha = isOnPath ? 1 : 0.08;
+            else if (hasSearch) alpha = isMatch ? 1 : 0.08;
             else if (isDeptFiltered && !isDeptNode) alpha = 0.3;
 
-            const radius = isHovered ? 7 / globalScale : 5 / globalScale;
+            const radius = isOnPath ? 8 : (isHovered ? 7 : 5);
             const clusterColor = getDeptColor(node.dept);
-            const fillColor = isHovered ? '#2563eb' : clusterColor;
-            const borderColor = isHovered ? '#0f172a' : '#ffffff';
+            const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
+            const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
 
             ctx.beginPath();
             ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
@@ -193,15 +269,16 @@ export default function DepartmentNetworkGraph() {
             ctx.fillStyle = fillColor;
             ctx.fill();
 
-            const borderW = isHovered ? 2.5 / globalScale : (isMatch ? 2.0 / globalScale : 1.2 / globalScale);
+            const borderW = isHovered ? 2.5 : (isMatch ? 2.0 : 1.2);
             ctx.lineWidth = borderW;
             ctx.strokeStyle = borderColor;
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            if (isHovered || isMatch) {
+            const showLabel = alpha > 0.1; // Show labels for non-faded nodes
+            if (showLabel) {
                 const label = node.name;
-                const fontSize = 12 / globalScale;
+                const fontSize = 5; // Fixed size in simulation space to prevent overlap
 
                 ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
                 ctx.textAlign = 'center';
@@ -210,43 +287,69 @@ export default function DepartmentNetworkGraph() {
                 const textX = node.x || 0;
                 const textY = (node.y || 0) + radius + 4;
                 const metrics = ctx.measureText(label);
-                const paddingX = 4 / globalScale;
-                const paddingY = 2 / globalScale;
+                const paddingX = 4;
+                const paddingY = 2;
                 const textHeight = fontSize + paddingY * 2;
 
-                ctx.fillStyle = 'rgba(255,255,255,0.92)';
-                ctx.fillRect(
-                    textX - metrics.width / 2 - paddingX,
-                    textY - paddingY,
-                    metrics.width + paddingX * 2,
-                    textHeight
-                );
-
-                ctx.fillStyle = '#0f172a';
+                if (isHovered || isMatch || isOnPath) {
+                    ctx.fillStyle = 'rgba(255,255,255,0.92)';
+                    ctx.fillRect(
+                        textX - metrics.width / 2 - paddingX,
+                        textY - paddingY,
+                        metrics.width + paddingX * 2,
+                        textHeight
+                    );
+                    ctx.fillStyle = '#0f172a';
+                } else {
+                    ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                    ctx.fillRect(
+                        textX - metrics.width / 2 - paddingX,
+                        textY - paddingY,
+                        metrics.width + paddingX * 2,
+                        textHeight
+                    );
+                    ctx.fillStyle = '#475569';
+                }
+                
+                ctx.globalAlpha = alpha;
                 ctx.fillText(label, textX, textY);
             }
         },
-        [hoveredNode, searchQuery, activeDept]
+        [hoveredNode, singleSearchQuery, activeDept, pathData]
     );
 
     const linkWidth = useCallback((l: any) => {
         const val = l.value || 1;
         let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
 
-        const hasActiveSearch = searchQuery.length > 0;
-        const sourceMatch = searchQuery && l.source?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-        const targetMatch = searchQuery && l.target?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        if (pathData) {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            const ek = [s, t].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? 4.5 : 0.25;
+        }
+
+        const hasActiveSearch = singleSearchQuery.length > 0;
+        const sourceMatch = singleSearchQuery && l.source?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
+        const targetMatch = singleSearchQuery && l.target?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
         const isRelated = sourceMatch || targetMatch;
 
         if (hasActiveSearch) return isRelated ? baseWidth : 0.25;
         return baseWidth;
-    }, [searchQuery, linkBounds]);
+    }, [singleSearchQuery, linkBounds, pathData]);
 
     const linkColor = useCallback((l: any) => {
-        const hasActiveSearch = searchQuery.length > 0;
+        if (pathData) {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            const ek = [s, t].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? 'rgba(251, 146, 60, 0.9)' : 'rgba(148, 163, 184, 0.1)';
+        }
+
+        const hasActiveSearch = singleSearchQuery.length > 0;
         const isMatch = (nodeName?: string) =>
-            searchQuery && nodeName && typeof nodeName === 'string' &&
-            nodeName.toLowerCase().includes(searchQuery.toLowerCase());
+            singleSearchQuery && nodeName && typeof nodeName === 'string' &&
+            nodeName.toLowerCase().includes(singleSearchQuery.toLowerCase());
 
         const isRelated = isMatch(l.source?.name) || isMatch(l.target?.name);
         if (hasActiveSearch) {
@@ -275,7 +378,7 @@ export default function DepartmentNetworkGraph() {
         }
 
         return 'rgba(148, 163, 184, 0.65)';
-    }, [searchQuery]);
+    }, [singleSearchQuery, activeDept, pathData]);
 
 
     // Extract hovered node full details
@@ -381,45 +484,48 @@ export default function DepartmentNetworkGraph() {
                         <div
                             style={{
                                 display: 'flex',
-                                gap: '12px',
+                                gap: '6px',
                                 alignItems: 'center',
                                 background: '#f8fafc',
-                                padding: '8px 16px',
+                                padding: '6px 12px',
                                 borderRadius: '8px',
-                                border: '1px solid #e2e8f0'
+                                border: `1px solid ${pathData ? '#fb923c' : (searchQuery1 && searchQuery2 && !pathData ? '#ef4444' : '#e2e8f0')}`
                             }}
                         >
                             <span style={{ fontSize: '0.9rem' }}>🔍</span>
                             <input
                                 type="text"
-                                placeholder="Search author..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: '#1e293b',
-                                    fontSize: '0.875rem',
-                                    outline: 'none',
-                                    width: '150px'
-                                }}
+                                placeholder="Author 1..."
+                                value={searchQuery1}
+                                onChange={(e) => setSearchQuery1(e.target.value)}
+                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '100px' }}
                             />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => setSearchQuery('')}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: '#94a3b8',
-                                        cursor: 'pointer',
-                                        padding: 0,
-                                        fontSize: '0.8rem'
-                                    }}
-                                >
-                                    ✕
-                                </button>
+                            {searchQuery1 && (
+                                <button onClick={() => setSearchQuery1('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
+                            )}
+                            <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>↔</span>
+                            <span style={{ fontSize: '0.85rem' }}>👤</span>
+                            <input
+                                type="text"
+                                placeholder="Author 2..."
+                                value={searchQuery2}
+                                onChange={(e) => setSearchQuery2(e.target.value)}
+                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '100px' }}
+                            />
+                            {searchQuery2 && (
+                                <button onClick={() => setSearchQuery2('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
                             )}
                         </div>
+                        {searchQuery1 && searchQuery2 && !pathData && (
+                            <div style={{ background: '#fef2f2', color: '#ef4444', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                ⚠ No path
+                            </div>
+                        )}
+                        {pathData && (
+                            <div style={{ background: '#fff7ed', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                🔗 {pathData.pathNodeIds.size} nodes
+                            </div>
+                        )}
                     </div>
                 </header>
 
@@ -520,7 +626,7 @@ export default function DepartmentNetworkGraph() {
                                     }}
                                     linkWidth={linkWidth}
                                     linkColor={linkColor}
-                                    linkDirectionalParticles={searchQuery ? 2 : 0}
+                                    linkDirectionalParticles={(singleSearchQuery || pathData) ? 2 : 0}
                                     linkDirectionalParticleWidth={2}
                                     linkDirectionalParticleSpeed={0.005}
                                 />
@@ -697,6 +803,107 @@ export default function DepartmentNetworkGraph() {
                                 <div style={{ color: '#1e293b', fontSize: '0.9rem', fontWeight: 700 }}>Network Overview</div>
                                 <div style={{ color: '#64748b', fontSize: '0.8rem' }}>Global collaboration metrics</div>
                             </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Top Collaborating Faculty Table */}
+                {!loading && graphData && graphData.nodes.length > 0 && (
+                    <div style={{
+                        marginTop: '1.5rem',
+                        backgroundColor: '#f8fafc',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        overflow: 'hidden',
+                    }}>
+                        <div style={{
+                            padding: '0.75rem 1rem',
+                            borderBottom: '1px solid #e2e8f0',
+                            backgroundColor: '#f1f5f9',
+                        }}>
+                            <h3 style={{
+                                fontSize: '0.85rem',
+                                fontWeight: 700,
+                                color: '#334155',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                margin: 0,
+                            }}>
+                                Top Connected Faculty (Joint Papers)
+                            </h3>
+                        </div>
+                        <div style={{ padding: '0.5rem 0' }}>
+                            {topAuthors.map((author, idx) => {
+                                const count = nodeJointPapers[author.id] || 0;
+                                const barWidth = Math.max(4, (count / maxAuthorCount) * 100);
+                                return (
+                                    <div
+                                        key={author.id}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            padding: '0.4rem 1rem',
+                                            gap: '0.75rem',
+                                            transition: 'background 0.15s',
+                                            cursor: 'pointer',
+                                        }}
+                                        onMouseOver={(e) => {
+                                            e.currentTarget.style.backgroundColor = '#eff6ff';
+                                        }}
+                                        onMouseOut={(e) => {
+                                            e.currentTarget.style.backgroundColor = 'transparent';
+                                        }}
+                                        onClick={() => router.push(`/authors/${author.id}`)}
+                                    >
+                                        <span style={{
+                                            fontSize: '0.7rem',
+                                            color: '#94a3b8',
+                                            fontWeight: 600,
+                                            width: '1.5rem',
+                                            textAlign: 'right',
+                                        }}>
+                                            {idx + 1}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            color: '#1e293b',
+                                            fontWeight: 600,
+                                            width: '200px',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                        }}>
+                                            {author.name}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '0.7rem',
+                                            color: getDeptColor(author.dept),
+                                            fontWeight: 700,
+                                            width: '3rem',
+                                        }}>
+                                            {author.dept || ''}
+                                        </span>
+                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                width: `${barWidth}%`,
+                                                height: '100%',
+                                                backgroundColor: '#3b82f6',
+                                                borderRadius: '3px',
+                                                transition: 'width 0.6s ease',
+                                            }} />
+                                        </div>
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            color: '#3b82f6',
+                                            fontWeight: 700,
+                                            minWidth: '2rem',
+                                            textAlign: 'right',
+                                        }}>
+                                            {count}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 )}

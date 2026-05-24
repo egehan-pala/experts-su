@@ -1,0 +1,5 @@
+BEGIN;
+
+ALTER TABLE publications ADD COLUMN IF NOT EXISTS sdgs_json JSONB;
+
+COMMIT;

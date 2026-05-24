@@ -48,6 +48,25 @@ def _normalize_name_filter(n: str) -> str:
     return unicodedata.normalize('NFKD', n).encode('ASCII', 'ignore').decode('utf-8').lower().replace(" ", "")
 
 
+def _sanitize_name(name: str) -> str:
+    """Collapse any run of whitespace into a single space and strip edges.
+
+    Fixes names like 'Kamer  Kaya' (double space between parts) that come
+    from the web scraper or OpenAlex and would otherwise look garbled in
+    the UI and break the name-based internal/external matching in the API.
+
+    Examples
+    --------
+    >>> _sanitize_name('Meltem  Müftüler Baç')
+    'Meltem Müftüler Baç'
+    >>> _sanitize_name('  Onur  Varol  ')
+    'Onur Varol'
+    """
+    if not name:
+        return name
+    return re.sub(r'\s+', ' ', name).strip()
+
+
 def _safe_json(data: Any) -> Optional[str]:
     """Safely convert data to JSON string."""
     if data is None:
@@ -258,7 +277,7 @@ async def clean(db: Database) -> Tuple[
         
         rec = AuthorRecord(
             id=primary_key,
-            name=scraped_name,  # Use the canonical scraped name
+            name=_sanitize_name(scraped_name),  # Collapse extra whitespace (e.g. 'Kamer  Kaya' → 'Kamer Kaya')
             orcid=primary_author.orcid,
             
             # From scraping via match map
@@ -678,9 +697,10 @@ async def clean(db: Database) -> Tuple[
     pub_info = {
         pub["id"]: {
             "year": pub.get("year"),
-            "citations": pub.get("citations", 0),
+            # cited_by_count from OpenAlex can be None for some works — coerce to 0
+            "citations": pub.get("citations") or 0,
             "counts_by_year": json.loads(pub.get("counts_by_year_json") or "[]")
-        } 
+        }
         for pub in publications_norm
     }
     
@@ -709,7 +729,7 @@ async def clean(db: Database) -> Tuple[
         elif pub_year:
             key = (aid, pub_year)
             entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
-            entry["citations_year"] += info["citations"]
+            entry["citations_year"] += info["citations"] or 0
     
     metrics_norm = [
         {"author_id": aid, "year": year, "pub_count": data["pub_count"], "citations_year": data["citations_year"]}
