@@ -78,16 +78,94 @@ const CLUSTER_COLORS = [
     '#A1887F'
 ];
 
+function findShortestPath(
+    nodes: { id: string; name: string }[],
+    links: { source: any; target: any }[],
+    query1: string,
+    query2: string
+): { pathNodeIds: Set<string>; pathEdgeKeys: Set<string> } | null {
+    const q1 = query1.toLowerCase();
+    const q2 = query2.toLowerCase();
+    const startNodes = nodes.filter(n => n.name.toLowerCase().includes(q1));
+    const endNodes = nodes.filter(n => n.name.toLowerCase().includes(q2));
+    if (startNodes.length === 0 || endNodes.length === 0) return null;
+
+    const adj: Record<string, string[]> = {};
+    for (const n of nodes) adj[n.id] = [];
+    for (const l of links) {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        if (adj[s]) adj[s].push(t);
+        if (adj[t]) adj[t].push(s);
+    }
+
+    const endIds = new Set(endNodes.map(n => n.id));
+    let bestPath: string[] | null = null;
+
+    for (const startNode of startNodes) {
+        const visited = new Set<string>([startNode.id]);
+        const parent = new Map<string, string>();
+        const queue: string[] = [startNode.id];
+        let found: string | null = null;
+
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            if (endIds.has(current) && current !== startNode.id) { found = current; break; }
+            for (const nb of (adj[current] || [])) {
+                if (!visited.has(nb)) { visited.add(nb); parent.set(nb, current); queue.push(nb); }
+            }
+        }
+        if (found) {
+            const path: string[] = [];
+            let cur: string | undefined = found;
+            while (cur !== undefined) { path.unshift(cur); cur = parent.get(cur); }
+            if (!bestPath || path.length < bestPath.length) bestPath = path;
+        }
+    }
+    if (!bestPath) return null;
+
+    const pathNodeIds = new Set(bestPath);
+    const pathEdgeKeys = new Set<string>();
+    for (let i = 0; i < bestPath.length - 1; i++) {
+        pathEdgeKeys.add([bestPath[i], bestPath[i + 1]].sort().join('--'));
+    }
+    return { pathNodeIds, pathEdgeKeys };
+}
+
 export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
-    const [networkData, setNetworkData] = useState<NetworkData | null>(null);
+    const [rawNetworkData, setRawNetworkData] = useState<NetworkData | null>(null);
     const [loading, setLoading] = useState(true);
     const [yearRange, setYearRange] = useState({
         from: new Date().getFullYear() - 4,
         to: new Date().getFullYear()
     });
     const [collaboratorLimit, setCollaboratorLimit] = useState(25);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery1, setSearchQuery1] = useState('');
+    const [searchQuery2, setSearchQuery2] = useState('');
     const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+    const [affiliationFilter, setAffiliationFilter] = useState<'all' | 'internal' | 'external'>('all');
+
+    // ✅ Derived filtered network data based on affiliation filter
+    const networkData = useMemo(() => {
+        if (!rawNetworkData) return null;
+        if (affiliationFilter === 'all') return rawNetworkData;
+
+        const filteredNodes = rawNetworkData.nodes.filter(n =>
+            affiliationFilter === 'internal' ? n.is_faculty === true : n.is_faculty !== true
+        );
+        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+        const filteredLinks = rawNetworkData.links.filter(l => {
+            const s = typeof l.source === 'object' ? (l.source as any).id : l.source;
+            const t = typeof l.target === 'object' ? (l.target as any).id : l.target;
+            return filteredNodeIds.has(s) && filteredNodeIds.has(t);
+        });
+
+        return {
+            ...rawNetworkData,
+            nodes: filteredNodes,
+            links: filteredLinks
+        };
+    }, [rawNetworkData, affiliationFilter]);
 
     const router = useRouter();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -134,7 +212,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                     return nodeIds.has(s) && nodeIds.has(t);
                 });
 
-                setNetworkData({
+                setRawNetworkData({
                     ...data,
                     links: filteredLinks
                 });
@@ -174,6 +252,15 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
             maxPapers: Math.max(...papers)
         };
     }, [networkData]);
+
+    // Dual search derived values
+    const hasPathSearch = searchQuery1.length > 0 && searchQuery2.length > 0;
+    const singleSearchQuery = hasPathSearch ? '' : (searchQuery1 || searchQuery2);
+
+    const pathData = useMemo(() => {
+        if (!hasPathSearch || !networkData?.nodes.length) return null;
+        return findShortestPath(networkData.nodes, networkData.links, searchQuery1, searchQuery2);
+    }, [searchQuery1, searchQuery2, networkData, hasPathSearch]);
 
     // ✅ cluster anchor points to keep disconnected communities close together
     const clusterCenters = useMemo(() => {
@@ -289,20 +376,21 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const node = obj as NetworkNode;
             const isHovered = hoveredNode === node.id;
-            const isMatch = searchQuery && node.name.toLowerCase().includes(searchQuery.toLowerCase());
-            const hasActiveSearch = searchQuery.length > 0;
+            const isOnPath = pathData?.pathNodeIds.has(node.id);
+            const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
+            const hasActiveSearch = singleSearchQuery.length > 0;
 
-            const alpha = hasActiveSearch ? (isMatch ? 1 : 0.12) : 1;
+            const alpha = pathData ? (isOnPath ? 1 : 0.08) : (hasActiveSearch ? (isMatch ? 1 : 0.12) : 1);
 
             // Slightly stable screen-space radius
-            const radius = 4.5 / globalScale;
+            const radius = isOnPath ? 5.5 / globalScale : 4.5 / globalScale;
 
             // Use cluster color when available, otherwise default blue
             const clusterColor =
                 CLUSTER_COLORS[((node.cluster_id || 1) - 1) % CLUSTER_COLORS.length] || '#3b82f6';
 
-            const fillColor = isHovered ? '#2563eb' : clusterColor;
-            const borderColor = isHovered ? '#0f172a' : '#ffffff';
+            const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
+            const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
 
             ctx.beginPath();
             ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
@@ -320,7 +408,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            const showLabel = isHovered || isMatch;
+            const showLabel = isHovered || isMatch || isOnPath;
             if (showLabel) {
                 const label = node.name;
                 const fontSize = 12 / globalScale;
@@ -349,7 +437,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                 ctx.fillText(label, textX, textY);
             }
         },
-        [hoveredNode, searchQuery, bounds]
+        [hoveredNode, singleSearchQuery, bounds, pathData]
     );
 
     const linkWidth = useCallback((l: any) => {
@@ -357,9 +445,16 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
 
         let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
 
-        const hasActiveSearch = searchQuery.length > 0;
-        const sourceMatch = searchQuery && l.source?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-        const targetMatch = searchQuery && l.target?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        if (pathData) {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            const ek = [s, t].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? 4.5 : 0.25;
+        }
+
+        const hasActiveSearch = singleSearchQuery.length > 0;
+        const sourceMatch = singleSearchQuery && l.source?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
+        const targetMatch = singleSearchQuery && l.target?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
         const isRelated = sourceMatch || targetMatch;
 
         if (hasActiveSearch) {
@@ -367,15 +462,22 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         }
 
         return baseWidth;
-    }, [searchQuery, linkBounds]);
+    }, [singleSearchQuery, linkBounds, pathData]);
 
     const linkColor = useCallback((l: any) => {
-        const hasActiveSearch = searchQuery.length > 0;
+        if (pathData) {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            const ek = [s, t].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? 'rgba(251, 146, 60, 0.95)' : 'rgba(226, 232, 240, 0.08)';
+        }
+
+        const hasActiveSearch = singleSearchQuery.length > 0;
         const isMatch = (nodeName?: string) =>
-            searchQuery &&
+            singleSearchQuery &&
             nodeName &&
             typeof nodeName === 'string' &&
-            nodeName.toLowerCase().includes(searchQuery.toLowerCase());
+            nodeName.toLowerCase().includes(singleSearchQuery.toLowerCase());
 
         const isRelated = isMatch(l.source?.name) || isMatch(l.target?.name);
 
@@ -384,7 +486,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         }
 
         return 'rgba(148, 163, 184, 0.75)';
-    }, [searchQuery]);
+    }, [singleSearchQuery, pathData]);
 
     const totalCitations = networkData?.nodes.reduce((sum, n) => sum + n.joint_citations, 0) || 0;
 
@@ -443,6 +545,44 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                     </div>
 
                     <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                        {/* Affiliation Filter (Internal/External/All) */}
+                        <div
+                            style={{
+                                display: 'flex',
+                                gap: '4px',
+                                alignItems: 'center',
+                                background: '#0f172a',
+                                padding: '6px 8px',
+                                borderRadius: '8px',
+                                border: '1px solid #334155'
+                            }}
+                        >
+                            {(['all', 'internal', 'external'] as const).map((filter) => (
+                                <button
+                                    key={filter}
+                                    onClick={() => setAffiliationFilter(filter)}
+                                    style={{
+                                        background: affiliationFilter === filter
+                                            ? (filter === 'internal' ? '#166534' : filter === 'external' ? '#1e40af' : '#3b82f6')
+                                            : '#1e293b',
+                                        border: affiliationFilter === filter
+                                            ? `1px solid ${filter === 'internal' ? '#22c55e' : filter === 'external' ? '#60a5fa' : '#60a5fa'}`
+                                            : '1px solid #334155',
+                                        borderRadius: 6,
+                                        color: affiliationFilter === filter ? '#f8fafc' : '#94a3b8',
+                                        padding: '5px 12px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.75rem',
+                                        fontWeight: affiliationFilter === filter ? 700 : 500,
+                                        fontFamily: 'monospace',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                >
+                                    {filter === 'all' ? '🌐 All' : filter === 'internal' ? '🏛 Internal' : '🌍 External'}
+                                </button>
+                            ))}
+                        </div>
+
                         {/* Collaborator Limit Controls */}
                         <div
                             style={{
@@ -583,49 +723,52 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                             />
                         </div>
 
-                        {/* Node Search */}
+                        {/* Dual Author Search */}
                         <div
                             style={{
                                 display: 'flex',
-                                gap: '12px',
+                                gap: '6px',
                                 alignItems: 'center',
                                 background: '#0f172a',
-                                padding: '8px 16px',
+                                padding: '8px 12px',
                                 borderRadius: '8px',
-                                border: '1px solid #334155'
+                                border: `1px solid ${pathData ? '#fb923c' : (searchQuery1 && searchQuery2 && !pathData ? '#ef4444' : '#334155')}`
                             }}
                         >
                             <span style={{ fontSize: '0.9rem' }}>🔍</span>
                             <input
                                 type="text"
-                                placeholder="Search author..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: '#f8fafc',
-                                    fontSize: '0.875rem',
-                                    outline: 'none',
-                                    width: '150px'
-                                }}
+                                placeholder="Author 1..."
+                                value={searchQuery1}
+                                onChange={(e) => setSearchQuery1(e.target.value)}
+                                style={{ background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '0.875rem', outline: 'none', width: '110px' }}
                             />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => setSearchQuery('')}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: '#94a3b8',
-                                        cursor: 'pointer',
-                                        padding: 0,
-                                        fontSize: '0.8rem'
-                                    }}
-                                >
-                                    ✕
-                                </button>
+                            {searchQuery1 && (
+                                <button onClick={() => setSearchQuery1('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
+                            )}
+                            <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>↔</span>
+                            <span style={{ fontSize: '0.85rem' }}>👤</span>
+                            <input
+                                type="text"
+                                placeholder="Author 2..."
+                                value={searchQuery2}
+                                onChange={(e) => setSearchQuery2(e.target.value)}
+                                style={{ background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '0.875rem', outline: 'none', width: '110px' }}
+                            />
+                            {searchQuery2 && (
+                                <button onClick={() => setSearchQuery2('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
                             )}
                         </div>
+                        {searchQuery1 && searchQuery2 && !pathData && (
+                            <div style={{ background: '#451a03', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                ⚠ No path found
+                            </div>
+                        )}
+                        {pathData && (
+                            <div style={{ background: '#431407', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                🔗 Path: {pathData.pathNodeIds.size} nodes
+                            </div>
+                        )}
                     </div>
                 </header>
 
@@ -742,7 +885,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 }}
                                 linkWidth={linkWidth}
                                 linkColor={linkColor}
-                                linkDirectionalParticles={searchQuery ? 2 : 0}
+                                linkDirectionalParticles={(singleSearchQuery || pathData) ? 2 : 0}
                                 linkDirectionalParticleWidth={2}
                                 linkDirectionalParticleSpeed={0.005}
                             />
