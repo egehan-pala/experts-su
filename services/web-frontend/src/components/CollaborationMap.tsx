@@ -37,6 +37,7 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
   const [totalCount, setTotalCount] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [initialLoading, setInitialLoading] = useState(true);
+  const [allTimeMaxCount, setAllTimeMaxCount] = useState<number>(1);
   const [tooltipContent, setTooltipContent] = useState("");
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [sinceYear, setSinceYear] = useState<string>("2022");
@@ -52,6 +53,20 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
     }, 600);
     return () => clearTimeout(timer);
   }, [sinceYear]);
+
+  useEffect(() => {
+    if (!authorId) return;
+    const shortId = authorId.includes('/') ? authorId.split('/').pop()! : authorId;
+    
+    // Fetch ALL-TIME data ONCE to determine absolute max bounds for color scale
+    fetch(`${API_URL}/authors/${shortId}/geo-citations`)
+      .then(res => res.json())
+      .then((resData: GeoCitationResponse) => {
+         const allTimeMax = Math.max(1, ...(resData?.countries?.map(c => c.count) || [1]));
+         setAllTimeMaxCount(allTimeMax);
+      })
+      .catch(err => console.error("Failed to fetch all-time geo-collaborations", err));
+  }, [authorId]);
 
   useEffect(() => {
     if (!authorId) return;
@@ -86,12 +101,12 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
     return Math.max(...data.map(d => d.count));
   }, [data]);
 
-  // Update domain based on actual max count
+  // Update domain based on ALL-TIME max count to keep colors consistent across year filters
   const dynamicColorScale = useMemo(() => {
     return scaleLinear<string>()
-      .domain([1, Math.max(2, maxCount)]) // ensure domain has spread
+      .domain([1, Math.max(2, allTimeMaxCount)]) // ensure domain has spread
       .range(["#99b3ff", "#0445dd"]); // From light red to Sabancı Red
-  }, [maxCount]);
+  }, [allTimeMaxCount]);
 
 
   if (initialLoading) {
@@ -426,7 +441,7 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
             borderRadius: '4px',
             border: '1px solid #334155'
           }} />
-          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>{maxCount}+ Citations</span>
+          <span style={{ fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600 }}>{allTimeMaxCount}+ Citations</span>
         </div>
       </div>
     </section>
