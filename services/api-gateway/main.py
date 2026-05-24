@@ -1194,12 +1194,79 @@ async def get_author_network(author_id: str,
         return NetworkGraph(center_author_name=center_name, nodes=[], links=[])
 
     # 5. Build nodes (enrich with DB info if available)
-    # Fetch additional info for these authors
-    db_authors = await db.pool.fetch(
+    # Fetch additional info for these authors.
+    # We do two-pass lookup:
+    #   Pass 1: direct primary ID match
+    #   Pass 2: for any unmatched IDs, search openalex_ids_json (merged alternate IDs)
+    # This handles cases where a co-author appears under an alternate OpenAlex ID
+    # that is different from their primary faculty record ID in our DB.
+    top_n_ids_list = list(top_n_ids)
+    db_authors_direct = await db.pool.fetch(
         "SELECT id, image_url, is_faculty FROM authors WHERE id = ANY($1::text[])",
-        list(top_n_ids)
+        top_n_ids_list
     )
-    db_author_info = {r['id']: r for r in db_authors}
+    # Build a lookup from direct results
+    db_author_info: dict = {r['id']: dict(r) for r in db_authors_direct}
+
+    # Determine which co-author IDs were NOT found by direct match
+    unmatched_ids = [aid for aid in top_n_ids_list if aid not in db_author_info]
+
+    if unmatched_ids:
+        # Search merged alternate IDs stored in openalex_ids_json for any unmatched co-authors
+        # Also check by doing a case-insensitive ID pattern match
+        alt_rows = await db.pool.fetch(
+            """
+            SELECT id, image_url, is_faculty, openalex_ids_json
+            FROM authors
+            WHERE is_faculty = TRUE
+              AND openalex_ids_json IS NOT NULL
+            """
+        )
+        import json as _json
+        for row in alt_rows:
+            try:
+                alt_ids = _json.loads(row['openalex_ids_json'])
+            except Exception:
+                continue
+            for unmatched in list(unmatched_ids):
+                if unmatched in alt_ids:
+                    # Map this co-author ID → faculty record
+                    db_author_info[unmatched] = dict(row)
+                    unmatched_ids.remove(unmatched)
+                    break
+
+    # Pass 3: name-based fallback.
+    # Run for:
+    #   a) IDs not found in DB at all (still_unmatched)
+    #   b) IDs found but with is_faculty=False (may be an alternate/external record for a real faculty)
+    # The name normalization strips ALL non-alphanumeric chars (including hyphens and extra spaces)
+    # so 'Müftüler-Baç' matches 'Müftüler Baç' and 'Müftüler  Baç'.
+    import re as _re
+    import unicodedata as _ud
+    def _norm_name(n: str) -> str:
+        # 1. Unicode decompose (ü → u+combining, ç → c+combining)
+        decomposed = _ud.normalize('NFKD', n or '')
+        # 2. Drop all non-ASCII (removes combining diacritics)
+        ascii_only = decomposed.encode('ASCII', 'ignore').decode()
+        # 3. Lowercase and remove ALL non-alphanumeric chars (spaces, hyphens, dots, etc.)
+        return _re.sub(r'[^a-z0-9]', '', ascii_only.lower())
+
+    candidate_ids = [
+        aid for aid in top_n_ids_list
+        if aid not in db_author_info or not db_author_info[aid].get('is_faculty', False)
+    ]
+    if candidate_ids:
+        coauthor_name_map = {a["id"]: a["name"] for a in top_n_list if a["id"] in candidate_ids}
+        if coauthor_name_map:
+            faculty_name_rows = await db.pool.fetch(
+                "SELECT id, name, image_url, is_faculty FROM authors WHERE is_faculty = TRUE"
+            )
+            fac_by_norm_name = {_norm_name(r['name']): dict(r) for r in faculty_name_rows}
+            for aid, cname in coauthor_name_map.items():
+                norm = _norm_name(cname)
+                match = fac_by_norm_name.get(norm)
+                if match:
+                    db_author_info[aid] = match
 
     nodes = []
     for a in top_n_list:
@@ -1209,7 +1276,7 @@ async def get_author_network(author_id: str,
             name=a["name"],
             val=a["joint_citations"],
             image_url=info.get("image_url"),
-            is_faculty=info.get("is_faculty", False),
+            is_faculty=bool(info.get("is_faculty", False)),
             joint_papers=a["joint_papers"],
             joint_citations=a["joint_citations"]
         ))
@@ -1559,6 +1626,14 @@ async def get_global_network():
         GlobalNetworkLink(source=r['src'], target=r['tgt'], value=r['joint_papers'])
         for r in edge_rows
     ]
+
+    # 3. Remove isolated nodes (faculty with no internal collaborations)
+    #    These add visual clutter without conveying useful collaboration info.
+    connected_ids = set()
+    for lnk in links:
+        connected_ids.add(lnk.source)
+        connected_ids.add(lnk.target)
+    nodes = [n for n in nodes if n.id in connected_ids]
 
     graph = GlobalNetworkGraph(nodes=nodes, links=links)
     _global_network_cache = graph

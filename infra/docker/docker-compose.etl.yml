@@ -1,0 +1,94 @@
+# ─────────────────────────────────────────────────────────────────
+#  Experts@SU  ·  ETL Data-Refresh Compose
+#
+#  Usage (run manually / weekly – SEPARATE from make docker-up):
+#
+#    # Bring up only DB + run the full ETL pipeline, then stop:
+#    make data-refresh
+#
+#    # Or invoke directly:
+#    docker compose -f infra/docker/docker-compose.etl.yml up --build --abort-on-container-exit
+#
+#  What it does:
+#    1. Starts PostgreSQL (or re-uses the already-running experts-su-db)
+#    2. Runs SQL migrations (idempotent – safe to re-run)
+#    3. Runs the data-service full-run  (scrape → collect → clean → load)
+#    4. Runs embedding generation
+#    5. All containers exit when done
+#
+#  The application compose (docker-compose.yml) is NOT affected.
+#  You can run this while the app is live; the DB is shared via the
+#  named volume  db_data  declared in docker-compose.yml.
+# ─────────────────────────────────────────────────────────────────
+
+services:
+
+  # ── PostgreSQL (same image / volume as the main compose) ─────────
+  db:
+    image: pgvector/pgvector:pg15
+    container_name: experts-su-db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: experts_su
+    ports:
+      - "5432:5432"
+    volumes:
+      - db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # ── Migrations (idempotent – safe to re-run) ──────────────────────
+  migrate:
+    build:
+      context: ../..
+      dockerfile: infra/docker/Dockerfile.migrate
+    container_name: experts-su-migrate-etl
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: experts_su
+      DB_USER: postgres
+      DB_PASSWORD: password
+
+  # ── ETL pipeline: scrape → collect → clean → load ─────────────────
+  data-pipeline:
+    build:
+      context: ../../services/data-service
+      dockerfile: Dockerfile
+    container_name: experts-su-etl
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      # Database
+      DB_HOST: db
+      DB_PORT: 5432
+      DB_NAME: experts_su
+      DB_USER: postgres
+      DB_PASSWORD: password
+      # OpenAlex settings (override in .env or here)
+      OPENALEX_BASE_URL: https://api.openalex.org
+      OPENALEX_ROR_ID: https://ror.org/049asqa32
+      OPENALEX_RATE_LIMIT_PER_MIN: 60
+      OPENALEX_MAILTO: efe.akgul@sabanciuniv.edu
+      # Fetch everything from the beginning (full refresh)
+      SINCE_DEFAULT: "1900-01-01"
+      BATCH_SIZE: 100
+    # Run the full pipeline then exit (one-shot job)
+    command: ["python", "-m", "data_service.cli", "full-run"]
+    # Keep stdout/stderr attached so you can see progress
+    tty: false
+
+# Both compose files live in infra/docker/ so Docker assigns them the same
+# project name ('docker') and they automatically share the 'docker_db_data'
+# volume. No 'external: true' needed — Docker creates it if missing and
+# reuses it if it already exists.
+volumes:
+  db_data:
