@@ -54,6 +54,7 @@ function getDeptColor(dept: string | null): string {
     return DEPT_COLORS[dept] || '#94a3b8';
 }
 
+// Logarithmic scale helper for link widths
 function logScale(value: number, minVal: number, maxVal: number, minScale: number, maxScale: number) {
     if (value <= minVal) return minScale;
     if (value >= maxVal) return maxScale;
@@ -119,7 +120,7 @@ function findShortestPath(
     return { pathNodeIds, pathEdgeKeys };
 }
 
-export default function CitationOverlapGraph() {
+export default function DepartmentNetworkGraph() {
     const [graphData, setGraphData] = useState<GlobalGraph | null>(null);
     const [loading, setLoading] = useState(true);
     const [searchQuery1, setSearchQuery1] = useState('');
@@ -146,41 +147,19 @@ export default function CitationOverlapGraph() {
         return () => ro.disconnect();
     }, []);
 
-    // Fetch citation overlap network (with retry — first call is slow due to OpenAlex)
+    // Fetch global network
     useEffect(() => {
-        let cancelled = false;
-
-        async function fetchWithRetry(retries = 2) {
-            for (let attempt = 0; attempt <= retries; attempt++) {
-                try {
-                    const controller = new AbortController();
-                    const timeout = setTimeout(() => controller.abort(), 90_000); // 90s timeout
-                    const res = await fetch(`${API_URL}/network/citation-overlap`, {
-                        signal: controller.signal
-                    });
-                    clearTimeout(timeout);
-                    if (!res.ok) throw new Error(`HTTP ${res.status}`);
-                    const data: GlobalGraph = await res.json();
-                    if (!cancelled) {
-                        setGraphData(data);
-                        setLoading(false);
-                    }
-                    return;
-                } catch (err) {
-                    console.warn(`Citation overlap fetch attempt ${attempt + 1} failed:`, err);
-                    if (attempt === retries) {
-                        if (!cancelled) setLoading(false);
-                    }
-                    // Wait 2s before retry
-                    await new Promise(r => setTimeout(r, 2000));
-                }
-            }
-        }
-
         setLoading(true);
-        fetchWithRetry();
-
-        return () => { cancelled = true; };
+        fetch(`${API_URL}/network/global`)
+            .then(res => res.json())
+            .then((data: GlobalGraph) => {
+                setGraphData(data);
+                setLoading(false);
+            })
+            .catch(err => {
+                console.error('Failed to load global network:', err);
+                setLoading(false);
+            });
     }, []);
 
     // Visible graph data
@@ -208,15 +187,13 @@ export default function CitationOverlapGraph() {
     }, [graphData, activeDept]);
 
     const totalStats = useMemo(() => {
-        if (!visibleData.nodes.length) return { fens: 0, fass: 0, sbs: 0, total: 0, links: 0, totalSharedCitations: 0 };
-        const totalSharedCitations = visibleData.links.reduce((sum, l) => sum + (l.value || 0), 0);
+        if (!visibleData.nodes.length) return { fens: 0, fass: 0, sbs: 0, total: 0, links: 0 };
         return {
             fens: visibleData.nodes.filter(n => n.dept === 'FENS').length,
             fass: visibleData.nodes.filter(n => n.dept === 'FASS').length,
             sbs: visibleData.nodes.filter(n => n.dept === 'SBS').length,
             total: visibleData.nodes.length,
-            links: visibleData.links.length,
-            totalSharedCitations
+            links: visibleData.links.length
         };
     }, [visibleData]);
 
@@ -229,7 +206,7 @@ export default function CitationOverlapGraph() {
         };
     }, [visibleData]);
 
-    const nodeSharedCitations = useMemo(() => {
+    const nodeJointPapers = useMemo(() => {
         const counts: Record<string, number> = {};
         for (const l of visibleData.links) {
             const s = typeof l.source === 'object' ? (l.source as GlobalNode).id : l.source;
@@ -266,11 +243,13 @@ export default function CitationOverlapGraph() {
         fg.d3Force('gravityY', d3Force.forceY(0).strength(0.06));
         fg.d3ReheatSimulation();
 
+        // Fit after a small delay to let forces settle
         const t = setTimeout(() => {
             try { fg.zoomToFit(500, 80); } catch { }
         }, 1200);
         return () => clearTimeout(t);
     }, [visibleData]);
+
 
     const nodeCanvasObject = useCallback(
         (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -381,12 +360,14 @@ export default function CitationOverlapGraph() {
         return 'rgba(148, 163, 184, 0.65)';
     }, [singleSearchQuery, pathData]);
 
+
+    // Extract hovered node full details
     const hoveredNodeData = useMemo(() => {
         if (!hoveredNode) return null;
         return visibleData.nodes.find(n => n.id === hoveredNode) || null;
     }, [hoveredNode, visibleData]);
 
-    const hoveredPeers = useMemo(() => {
+    const hoveredCollaborators = useMemo(() => {
         if (!hoveredNode) return 0;
         return visibleData.links.reduce((count, l) => {
             const s = typeof l.source === 'object' ? (l.source as GlobalNode).id : l.source;
@@ -442,10 +423,10 @@ export default function CitationOverlapGraph() {
                                 fontWeight: 800
                             }}
                         >
-                            Citation Overlap Network
+                            Global Collaboration Network
                         </h2>
                         <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginTop: '0.25rem' }}>
-                            Connecting faculty who cite the same research papers.
+                            Visualizing joint publications across all faculties.
                         </p>
                     </div>
 
@@ -497,10 +478,22 @@ export default function CitationOverlapGraph() {
                                 placeholder="Author 1..."
                                 value={searchQuery1}
                                 onChange={(e) => setSearchQuery1(e.target.value)}
-                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '110px' }}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#1e293b',
+                                    fontSize: '0.875rem',
+                                    outline: 'none',
+                                    width: '110px'
+                                }}
                             />
                             {searchQuery1 && (
-                                <button onClick={() => setSearchQuery1('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
+                                <button
+                                    onClick={() => setSearchQuery1('')}
+                                    style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
+                                >
+                                    ✕
+                                </button>
                             )}
                             <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>↔</span>
                             <span style={{ fontSize: '0.85rem' }}>👤</span>
@@ -509,10 +502,22 @@ export default function CitationOverlapGraph() {
                                 placeholder="Author 2..."
                                 value={searchQuery2}
                                 onChange={(e) => setSearchQuery2(e.target.value)}
-                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '110px' }}
+                                style={{
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#1e293b',
+                                    fontSize: '0.875rem',
+                                    outline: 'none',
+                                    width: '110px'
+                                }}
                             />
                             {searchQuery2 && (
-                                <button onClick={() => setSearchQuery2('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
+                                <button
+                                    onClick={() => setSearchQuery2('')}
+                                    style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
+                                >
+                                    ✕
+                                </button>
                             )}
                         </div>
                         {searchQuery1 && searchQuery2 && !pathData && (
@@ -544,14 +549,13 @@ export default function CitationOverlapGraph() {
                         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
                             <div style={{ textAlign: 'center' }}>
                                 <div style={{ fontSize: '2rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⟳</div>
-                                <div>Building citation overlap network...</div>
-                                <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Analyzing shared references across all faculty publications</div>
-                                <div style={{ fontSize: '0.7rem', marginTop: '0.25rem', color: '#334155' }}>First load may take up to a minute</div>
+                                <div>Building global network...</div>
+                                <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Connecting all researchers based on shared publications</div>
                             </div>
                         </div>
                     ) : !graphData || graphData.nodes.length === 0 ? (
                         <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                            No citation overlap data available.
+                            No collaboration data available.
                         </div>
                     ) : (
                         <>
@@ -576,37 +580,29 @@ export default function CitationOverlapGraph() {
                                         fontSize: '0.85rem',
                                         color: '#1e293b',
                                         fontWeight: 800,
-                                        borderBottom: '2px solid #a855f7',
+                                        borderBottom: '2px solid #3b82f6',
                                         paddingBottom: '0.5rem',
                                         fontFamily: 'var(--font-heading)',
                                         margin: '0 0 1rem 0'
                                     }}
                                 >
-                                    CITATION OVERLAP SUMMARY
+                                    NETWORK SUMMARY
                                 </h3>
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                     <div>
                                         <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
                                             Total Faculty
                                         </div>
-                                        <div style={{ color: '#a855f7', fontSize: '1.25rem', fontWeight: 'bold' }}>
+                                        <div style={{ color: '#3b82f6', fontSize: '1.25rem', fontWeight: 'bold' }}>
                                             {totalStats.total}
                                         </div>
                                     </div>
                                     <div>
                                         <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Intellectual Links
+                                            Total Links
                                         </div>
                                         <div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>
                                             {totalStats.links.toLocaleString()}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Total Shared Citations
-                                        </div>
-                                        <div style={{ color: '#f59e0b', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                                            {totalStats.totalSharedCitations.toLocaleString()}
                                         </div>
                                     </div>
                                     <div style={{ display: 'flex', gap: '1rem' }}>
@@ -626,17 +622,17 @@ export default function CitationOverlapGraph() {
                                 </div>
                             </div>
 
-                            {/* Node Hover Box */}
+                            {/* Node Hover Box (Absolute center or follow cursor? Let's fix to right block like before) */}
                             <div
                                 style={{
                                     position: 'absolute',
-                                    top: 280,
+                                    top: 250,
                                     right: 20,
                                     zIndex: 10,
                                     background: 'rgba(255, 255, 255, 0.95)',
                                     padding: '1rem',
                                     borderRadius: 12,
-                                    border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#a855f7'}`,
+                                    border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6'}`,
                                     width: '220px',
                                     boxShadow: '0 8px 12px -3px rgba(0, 0, 0, 0.3)',
                                     opacity: hoveredNodeData ? 1 : 0,
@@ -644,22 +640,22 @@ export default function CitationOverlapGraph() {
                                     pointerEvents: 'none'
                                 }}
                             >
-                                <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#a855f7', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
+                                <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
                                     {hoveredNodeData?.dept ? `${hoveredNodeData.dept} AUTHOR` : 'SELECTED AUTHOR'}
                                 </div>
                                 <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
                                     <span style={{ color: '#1e293b' }}>{hoveredNodeData?.name || 'None'}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                                    <span style={{ color: '#94a3b8' }}>Shared Citations:</span>
+                                    <span style={{ color: '#94a3b8' }}>Joint Papers:</span>
                                     <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        {hoveredNode ? nodeSharedCitations[hoveredNode] || 0 : 0}
+                                        {hoveredNode ? nodeJointPapers[hoveredNode] || 0 : 0}
                                     </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                                    <span style={{ color: '#94a3b8' }}>Intellectual Peers:</span>
+                                    <span style={{ color: '#94a3b8' }}>Collaborators:</span>
                                     <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        {hoveredPeers}
+                                        {hoveredCollaborators}
                                     </span>
                                 </div>
                             </div>
@@ -742,7 +738,7 @@ export default function CitationOverlapGraph() {
                                 ))}
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', marginTop: '6px' }}>
                                     <div style={{ width: 20, height: 2, background: '#94a3b8' }} />
-                                    <span>Edge width ∝ Shared citations</span>
+                                    <span>Edge width ∝ Shared works</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                                     <div
@@ -750,7 +746,7 @@ export default function CitationOverlapGraph() {
                                             width: 10,
                                             height: 10,
                                             borderRadius: '50%',
-                                            background: '#a855f7',
+                                            background: '#3b82f6',
                                             border: '2px solid #fff',
                                             boxSizing: 'border-box'
                                         }}
