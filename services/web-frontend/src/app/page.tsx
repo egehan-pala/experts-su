@@ -377,6 +377,7 @@ export default function Home() {
             }}>
               <div style={{
                 display: 'flex',
+                justifyContent: 'center',
                 gap: '2.5rem',
                 padding: '0 1.5rem',
                 maxWidth: '1200px',
@@ -445,6 +446,7 @@ export default function Home() {
                 }}>
                   <div style={{
                     display: 'flex',
+                    justifyContent: 'center',
                     gap: '2.5rem',
                     padding: '0 1.5rem',
                     maxWidth: '1200px',
@@ -455,17 +457,8 @@ export default function Home() {
                   }}>
                   <style>{`
                     .overview-subtab .subtab-label {
-                      max-width: 0;
-                      opacity: 0;
-                      overflow: hidden;
-                      transition: all 0.3s ease;
                       display: inline-block;
                       white-space: nowrap;
-                    }
-                    .overview-subtab:hover .subtab-label,
-                    .overview-subtab.active .subtab-label {
-                      max-width: 300px;
-                      opacity: 1;
                       margin-left: 0.6rem;
                     }
                   `}</style>

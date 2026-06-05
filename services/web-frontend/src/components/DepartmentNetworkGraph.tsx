@@ -864,15 +864,18 @@ export default function DepartmentNetworkGraph() {
                                         }}>
                                             {idx + 1}
                                         </span>
-                                        <span style={{
-                                            fontSize: '0.8rem',
-                                            color: '#1e293b',
-                                            fontWeight: 600,
-                                            width: '200px',
-                                            overflow: 'hidden',
-                                            textOverflow: 'ellipsis',
-                                            whiteSpace: 'nowrap',
-                                        }}>
+                                        <span 
+                                            title={author.name}
+                                            style={{
+                                                fontSize: '0.8rem',
+                                                color: '#1e293b',
+                                                fontWeight: 600,
+                                                width: '200px',
+                                                overflow: 'hidden',
+                                                textOverflow: 'ellipsis',
+                                                whiteSpace: 'nowrap',
+                                            }}
+                                        >
                                             {author.name}
                                         </span>
                                         <span style={{
