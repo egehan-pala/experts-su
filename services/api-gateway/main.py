@@ -62,6 +62,8 @@ class TopPublication(BaseModel):
     year: Optional[int]
     citations: Optional[int]
     venue: Optional[str]
+    pdf_url: Optional[str] = None
+    landing_page_url: Optional[str] = None
 
 class Author(BaseModel):
     id: str
@@ -73,6 +75,7 @@ class Author(BaseModel):
     phone: Optional[str] = None
     areas_of_interest: Optional[str] = None
     pub_count: Optional[int] = 0
+    cited_by_count: Optional[int] = 0
     top_publication: Optional[TopPublication] = None
 
 class Publication(BaseModel):
@@ -81,9 +84,19 @@ class Publication(BaseModel):
     year: Optional[int]
     citations: Optional[int]
     venue: Optional[str]
+    venue_type: Optional[str] = None
+    type: Optional[str] = None
+    volume: Optional[str] = None
+    issue: Optional[str] = None
+    first_page: Optional[str] = None
+    last_page: Optional[str] = None
+    is_oa: Optional[bool] = None
     pdf_url: Optional[str] = None
+    landing_page_url: Optional[str] = None
     publication_date: Optional[str] = None
-    is_open_access: Optional[bool] = False
+    authorships_json: Optional[str] = None
+    topics_json: Optional[str] = None
+    sdgs_json: Optional[str] = None
 
 # Endpoints
 @app.get("/")
@@ -121,13 +134,13 @@ async def search_authors(q: str = Query(..., min_length=2)):
 @app.get("/authors/{author_id}", response_model=Author)
 async def get_author(author_id: str):
     """Get author details."""
-    query = "SELECT id, name, dept, orcid, image_url, email, phone, areas_of_interest FROM authors WHERE id ILIKE $1"
+    query = "SELECT id, name, dept, orcid, image_url, email, phone, areas_of_interest, cited_by_count FROM authors WHERE id ILIKE $1"
     row = await db.pool.fetchrow(query, author_id)
     if not row:
         raise HTTPException(status_code=404, detail="Author not found")
         
     pub_query = """
-        SELECT p.title, p.year, p.citations, p.venue
+        SELECT p.title, p.year, p.citations, p.venue, p.pdf_url, p.landing_page_url
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE ap.author_id ILIKE $1
@@ -137,93 +150,85 @@ async def get_author(author_id: str):
     pub_row = await db.pool.fetchrow(pub_query, author_id)
     top_pub = TopPublication(**pub_row) if pub_row else None
     
-    return Author(id=row['id'], name=row['name'], dept=row['dept'], orcid=row['orcid'], image_url=row['image_url'], email=row['email'], phone=row['phone'], areas_of_interest=row['areas_of_interest'], top_publication=top_pub)
+    # Use local cited_by_count from DB
+    cited_by_count = row.get('cited_by_count') or 0
 
-@app.get("/authors/{author_id}/publications")
-async def get_author_publications(
-    author_id: str,
-    page: int = Query(1, ge=1),
-    limit: int = Query(20, ge=1, le=100),
-    sort_by: str = Query("citations", regex="^(citations|year)$"),
-    year_from: Optional[int] = None,
-    year_to: Optional[int] = None,
-    q: Optional[str] = None
-):
-    """Get all publications for an author with pagination, search, and filtering."""
-    offset = (page - 1) * limit
-    
-    # Base query for counting
-    count_query_base = """
+    return Author(
+        id=row['id'], 
+        name=row['name'], 
+        dept=row['dept'], 
+        orcid=row['orcid'], 
+        image_url=row['image_url'], 
+        email=row['email'], 
+        phone=row['phone'], 
+        areas_of_interest=row['areas_of_interest'], 
+        pub_count=row.get('total_publications', 0),
+        cited_by_count=cited_by_count,
+        top_publication=top_pub
+    )
+
+@app.get("/authors/{author_id}/publications", response_model=List[Publication])
+async def get_author_publications(author_id: str):
+    """Get all publications for an author."""
+    query = """
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.venue_type, p.type,
+               p.volume, p.issue, p.first_page, p.last_page, p.is_oa,
+               p.pdf_url, p.landing_page_url, p.publication_date,
+               p.authorships_json, p.topics_json, p.sdgs_json
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE ap.author_id ILIKE $1
+        ORDER BY p.year DESC, p.citations DESC
     """
-    
-    # Base query for fetching data
-    fetch_query_base = """
-        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date, p.is_oa
-        FROM publications p
-        JOIN author_publications ap ON p.id = ap.publication_id
-        WHERE ap.author_id ILIKE $1
-    """
-    
-    where_clauses = ""
-    params = [author_id]
-    param_idx = 2
-    
-    if year_from is not None:
-        where_clauses += f" AND p.year >= ${param_idx}"
-        params.append(year_from)
-        param_idx += 1
-        
-    if year_to is not None:
-        where_clauses += f" AND p.year <= ${param_idx}"
-        params.append(year_to)
-        param_idx += 1
-        
-    if q and q.strip():
-        where_clauses += f" AND p.title ILIKE ${param_idx}"
-        params.append(f"%{q.strip()}%")
-        param_idx += 1
-
-    # Sorting
-    if sort_by == "year":
-        order_clause = "ORDER BY p.year DESC NULLS LAST, p.citations DESC NULLS LAST"
-    else:  # default to citations
-        order_clause = "ORDER BY p.citations DESC NULLS LAST, p.year DESC NULLS LAST"
-
-    # Get total count
-    total_count = await db.pool.fetchval(f"SELECT COUNT(p.id) {count_query_base} {where_clauses}", *params)
-    
-    # Fetch paginated data
-    fetch_query = f"{fetch_query_base} {where_clauses} {order_clause} LIMIT ${param_idx} OFFSET ${param_idx + 1}"
-    params.extend([limit, offset])
-    
-    rows = await db.pool.fetch(fetch_query, *params)
-    
-    publications = [
+    rows = await db.pool.fetch(query, author_id)
+    return [
         Publication(
             id=r['id'], 
             title=r['title'], 
             year=r['year'], 
             citations=r['citations'], 
             venue=r['venue'],
+            venue_type=r['venue_type'],
+            type=r['type'],
+            volume=r['volume'],
+            issue=r['issue'],
+            first_page=r['first_page'],
+            last_page=r['last_page'],
+            is_oa=r['is_oa'],
             pdf_url=r['pdf_url'],
+            landing_page_url=r['landing_page_url'],
             publication_date=r['publication_date'],
-            is_open_access=r.get('is_oa', False)
+            authorships_json=r['authorships_json'],
+            topics_json=r['topics_json'],
+            sdgs_json=r.get('sdgs_json')
         )
         for r in rows
     ]
-    
-    return {
-        "data": publications,
-        "meta": {
-            "page": page,
-            "limit": limit,
-            "total_items": total_count,
-            "total_pages": (total_count + limit - 1) // limit if total_count > 0 else 0
-        }
-    }
+
+@app.get("/authors/{author_id}/top-publication-by-year", response_model=Optional[Publication])
+async def get_top_publication_by_year(author_id: str, year: int):
+    """Get the most cited publication for an author in a specific year."""
+    query = """
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.landing_page_url, p.publication_date
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE ap.author_id ILIKE $1 AND p.year = $2
+        ORDER BY p.citations DESC NULLS LAST
+        LIMIT 1
+    """
+    row = await db.pool.fetchrow(query, author_id, year)
+    if not row:
+        return None
+    return Publication(
+        id=row['id'], 
+        title=row['title'], 
+        year=row['year'], 
+        citations=row['citations'], 
+        venue=row['venue'],
+        pdf_url=row['pdf_url'],
+        landing_page_url=row['landing_page_url'],
+        publication_date=row['publication_date']
+    )
 
 @app.get("/authors/{author_id}/recent-publications", response_model=List[Publication])
 async def get_recent_publications(author_id: str):
@@ -231,7 +236,10 @@ async def get_recent_publications(author_id: str):
     # Since we store publication_date as TEXT (YYYY-MM-DD), we use string comparison
     # or cast to date if Postgres supports it nicely.
     query = """
-        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.publication_date
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.venue_type, p.type,
+               p.volume, p.issue, p.first_page, p.last_page, p.is_oa,
+               p.pdf_url, p.landing_page_url, p.publication_date,
+               p.authorships_json, p.topics_json, p.sdgs_json
         FROM publications p
         JOIN author_publications ap ON p.id = ap.publication_id
         WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
@@ -253,59 +261,72 @@ async def get_recent_publications(author_id: str):
             year=r['year'], 
             citations=r['citations'], 
             venue=r['venue'],
+            venue_type=r['venue_type'],
+            type=r['type'],
+            volume=r['volume'],
+            issue=r['issue'],
+            first_page=r['first_page'],
+            last_page=r['last_page'],
+            is_oa=r['is_oa'],
             pdf_url=r['pdf_url'],
-            publication_date=r['publication_date']
+            landing_page_url=r['landing_page_url'],
+            publication_date=r['publication_date'],
+            authorships_json=r['authorships_json'],
+            topics_json=r['topics_json'],
+            sdgs_json=r.get('sdgs_json')
         )
         for r in rows
     ]
 
 @app.get("/authors", response_model=dict)
-async def get_authors(page: int = Query(1, ge=1), limit: int = Query(12, ge=1, le=100)):
-    """Get all authors with pagination."""
+async def get_authors(
+    page: int = Query(1, ge=1), 
+    limit: int = Query(12, ge=1, le=100),
+    dept: Optional[str] = Query(None)
+):
+    """Get all authors with pagination, optionally filtered by department."""
     offset = (page - 1) * limit
     
-    # 1. Get total count
-    count_query = """
-        SELECT COUNT(DISTINCT a.id)
-        FROM authors a
-        JOIN author_metrics_yearly amy ON a.id = amy.author_id
-        GROUP BY a.id
-        HAVING SUM(amy.pub_count) > 0
-    """
-    # Note: The above count query returns a row for each author. We need the count of rows.
-    # Alternatively, simplistic count of authors who have ANY metric entry with pub_count > 0
-    count_query = """
+    # 1. Base WHERE clause
+    where_clause = "WHERE a.is_faculty = TRUE"
+    params = []
+    
+    if dept:
+        where_clause += " AND a.dept = $1"
+        params.append(dept)
+    
+    # 2. Get total count
+    count_query = f"""
         SELECT COUNT(*)
         FROM (
             SELECT a.id
             FROM authors a
             JOIN author_metrics_yearly amy ON a.id = amy.author_id
-            WHERE a.is_faculty = TRUE
+            {where_clause}
             GROUP BY a.id
             HAVING SUM(amy.pub_count) > 0
         ) as sub
     """
-    total_count = await db.pool.fetchval(count_query)
+    total_count = await db.pool.fetchval(count_query, *params)
     
-    # 2. Get paginated data
-    # Sort order: 
-    # - Has Image (image_url IS NOT NULL) -> First
-    # - Publication Count (desc) -> Second
-    # - Alphabetical -> Third
-    query = """
+    # 3. Get paginated data
+    param_idx = len(params) + 1
+    query = f"""
         SELECT a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone, COALESCE(SUM(amy.pub_count), 0) as total_pubs
         FROM authors a
         LEFT JOIN author_metrics_yearly amy ON a.id = amy.author_id
-        WHERE a.is_faculty = TRUE
+        {where_clause}
         GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone
         HAVING COALESCE(SUM(amy.pub_count), 0) > 0
         ORDER BY 
             total_pubs DESC NULLS LAST,
             (a.image_url IS NOT NULL) DESC,
             a.name ASC
-        LIMIT $1 OFFSET $2
+        LIMIT ${param_idx} OFFSET ${param_idx + 1}
     """
-    rows = await db.pool.fetch(query, limit, offset)
+    
+    final_params = params + [limit, offset]
+    rows = await db.pool.fetch(query, *final_params)
     
     authors = [
          Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url'], email=r['email'], phone=r['phone'], pub_count=r['total_pubs']) 
@@ -318,7 +339,7 @@ async def get_authors(page: int = Query(1, ge=1), limit: int = Query(12, ge=1, l
             "page": page,
             "limit": limit,
             "total_items": total_count,
-            "total_pages": (total_count + limit - 1) // limit
+            "total_pages": (total_count + limit - 1) // limit if total_count else 0
         }
     }
 
@@ -338,6 +359,67 @@ async def get_top_authors():
     return [
          Author(id=r['id'], name=r['name'], dept=r['dept'], orcid=r['orcid'], image_url=r['image_url'], pub_count=r['total_pubs'] or 0) 
          for r in rows
+    ]
+
+class SDGStat(BaseModel):
+    id: int
+    authors_count: int
+    pubs_count: int
+
+@app.get("/stats/sdgs", response_model=List[SDGStat])
+async def get_all_sdgs_stats():
+    """Get aggregated stats (authors count, pubs count) for all SDGs."""
+    import asyncio
+    async def fetch_sdg(i):
+        sdg_pattern = f"%https://metadata.un.org/sdg/{i}%"
+        query = """
+            SELECT 
+                COUNT(DISTINCT a.id) as acount, 
+                COUNT(DISTINCT p.id) as pcount
+            FROM authors a
+            JOIN author_publications ap ON a.id = ap.author_id
+            JOIN publications p ON ap.publication_id = p.id
+            WHERE p.sdgs_json::text ILIKE $1 AND a.is_faculty = TRUE
+        """
+        row = await db.pool.fetchrow(query, sdg_pattern)
+        return SDGStat(id=i, authors_count=row['acount'], pubs_count=row['pcount'])
+        
+    tasks = [fetch_sdg(i) for i in range(1, 18)]
+    results = await asyncio.gather(*tasks)
+    return results
+
+@app.get("/stats/sdg/{sdg_id}/experts", response_model=List[Author])
+async def get_sdg_experts(sdg_id: int):
+    """Get experts related to a specific UN Sustainable Development Goal."""
+    # We look for publications tagged with this SDG ID (1-17)
+    # The URL in sdgs_json is usually like https://metadata.un.org/sdg/X
+    sdg_pattern = f"https://metadata.un.org/sdg/{sdg_id}"
+    
+    query = """
+        SELECT a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone, 
+               COUNT(DISTINCT p.id) as relevant_pubs,
+               SUM(p.citations) as total_citations
+        FROM authors a
+        JOIN author_publications ap ON a.id = ap.author_id
+        JOIN publications p ON ap.publication_id = p.id
+        WHERE p.sdgs_json::text ILIKE $1 AND a.is_faculty = TRUE
+        GROUP BY a.id, a.name, a.dept, a.orcid, a.image_url, a.email, a.phone
+        ORDER BY relevant_pubs DESC, total_citations DESC
+        LIMIT 20
+    """
+    rows = await db.pool.fetch(query, f"%{sdg_pattern}%")
+    return [
+        Author(
+            id=r['id'], 
+            name=r['name'], 
+            dept=r['dept'], 
+            orcid=r['orcid'], 
+            image_url=r['image_url'],
+            email=r['email'],
+            phone=r['phone'],
+            pub_count=r['relevant_pubs']
+        ) 
+        for r in rows
     ]
 
 # Visualization Models
@@ -371,37 +453,72 @@ class NetworkGraph(BaseModel):
     nodes: List[NetworkNode]
     links: List[NetworkLink]
 
+class FingerprintConcept(BaseModel):
+    name: str
+    weight: float
+
+class FingerprintField(BaseModel):
+    field: str
+    concepts: List[FingerprintConcept]
+
+class CountryStat(BaseModel):
+    code: str
+    count: int
+    names: List[str] = []
+
+class GeoCitationResponse(BaseModel):
+    total_count: int
+    countries: List[CountryStat]
+
+class CoAuthorStat(BaseModel):
+    name: str
+    count: int
+
+class ConceptDetail(BaseModel):
+    concept: str
+    countries: List[CountryStat]
+    co_authors: List[CoAuthorStat]
+    top_paper: Optional[Publication]
+
 # Visualization Endpoints
 
 @app.get("/authors/{author_id}/metrics", response_model=List[YearlyMetric])
-async def get_author_metrics(author_id: str):
-    """Get yearly publication and citation counts for an author, filled to current year."""
+async def get_author_metrics(
+    author_id: str, 
+    realtime: bool = Query(False),
+    since: Optional[str] = Query(None)
+):
+    """Get yearly publication and citation counts for an author using the pre-aggregated metrics table."""
+    import datetime
+    
+    # Query aggregated metrics directly
     query = """
-        SELECT year, pub_count, citations_year
+        SELECT year, pub_count, citations_year as citations
         FROM author_metrics_yearly
-        WHERE author_id = $1
+        WHERE author_id = $1 OR author_id ILIKE '%' || $1
         ORDER BY year ASC
     """
     rows = await db.pool.fetch(query, author_id)
+    
     if not rows:
         return []
-        
-    start_year = rows[0]['year']
-    end_year = datetime.datetime.now().year
-    
-    # Create a map of existing data
-    data_map = {r['year']: r for r in rows}
-    
-    # Fill missing years
-    filled_metrics = []
-    for y in range(start_year, end_year + 1):
-        if y in data_map:
-            r = data_map[y]
-            filled_metrics.append(YearlyMetric(year=r['year'], pub_count=r['pub_count'], citations=r['citations_year']))
-        else:
-            filled_metrics.append(YearlyMetric(year=y, pub_count=0, citations=0))
-            
-    return filled_metrics
+
+    # Map results
+    metrics = [
+        YearlyMetric(
+            year=r['year'],
+            pub_count=r['pub_count'],
+            citations=r['citations']
+        )
+        for r in rows
+    ]
+
+    # Handle since filter if provided
+    if since and since.isdigit():
+        since_val = int(since)
+        metrics = [m for m in metrics if m.year >= since_val]
+
+    return metrics
 
 class NestedTopicStat(BaseModel):
     name: str
@@ -568,15 +685,396 @@ async def get_author_galaxy(
                         count=r['citations'] or 0,
                         children_available=True
                     ))
-            works.sort(key=lambda x: x.count, reverse=True)
-            return works[:10]
-
-        else:
-            return []
-
-
-
     return []
+
+
+@app.get("/authors/{author_id}/fingerprint", response_model=List[FingerprintField])
+async def get_author_fingerprint(author_id: str):
+    """Get summarized research concepts for an author grouped by field."""
+    import json
+    from collections import defaultdict
+
+    # 1. Fetch all publications for this author with topics_json
+    query = """
+        SELECT p.topics_json
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
+          AND p.topics_json IS NOT NULL
+    """
+    rows = await db.pool.fetch(query, author_id)
+    
+    # 2. Aggregate scores by field and concept
+    # Structure: field_name -> concept_name -> cumulative_score
+    field_concept_scores = defaultdict(lambda: defaultdict(float))
+    
+    for row in rows:
+        try:
+            topics = json.loads(row['topics_json']) if isinstance(row['topics_json'], str) else row['topics_json']
+            for t in topics:
+                field_name = t.get('field', {}).get('display_name') or "Other"
+                concept_name = t.get('display_name')
+                score = t.get('score', 0)
+                
+                if not concept_name:
+                    continue
+                    
+                field_concept_scores[field_name][concept_name] += score
+        except (ValueError, TypeError, KeyError):
+            continue
+
+    if not field_concept_scores:
+        return []
+
+    # 3. Find global max score for normalization (to make weights relative)
+    max_concept_score = 0
+    for concepts in field_concept_scores.values():
+        for score in concepts.values():
+            if score > max_concept_score:
+                max_concept_score = score
+    
+    if max_concept_score == 0:
+        max_concept_score = 1.0
+
+    # 4. Format response
+    result = []
+    for field_name, concepts_dict in field_concept_scores.items():
+        concept_list = []
+        for c_name, c_score in concepts_dict.items():
+            # Normalize weight to 0-1 range based on the most dominant concept
+            weight = min(1.0, c_score / max_concept_score)
+            concept_list.append(FingerprintConcept(name=c_name, weight=round(weight, 3)))
+            
+        # Sort concepts by weight descending within field
+        concept_list.sort(key=lambda x: x.weight, reverse=True)
+        
+        result.append(FingerprintField(
+            field=field_name,
+            concepts=concept_list
+        ))
+        
+    # Sort fields by the importance of their top concept
+    result.sort(key=lambda x: x.concepts[0].weight if x.concepts else 0, reverse=True)
+    
+    return result
+
+
+@app.get("/authors/{author_id}/fingerprint/details", response_model=ConceptDetail)
+async def get_concept_details(author_id: str, concept: str = Query(...)):
+    """Get detailed stats (countries, co-authors, top paper) for a specific research concept."""
+    import json
+    from collections import Counter
+
+    # 1. Fetch relevant publications
+    query = """
+        SELECT p.id, p.title, p.year, p.citations, p.venue, p.pdf_url, p.landing_page_url, p.publication_date, 
+               p.topics_json, p.authorships_json
+        FROM publications p
+        JOIN author_publications ap ON p.id = ap.publication_id
+        WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
+          AND p.topics_json IS NOT NULL
+    """
+    rows = await db.pool.fetch(query, author_id)
+    
+    concept_pubs = []
+    for row in rows:
+        try:
+            topics = json.loads(row['topics_json']) if isinstance(row['topics_json'], str) else row['topics_json']
+            if any(t.get('display_name') == concept for t in topics):
+                concept_pubs.append(row)
+        except (ValueError, TypeError, KeyError):
+            continue
+
+    if not concept_pubs:
+        raise HTTPException(status_code=404, detail="Concept not found for this author")
+
+    # 2. Find top paper
+    top_row = max(concept_pubs, key=lambda x: x['citations'] or 0)
+    top_paper = Publication(
+        id=top_row['id'],
+        title=top_row['title'],
+        year=top_row['year'],
+        citations=top_row['citations'],
+        venue=top_row['venue'],
+        pdf_url=top_row['pdf_url'],
+        landing_page_url=top_row['landing_page_url'],
+        publication_date=top_row['publication_date']
+    )
+
+    # 3. Aggregate ONLY from the Top Paper
+    country_counts = Counter()
+    country_names_map = {} # Map country code -> set of author names from top paper
+    co_author_counter = Counter()
+    
+    def get_auth_name(a):
+        return a.get('author', {}).get('display_name') or a.get('raw_author_name') or a.get('raw_name') or a.get('name')
+        
+    def get_auth_id(a):
+        return a.get('author', {}).get('id') or a.get('author_id') or a.get('id') or ''
+
+    # Get authorships specifically from the Top Paper
+    try:
+        top_authorships = json.loads(top_row['authorships_json']) if isinstance(top_row['authorships_json'], str) else top_row['authorships_json']
+        if top_authorships:
+            for auth in top_authorships:
+                name = get_auth_name(auth)
+                alex_id = get_auth_id(auth)
+                
+                # Check if this authorship belongs to the requested author
+                is_target = alex_id and (author_id in alex_id)
+                
+                if not is_target and name:
+                    co_author_counter[name] += 1
+                
+                # Collect countries from THIS AUTHOR in the top paper
+                auth_countries = set()
+                # 1. Direct countries list
+                for c in auth.get('countries', []):
+                    if c: auth_countries.add(c)
+                # 2. Legacy fallback
+                c_code = auth.get('country_code') or auth.get('institution_country_code') or auth.get('institution_country')
+                if c_code: auth_countries.add(c_code)
+                for inst in auth.get('institutions', []):
+                    cc = inst.get('country_code')
+                    if cc: auth_countries.add(cc)
+                
+                # Update global counts for THIS PAPER's countries and map names
+                for cc in auth_countries:
+                    country_counts[cc] = 1 # Only one paper
+                    if not is_target and name:
+                        if cc not in country_names_map: country_names_map[cc] = set()
+                        country_names_map[cc].add(name)
+                        
+    except Exception:
+        pass
+
+    countries = [
+        CountryStat(
+            code=k, 
+            count=v, 
+            names=list(country_names_map.get(k, []))
+        ) for k, v in country_counts.items()
+    ]
+    co_authors = [CoAuthorStat(name=k, count=v) for k, v in co_author_counter.most_common(20)]
+
+    return ConceptDetail(
+        concept=concept,
+        countries=countries,
+        co_authors=co_authors,
+        top_paper=top_paper
+    )
+
+@app.get("/authors/{author_id}/geo-citations", response_model=GeoCitationResponse)
+async def get_author_geo_citations(
+    author_id: str, 
+    since: Optional[str] = Query(None),
+    year: Optional[int] = Query(None)
+):
+    """Get aggregated geographic locations of works citing this author's research."""
+    import httpx
+    from collections import Counter
+    
+    # 1. Fetch ALL publication IDs from OpenAlex (Ensures speed and completeness for global metrics)
+    alex_id = author_id if author_id.startswith('A') else f"A{author_id}"
+    if not alex_id.startswith('https://openalex.org/'):
+        alex_id = f"https://openalex.org/{alex_id}"
+        
+    works_list = []
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            # per_page=200 is sufficient for current faculty (Onur Varol ~94)
+            res = await client.get(f"https://api.openalex.org/works?filter=author.id:{alex_id}&select=id&per_page=200")
+            if res.status_code == 200:
+                works_list = [w['id'].split('/')[-1] for w in res.json().get('results', [])]
+    except Exception as e:
+        print(f"Error fetching works from OpenAlex real-time for {author_id}: {e}")
+        
+    if not works_list:
+        # Emergency fallback to local DB if OpenAlex is unreachable
+        query_local = """
+            SELECT p.id FROM publications p
+            JOIN author_publications ap ON p.id = ap.publication_id
+            WHERE ap.author_id = $1 OR ap.author_id ILIKE '%' || $1
+        """
+        rows = await db.pool.fetch(query_local, author_id)
+        works_list = [r['id'].split('/')[-1] for r in rows if r['id']]
+    
+    if not works_list:
+        return []
+    
+    # 2. Query OpenAlex for citations grouped by country
+    batch_size = 100
+    country_counts = Counter()
+    country_names_map = {}
+    
+    # Get official total citations for the author (lifetime)
+    # Only fetch if no filter is applied to save latency
+    official_total = 0
+    if not since:
+        try:
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                auth_res = await client.get(f"https://api.openalex.org/authors/{alex_id}")
+                if auth_res.status_code == 200:
+                    official_total = auth_res.json().get('cited_by_count', 0)
+        except Exception:
+            pass
+
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for i in range(0, len(works_list), batch_size):
+            batch = works_list[i:i+batch_size]
+            batch_filter = "|".join(batch)
+            filter_str = f"referenced_works:{batch_filter}"
+            
+            if year:
+                # Precise year filtering: citations received DURING this specific year
+                filter_str += f",publication_year:{year}"
+            elif since:
+                if (len(since) == 4 or '-' in since):
+                    since_date = since if '-' in since else f"{since}-01-01"
+                    filter_str += f",from_publication_date:{since_date}"
+                
+            url = f"https://api.openalex.org/works?filter={filter_str}&group_by=authorships.countries"
+            
+            try:
+                response = await client.get(url)
+                if response.status_code == 200:
+                    data = response.json()
+                    for group in data.get('group_by', []):
+                        cc = group['key'].split('/')[-1].upper()
+                        count = group['count']
+                        display_name = group['key_display_name']
+                        
+                        country_counts[cc] += count
+                        if cc not in country_names_map:
+                            country_names_map[cc] = set()
+                        if display_name:
+                            country_names_map[cc].add(display_name)
+                else:
+                    print(f"OpenAlex API error (batch {i}): {response.status_code}")
+            except Exception as e:
+                print(f"Fetch error in geo-citations (batch {i}): {e}")
+    
+    # Calculate total from distribution if filter is applied OR fetch failed
+    if since or official_total == 0:
+        official_total = sum(country_counts.values())
+
+    # 3. Format response
+    countries = [
+        CountryStat(
+            code=k, 
+            count=v, 
+            names=list(country_names_map.get(k, []))
+        ) for k, v in country_counts.items()
+    ]
+    
+    countries.sort(key=lambda x: x.count, reverse=True)
+    return GeoCitationResponse(total_count=official_total, countries=countries)
+
+@app.get("/authors/{author_id}/geo-collaborations", response_model=List[CountryStat])
+async def get_author_geo_collaborations(author_id: str, since: Optional[int] = Query(None)):
+    """Get aggregated co-author institution countries for an author."""
+    import json
+    from collections import Counter
+
+    # 1. Fetch works with authorship data directly from OpenAlex (Fast discovery)
+    alex_id = author_id if author_id.startswith('A') else f"A{author_id}"
+    if not alex_id.startswith('https://openalex.org/'):
+        alex_id = f"https://openalex.org/{alex_id}"
+        
+    works = []
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            filter_str = f"author.id:{alex_id}"
+            if since:
+                filter_str += f",from_publication_date:{since}-01-01"
+            
+            # Use select to minimize data transfer
+            url = f"https://api.openalex.org/works?filter={filter_str}&select=authorships&per_page=200"
+            res = await client.get(url)
+            if res.status_code == 200:
+                works = res.json().get('results', [])
+    except Exception as e:
+        print(f"Error fetching collaborations real-time for {author_id}: {e}")
+        
+    if not works:
+        # Emergency local fallback
+        query = """
+            SELECT p.authorships_json
+            FROM publications p
+            JOIN author_publications ap ON p.id = ap.publication_id
+            WHERE (ap.author_id = $1 OR ap.author_id ILIKE '%' || $1)
+              AND ($2::int IS NULL OR p.year >= $2)
+        """
+        rows = await db.pool.fetch(query, author_id, since)
+        works = [{"authorships": json.loads(r['authorships_json']) if isinstance(r['authorships_json'], str) else r['authorships_json']} for r in rows]
+
+    country_counts = Counter()
+    country_names_map = {} # Map country code -> set of country names found
+    
+    def get_auth_id(a):
+        return a.get('author', {}).get('id') or a.get('author_id') or a.get('id') or ''
+
+    for work in works:
+        try:
+            authorships = work.get('authorships', [])
+            if not authorships:
+                continue
+                
+            for auth in authorships:
+                alex_id = get_auth_id(auth)
+                
+                # Exclude the queried author themself
+                if alex_id and (author_id in alex_id):
+                    continue
+
+                # Robust country check
+                found_countries = {} # Map code -> name
+                
+                # 1. institutions
+                for inst in auth.get('institutions', []):
+                    cc = inst.get('country_code') or inst.get('country')
+                    if cc and isinstance(cc, str) and len(cc) == 2:
+                        name = inst.get('display_name') or inst.get('name') or inst.get('country_name') or cc.upper()
+                        found_countries[cc.upper()] = name
+                
+                # 2. countries list (modern OpenAlex)
+                for cc in auth.get('countries', []):
+                    if cc and isinstance(cc, str) and len(cc) == 2:
+                        cc_upper = cc.upper()
+                        if cc_upper not in found_countries:
+                            found_countries[cc_upper] = cc_upper
+                
+                # 3. top level fallbacks
+                for key in ['country_code', 'institution_country_code', 'institution_country']:
+                    cc = auth.get(key)
+                    if cc and isinstance(cc, str) and len(cc) == 2:
+                        cc_upper = cc.upper()
+                        if cc_upper not in found_countries:
+                            found_countries[cc_upper] = cc_upper
+                
+                for cc, cname in found_countries.items():
+                    country_counts[cc] += 1
+                    if cc not in country_names_map:
+                        country_names_map[cc] = set()
+                    if cname and cname != cc:
+                        country_names_map[cc].add(cname)
+                        
+        except Exception:
+            pass
+
+    countries = [
+        CountryStat(
+            code=k, 
+            count=v, 
+            names=list(country_names_map.get(k, []))
+        ) for k, v in country_counts.items()
+    ]
+    
+    # Sort by count descending
+    countries.sort(key=lambda x: x.count, reverse=True)
+
+    return countries
 
 # Simple in-memory cache for network graphs
 _network_cache = {}
@@ -696,12 +1194,79 @@ async def get_author_network(author_id: str,
         return NetworkGraph(center_author_name=center_name, nodes=[], links=[])
 
     # 5. Build nodes (enrich with DB info if available)
-    # Fetch additional info for these authors
-    db_authors = await db.pool.fetch(
+    # Fetch additional info for these authors.
+    # We do two-pass lookup:
+    #   Pass 1: direct primary ID match
+    #   Pass 2: for any unmatched IDs, search openalex_ids_json (merged alternate IDs)
+    # This handles cases where a co-author appears under an alternate OpenAlex ID
+    # that is different from their primary faculty record ID in our DB.
+    top_n_ids_list = list(top_n_ids)
+    db_authors_direct = await db.pool.fetch(
         "SELECT id, image_url, is_faculty FROM authors WHERE id = ANY($1::text[])",
-        list(top_n_ids)
+        top_n_ids_list
     )
-    db_author_info = {r['id']: r for r in db_authors}
+    # Build a lookup from direct results
+    db_author_info: dict = {r['id']: dict(r) for r in db_authors_direct}
+
+    # Determine which co-author IDs were NOT found by direct match
+    unmatched_ids = [aid for aid in top_n_ids_list if aid not in db_author_info]
+
+    if unmatched_ids:
+        # Search merged alternate IDs stored in openalex_ids_json for any unmatched co-authors
+        # Also check by doing a case-insensitive ID pattern match
+        alt_rows = await db.pool.fetch(
+            """
+            SELECT id, image_url, is_faculty, openalex_ids_json
+            FROM authors
+            WHERE is_faculty = TRUE
+              AND openalex_ids_json IS NOT NULL
+            """
+        )
+        import json as _json
+        for row in alt_rows:
+            try:
+                alt_ids = _json.loads(row['openalex_ids_json'])
+            except Exception:
+                continue
+            for unmatched in list(unmatched_ids):
+                if unmatched in alt_ids:
+                    # Map this co-author ID → faculty record
+                    db_author_info[unmatched] = dict(row)
+                    unmatched_ids.remove(unmatched)
+                    break
+
+    # Pass 3: name-based fallback.
+    # Run for:
+    #   a) IDs not found in DB at all (still_unmatched)
+    #   b) IDs found but with is_faculty=False (may be an alternate/external record for a real faculty)
+    # The name normalization strips ALL non-alphanumeric chars (including hyphens and extra spaces)
+    # so 'Müftüler-Baç' matches 'Müftüler Baç' and 'Müftüler  Baç'.
+    import re as _re
+    import unicodedata as _ud
+    def _norm_name(n: str) -> str:
+        # 1. Unicode decompose (ü → u+combining, ç → c+combining)
+        decomposed = _ud.normalize('NFKD', n or '')
+        # 2. Drop all non-ASCII (removes combining diacritics)
+        ascii_only = decomposed.encode('ASCII', 'ignore').decode()
+        # 3. Lowercase and remove ALL non-alphanumeric chars (spaces, hyphens, dots, etc.)
+        return _re.sub(r'[^a-z0-9]', '', ascii_only.lower())
+
+    candidate_ids = [
+        aid for aid in top_n_ids_list
+        if aid not in db_author_info or not db_author_info[aid].get('is_faculty', False)
+    ]
+    if candidate_ids:
+        coauthor_name_map = {a["id"]: a["name"] for a in top_n_list if a["id"] in candidate_ids}
+        if coauthor_name_map:
+            faculty_name_rows = await db.pool.fetch(
+                "SELECT id, name, image_url, is_faculty FROM authors WHERE is_faculty = TRUE"
+            )
+            fac_by_norm_name = {_norm_name(r['name']): dict(r) for r in faculty_name_rows}
+            for aid, cname in coauthor_name_map.items():
+                norm = _norm_name(cname)
+                match = fac_by_norm_name.get(norm)
+                if match:
+                    db_author_info[aid] = match
 
     nodes = []
     for a in top_n_list:
@@ -711,7 +1276,7 @@ async def get_author_network(author_id: str,
             name=a["name"],
             val=a["joint_citations"],
             image_url=info.get("image_url"),
-            is_faculty=info.get("is_faculty", False),
+            is_faculty=bool(info.get("is_faculty", False)),
             joint_papers=a["joint_papers"],
             joint_citations=a["joint_citations"]
         ))
@@ -1009,6 +1574,628 @@ async def search_suggest(q: str = Query(..., min_length=1)):
     """Autocomplete: top faculty name suggestions for typeahead."""
     return await do_suggest(q, db.pool, limit=5)
 
+class GlobalNetworkNode(BaseModel):
+    id: str
+    name: str
+    dept: Optional[str] = None
+    image_url: Optional[str] = None
+
+class GlobalNetworkLink(BaseModel):
+    source: str
+    target: str
+    value: int  # joint_papers
+
+class GlobalNetworkGraph(BaseModel):
+    nodes: List[GlobalNetworkNode]
+    links: List[GlobalNetworkLink]
+
+_global_network_cache: Optional[GlobalNetworkGraph] = None
+
+@app.get("/network/global", response_model=GlobalNetworkGraph)
+async def get_global_network():
+    """Get the co-authorship network for ALL faculty members, coloured by department."""
+    global _global_network_cache
+
+    if _global_network_cache is not None:
+        return _global_network_cache
+
+    # 1. All faculty nodes
+    node_rows = await db.pool.fetch(
+        "SELECT id, name, dept, image_url FROM authors WHERE is_faculty = TRUE AND dept IS NOT NULL"
+    )
+    faculty_ids = {r['id'] for r in node_rows}
+    nodes = [
+        GlobalNetworkNode(id=r['id'], name=r['name'], dept=r['dept'], image_url=r['image_url'])
+        for r in node_rows
+    ]
+
+    # 2. Co-authorship edges between faculty members only
+    edge_rows = await db.pool.fetch("""
+        SELECT ap1.author_id AS src, ap2.author_id AS tgt, COUNT(*) AS joint_papers
+        FROM author_publications ap1
+        JOIN author_publications ap2
+          ON ap1.publication_id = ap2.publication_id
+         AND ap1.author_id < ap2.author_id
+        WHERE ap1.author_id = ANY($1::text[])
+          AND ap2.author_id = ANY($1::text[])
+        GROUP BY ap1.author_id, ap2.author_id
+        HAVING COUNT(*) >= 1
+    """, list(faculty_ids))
+
+    links = [
+        GlobalNetworkLink(source=r['src'], target=r['tgt'], value=r['joint_papers'])
+        for r in edge_rows
+    ]
+
+    # 3. Remove isolated nodes (faculty with no internal collaborations)
+    #    These add visual clutter without conveying useful collaboration info.
+    connected_ids = set()
+    for lnk in links:
+        connected_ids.add(lnk.source)
+        connected_ids.add(lnk.target)
+    nodes = [n for n in nodes if n.id in connected_ids]
+
+    graph = GlobalNetworkGraph(nodes=nodes, links=links)
+    _global_network_cache = graph
+    return graph
+
+_citation_overlap_cache: Optional[GlobalNetworkGraph] = None
+
+@app.get("/network/citation-overlap", response_model=GlobalNetworkGraph)
+async def get_citation_overlap_network():
+    """Get a bibliographic-coupling network for ALL faculty members.
+
+    Two faculty are connected if they have both cited the same paper(s).
+    Edge weight = number of shared cited papers.
+    """
+    global _citation_overlap_cache
+    import httpx, json, math
+    from collections import defaultdict
+
+    if _citation_overlap_cache is not None:
+        return _citation_overlap_cache
+
+    # 1. All faculty nodes
+    node_rows = await db.pool.fetch(
+        "SELECT id, name, dept, image_url FROM authors WHERE is_faculty = TRUE AND dept IS NOT NULL"
+    )
+    faculty_ids = {r['id'] for r in node_rows}
+    nodes = [
+        GlobalNetworkNode(id=r['id'], name=r['name'], dept=r['dept'], image_url=r['image_url'])
+        for r in node_rows
+    ]
+
+    # 2. Get all publication IDs per faculty member
+    pub_rows = await db.pool.fetch("""
+        SELECT ap.author_id, ap.publication_id
+        FROM author_publications ap
+        WHERE ap.author_id = ANY($1::text[])
+    """, list(faculty_ids))
+
+    # Faculty -> set of publication IDs (OpenAlex format)
+    faculty_pubs: dict[str, set[str]] = defaultdict(set)
+    all_pub_ids: set[str] = set()
+    for r in pub_rows:
+        faculty_pubs[r['author_id']].add(r['publication_id'])
+        all_pub_ids.add(r['publication_id'])
+
+    if not all_pub_ids:
+        graph = GlobalNetworkGraph(nodes=nodes, links=[])
+        _citation_overlap_cache = graph
+        return graph
+
+    # 3. Fetch referenced_works from OpenAlex in batches
+    # publication_id -> list of referenced work IDs
+    pub_references: dict[str, list[str]] = {}
+    all_pub_list = list(all_pub_ids)
+
+    # Clean IDs for OpenAlex filter (extract short ID like W12345)
+    def to_openalex_short(pid: str) -> str:
+        if "/" in pid:
+            return pid.split("/")[-1]
+        return pid
+
+    batch_size = 50  # OpenAlex filter pipe limit
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        for i in range(0, len(all_pub_list), batch_size):
+            batch = all_pub_list[i:i + batch_size]
+            short_ids = [to_openalex_short(p) for p in batch]
+            filter_str = "|".join(short_ids)
+            url = f"https://api.openalex.org/works?filter=openalex_id:{filter_str}&select=id,referenced_works&per_page=200"
+            try:
+                resp = await client.get(url)
+                if resp.status_code == 200:
+                    results = resp.json().get("results", [])
+                    for work in results:
+                        work_id = work.get("id", "")
+                        refs = work.get("referenced_works", [])
+                        # Normalize: store full OpenAlex ID
+                        pub_references[work_id] = refs
+                        # Also map short form
+                        short = work_id.split("/")[-1] if "/" in work_id else work_id
+                        pub_references[short] = refs
+                else:
+                    print(f"OpenAlex batch {i} error: {resp.status_code}")
+            except Exception as e:
+                print(f"OpenAlex fetch error (batch {i}): {e}")
+
+    # 4. Build mapping: cited_paper -> set of faculty who cited it
+    cited_by_faculty: dict[str, set[str]] = defaultdict(set)
+    for fac_id, pubs in faculty_pubs.items():
+        for pub_id in pubs:
+            # Try to find referenced works for this publication
+            refs = pub_references.get(pub_id) or pub_references.get(to_openalex_short(pub_id)) or []
+            for ref in refs:
+                cited_by_faculty[ref].add(fac_id)
+
+    # 5. Build edges: for every cited paper that 2+ faculty share, create pairwise edges
+    edge_counts: dict[tuple[str, str], int] = defaultdict(int)
+    for cited_paper, faculties in cited_by_faculty.items():
+        if len(faculties) < 2:
+            continue
+        fac_list = sorted(faculties)
+        for i in range(len(fac_list)):
+            for j in range(i + 1, len(fac_list)):
+                pair = (fac_list[i], fac_list[j])
+                edge_counts[pair] += 1
+
+    links = [
+        GlobalNetworkLink(source=p[0], target=p[1], value=count)
+        for p, count in edge_counts.items()
+        if count >= 2  # Filter out very weak connections (only 1 shared citation)
+    ]
+
+    # Remove isolated nodes (no links)
+    connected_ids = set()
+    for l in links:
+        connected_ids.add(l.source)
+        connected_ids.add(l.target)
+    nodes = [n for n in nodes if n.id in connected_ids]
+
+    graph = GlobalNetworkGraph(nodes=nodes, links=links)
+    _citation_overlap_cache = graph
+    return graph
+
+
+# ═══════════════════════════════════════════════════════════════
+#  GLOBAL COLLABORATION MAP — World-level collaboration geography
+# ═══════════════════════════════════════════════════════════════
+
+class GlobalCollaborationCountry(BaseModel):
+    code: str
+    count: int
+    names: List[str] = []
+
+class GlobalCollaborationResponse(BaseModel):
+    total_collaborations: int
+    total_countries: int
+    countries: List[GlobalCollaborationCountry]
+
+from typing import Tuple, Dict, Set, Any
+_raw_global_collab_cache: Optional[Tuple[Dict[str, List[Dict[str, Any]]], Dict[str, Set[str]]]] = None
+
+@app.get("/network/global-collaborations", response_model=GlobalCollaborationResponse)
+async def get_global_collaborations(
+    dept: Optional[str] = Query(None, description="Filter by department (e.g., FENS, FASS, SBS)"),
+    author_name: Optional[str] = Query(None, description="Filter by author name")
+):
+    """Get aggregated collaboration countries for faculty members (last 5 years).
+    Filters by dept and author_name instantly using an in-memory raw cache.
+    """
+    global _raw_global_collab_cache
+    import httpx
+    import datetime
+    from collections import defaultdict
+
+    if _raw_global_collab_cache is None:
+        # 1. Fetch all faculty with OpenAlex IDs
+        faculty_rows = await db.pool.fetch(
+            "SELECT id, name, dept FROM authors WHERE is_faculty = TRUE AND dept IS NOT NULL"
+        )
+
+        since_year = datetime.datetime.now().year - 5
+        countries_faculty_map: dict[str, list[dict]] = defaultdict(list)
+        country_names_map: dict[str, set[str]] = defaultdict(set)
+
+        # 2. For each faculty member, query OpenAlex for their works' co-author countries
+        async with httpx.AsyncClient(timeout=20.0) as client:
+            for fac in faculty_rows:
+                fac_id = fac['id']
+                fac_name = fac['name']
+                fac_dept = fac['dept']
+                
+                alex_id = fac_id if fac_id.startswith('A') else f"A{fac_id}"
+                if not alex_id.startswith('https://openalex.org/'):
+                    alex_id = f"https://openalex.org/{alex_id}"
+
+                filter_str = f"author.id:{alex_id},from_publication_date:{since_year}-01-01"
+                url = f"https://api.openalex.org/works?filter={filter_str}&group_by=authorships.countries"
+
+                try:
+                    resp = await client.get(url)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for group in data.get('group_by', []):
+                            cc = group['key'].split('/')[-1].upper()
+                            display_name = group.get('key_display_name', cc)
+
+                            if cc == 'TR':
+                                continue
+
+                            countries_faculty_map[cc].append({'id': fac_id, 'name': fac_name, 'dept': fac_dept})
+                            if display_name and display_name != cc:
+                                country_names_map[cc].add(display_name)
+                    elif resp.status_code == 429:
+                        import asyncio
+                        await asyncio.sleep(1)
+                except Exception as e:
+                    print(f"GlobalCollab: error for {fac_name}: {e}")
+                    continue
+                    
+        _raw_global_collab_cache = (countries_faculty_map, country_names_map)
+
+    # 3. Filter the cached raw data
+    countries_faculty_map, country_names_map = _raw_global_collab_cache
+    filtered_countries = []
+    total_collabs = 0
+
+    for cc, faculty_list in countries_faculty_map.items():
+        # Apply filters
+        matched_faculty = []
+        for fac in faculty_list:
+            if dept and fac['dept'] != dept:
+                continue
+            if author_name and author_name.lower() not in fac['name'].lower():
+                continue
+            matched_faculty.append(fac)
+            
+        count = len(matched_faculty)
+        if count > 0:
+            total_collabs += count
+            filtered_countries.append(GlobalCollaborationCountry(
+                code=cc,
+                count=count,
+                names=list(country_names_map.get(cc, []))
+            ))
+
+    filtered_countries.sort(key=lambda x: x.count, reverse=True)
+
+    return GlobalCollaborationResponse(
+        total_collaborations=total_collabs,
+        total_countries=len(filtered_countries),
+        countries=filtered_countries
+    )
+
+
+# ─────────────────────────────────────────
+# News Endpoint  (DB-backed RSS feeds + 6h cache)
+# ─────────────────────────────────────────
+
+import time
+import xml.etree.ElementTree as ET
+import urllib.request
+import urllib.parse
+from email.utils import parsedate_to_datetime
+
+class NewsItem(BaseModel):
+    title: str
+    url: str
+    source: str
+    source_url: Optional[str] = None  # actual outlet URL (from RSS <source url=...>)
+    published_at: Optional[str] = None
+    thumbnail: Optional[str] = None
+    summary: Optional[str] = None
+
+# Simple in-memory cache: {short_author_id: (fetched_at_timestamp, [NewsItem])}
+_news_cache: dict = {}
+_NEWS_CACHE_TTL = 6 * 60 * 60  # 6 hours
+
+
+def _fetch_rss_url(feed_url: str) -> list[NewsItem]:
+    """Fetch and parse a single RSS feed URL, return list of NewsItems."""
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; ExpertsSU/1.0)"}
+    req = urllib.request.Request(feed_url, headers=headers)
+    try:
+        with urllib.request.urlopen(req, timeout=10) as resp:
+            content = resp.read()
+    except Exception as e:
+        print(f"[news] RSS fetch error for '{feed_url}': {e}")
+        return []
+
+    try:
+        root = ET.fromstring(content)
+    except ET.ParseError as e:
+        print(f"[news] RSS parse error: {e}")
+        return []
+
+    channel = root.find("channel")
+    if channel is None:
+        return []
+
+    items = []
+    for item in channel.findall("item"):
+        title_el = item.find("title")
+        link_el = item.find("link")
+        source_el = item.find("source")
+        pubdate_el = item.find("pubDate")
+        desc_el = item.find("description")
+
+        title = title_el.text if title_el is not None else ""
+        link = link_el.text if link_el is not None else ""
+        source = source_el.text if source_el is not None else "Google News"
+        # source_url is the <source url="..."> attribute — the real outlet domain
+        source_url = source_el.get("url") if source_el is not None else None
+        pubdate_raw = pubdate_el.text if pubdate_el is not None else None
+        description = desc_el.text if desc_el is not None else None
+
+        # Parse date to ISO string
+        published_at = None
+        if pubdate_raw:
+            try:
+                published_at = parsedate_to_datetime(pubdate_raw).isoformat()
+            except Exception:
+                published_at = pubdate_raw
+
+        # Extract thumbnail from <media:content> if available
+        thumbnail = None
+        media_content = item.find("{http://search.yahoo.com/mrss/}content")
+        if media_content is not None:
+            thumbnail = media_content.get("url")
+
+        # Strip HTML tags from description for summary
+        summary = None
+        if description:
+            import re
+            summary = re.sub(r"<[^>]+>", "", description).strip()[:300] or None
+
+        if title and link:
+            items.append(NewsItem(
+                title=title,
+                url=link,
+                source=source,
+                source_url=source_url,
+                published_at=published_at,
+                thumbnail=thumbnail,
+                summary=summary,
+            ))
+
+    return items
+
+
+# ── News filtering keyword dictionaries ────────────────────────────────────────
+
+# Trusted news domains — BOTH conditions must pass: trusted source AND keyword match.
+# Articles from domains NOT in this list are rejected outright.
+_TRUSTED_NEWS_DOMAINS = [
+    # ── Institutional / Academic publishers / Sci-Tech ──────────────────
+    "sabanciuniv.edu", "yok.gov.tr", "yokak.gov.tr", "tubitak.gov.tr",
+    "nature.com", "science.org", "sciencemag.org", "cell.com", "pnas.org",
+    "thelancet.com", "nejm.org", "bmj.com",
+    "ieee.org", "acm.org", "arxiv.org", "asme.org", "acs.org", "rsc.org", "iop.org",
+    "sciencedirect.com", "springer.com", "wiley.com", "elsevier.com", "plos.org",
+    "frontiersin.org", "mdpi.com", "biomedcentral.com", "hindawi.com",
+    "tandfonline.com", "worldscientific.com", "spiedigitallibrary.org", "scientific.net",
+    "oup.com", "cambridge.org", "mit.edu",
+    "eurekalert.org", "sciencedaily.com", "phys.org", "livescience.com", "space.com",
+    "newscientist.com", "scientificamerican.com", "discovermagazine.com",
+    "popularmechanics.com", "popsci.com", "quantamagazine.org",
+    "technologyreview.com", "wired.com", "arstechnica.com",
+    "thenextweb.com", "techcrunch.com", "gizmodo.com", "engadget.com", "theverge.com",
+    # ── Global mainstream press & Business ──────────────────────────────
+    "reuters.com", "apnews.com", "afp.com", "xinhuanet.com", "kyodonews.net",
+    "bbc.com", "bbc.co.uk", "dw.com", "france24.com", "aljazeera.com",
+    "theguardian.com", "nytimes.com", "washingtonpost.com", "latimes.com",
+    "independent.co.uk", "telegraph.co.uk", "chicagotribune.com",
+    "cnn.com", "nbcnews.com", "cbsnews.com", "abcnews.go.com", "foxnews.com", "npr.org",
+    "usatoday.com", "time.com",
+    "ft.com", "economist.com", "bloomberg.com", "wsj.com", "cnbc.com",
+    "forbes.com", "businessinsider.com", "fortune.com", "hbr.org", "marketwatch.com",
+    # ── Turkish mainstream press & Agencies ─────────────────────────────
+    "aa.com.tr",          # Anadolu Ajansı
+    "iha.com.tr",         # İhlas Haber Ajansı
+    "dha.com.tr",         # Demirören Haber Ajansı
+    "anka.org.tr",        # Anka Haber Ajansı
+    "trt.net.tr", "trthaber.com", "trtworld.com",
+    "ntv.com.tr", "ntvmsnbc.com",
+    "cnnturk.com", "haberturk.com",
+    "hurriyet.com.tr", "milliyet.com.tr", "sabah.com.tr",
+    "cumhuriyet.com.tr", "sozcu.com.tr", "aksam.com.tr",
+    "star.com.tr", "turkiyegazetesi.com.tr", "yenicaggazetesi.com.tr",
+    "karar.com", "ensonhaber.com", "gazeteduvar.com.tr", "t24.com.tr",
+    "posta.com.tr", "vatan.com.tr",
+    # ── Turkish Business & Tech ─────────────────────────────────────────
+    "dunya.com", "ekonomim.com", "bloomberght.com", "apara.com.tr",
+    "uzmanpara.com", "finansgundem.com", "borsagundem.com", "para.com.tr",
+    "turkishtimedergi.com", "platinonline.com",
+    "webtekno.com", "shiftdelete.net", "donanimhaber.com", "chip.com.tr",
+    "teknoblog.com", "webrazzi.com", "egirisim.com",
+    # ── Google News aggregator (carries vetted sources) ─────────────────
+    # NOTE: news.google.com is intentionally NOT listed here.
+    # Google News RSS <link> elements are redirect URLs (news.google.com/articles/...)
+    # so we check trust via the <source url="..."> attribute (source_url) instead.
+]
+
+# Universal academic keywords — apply to ALL authors regardless of faculty.
+_NEWS_KEYWORDS_UNIVERSAL = [
+    # Turkish
+    "araştırma", "proje", "makale", "yayın", "akademi", "bilimsel",
+    "konferans", "sempozyum", "burs", "tez", "doktora", "patent",
+    "keşif", "ödül", "öğretim üyesi", "fakülte", "enstitü", "inovasyon",
+    "sabancı üniversitesi", "sabancı university", "tübitak", "avrupa birliği projesi",
+    "erasmus", "ab projesi",
+    # English
+    "research", "project", "paper", "publication", "academic", "science",
+    "conference", "symposium", "scholarship", "thesis", "phd", "patent",
+    "discovery", "award", "grant", "faculty", "institute", "peer-reviewed",
+    "journal", "professor", "university", "study", "findings",
+]
+
+# FENS — Faculty of Engineering and Natural Sciences
+_NEWS_KEYWORDS_FENS = [
+    # Turkish
+    "mühendislik", "yapay zeka", "makine öğrenmesi", "derin öğrenme",
+    "algoritma", "yazılım", "donanım", "robot", "otomasyon", "enerji",
+    "malzeme", "nanoteknoloji", "elektrik", "elektronik", "biyomedikal",
+    "kimya", "fizik", "biyoloji", "matematik", "istatistik", "bilgisayar",
+    "hesaplama", "simülasyon", "laboratuvar", "teknoloji", "sensör",
+    "drone", "insansız", "nöral", "optimizasyon",
+    # English
+    "engineering", "artificial intelligence", "machine learning", "deep learning",
+    "algorithm", "software", "hardware", "robotics", "automation", "energy",
+    "materials", "nanotechnology", "electrical", "electronics", "biomedical",
+    "chemistry", "physics", "biology", "mathematics", "statistics",
+    "computer science", "computation", "simulation", "laboratory", "technology",
+    "sensor", "neural network", "optimization", "cybersecurity", "quantum",
+    "genome", "protein", "polymer", "semiconductor",
+]
+
+# FASS — Faculty of Arts and Social Sciences
+_NEWS_KEYWORDS_FASS = [
+    # Turkish
+    "sosyoloji", "tarih", "psikoloji", "felsefe", "sanat", "toplum",
+    "siyaset bilimi", "edebiyat", "kültür", "antropoloji", "arkeoloji",
+    "dil bilimi", "iletişim", "medya", "eğitim bilimleri", "hukuk",
+    "uluslararası ilişkiler", "göç", "kimlik", "gender", "toplumsal",
+    "eleştirel", "söylem", "feminist", "post-kolonyalizm",
+    # English
+    "sociology", "history", "psychology", "philosophy", "art history",
+    "political science", "literature", "cultural studies", "anthropology",
+    "archaeology", "linguistics", "communication studies", "media studies",
+    "law", "international relations", "migration", "identity",
+    "gender studies", "critical theory", "discourse", "feminism",
+    "postcolonialism", "urban studies", "heritage", "democracy",
+]
+
+# SBS — School of Management (Sabancı Business School)
+_NEWS_KEYWORDS_SBS = [
+    # Turkish
+    "ekonomi", "finans", "yönetim", "pazarlama", "işletme", "girişim",
+    "strateji", "muhasebe", "liderlik", "organizasyon", "tedarik zinciri",
+    "sürdürülebilirlik", "kurumsal", "inovasyon yönetimi", "piyasa",
+    "borsa", "yatırım", "sermaye", "büyüme",
+    # English
+    "finance", "economics", "management", "marketing", "business",
+    "entrepreneurship", "strategy", "accounting", "leadership", "organization",
+    "supply chain", "sustainability", "corporate", "innovation management",
+    "market", "investment", "capital", "growth", "startup", "venture",
+    "governance", "mergers", "acquisitions",
+]
+
+# Map dept strings (lowercase substrings) to their keyword lists
+_FACULTY_KEYWORD_MAP = {
+    "fens": _NEWS_KEYWORDS_FENS,
+    "engineering": _NEWS_KEYWORDS_FENS,
+    "natural sciences": _NEWS_KEYWORDS_FENS,
+    "fass": _NEWS_KEYWORDS_FASS,
+    "arts": _NEWS_KEYWORDS_FASS,
+    "social sciences": _NEWS_KEYWORDS_FASS,
+    "sbs": _NEWS_KEYWORDS_SBS,
+    "management": _NEWS_KEYWORDS_SBS,
+    "business": _NEWS_KEYWORDS_SBS,
+}
+
+
+def _get_faculty_keywords(dept: str | None) -> list[str]:
+    """Return the faculty-specific keyword list for this dept string."""
+    if not dept:
+        return []
+    dept_lower = dept.lower()
+    for key, kws in _FACULTY_KEYWORD_MAP.items():
+        if key in dept_lower:
+            return kws
+    return []
+
+
+def _is_trusted_source(item: "NewsItem") -> bool:
+    """
+    Check trust against source_url (the real outlet domain from <source url=...>).
+    Falls back to item.url if source_url is not available.
+    """
+    check_url = (item.source_url or item.url or "").lower()
+    return any(domain in check_url for domain in _TRUSTED_NEWS_DOMAINS)
+
+
+def _article_is_academic(item: "NewsItem", faculty_keywords: list[str]) -> bool:
+    """
+    Return True only if BOTH conditions are met:
+    1. The article comes from a trusted news domain (checked via source_url).
+    2. The article title+summary contains at least one keyword from the
+       universal list OR the author's faculty-specific list.
+    Untrusted sources (e.g. bianet.org, activist blogs) are rejected outright.
+    """
+    if not _is_trusted_source(item):
+        return False
+    text = ((item.title or "") + " " + (item.summary or "")).lower()
+    all_keywords = _NEWS_KEYWORDS_UNIVERSAL + faculty_keywords
+    return any(kw in text for kw in all_keywords)
+
+@app.get("/authors/{author_id}/news", response_model=List[NewsItem])
+async def get_author_news(author_id: str):
+    """
+    Return recent news articles for this author filtered by academic relevance.
+    Feed URLs are stored in the author_news_feeds table.
+    Results are fetched in real-time from each stored URL and cached for 6 hours.
+    Every article must contain at least one universal academic keyword OR a
+    faculty-specific keyword (FENS / FASS / SBS) to pass the filter.
+    """
+    import asyncio
+
+    short_id = author_id.replace("https://openalex.org/", "").split("/")[-1]
+
+    # Check cache first
+    cached = _news_cache.get(short_id)
+    if cached:
+        fetched_at, articles = cached
+        if time.time() - fetched_at < _NEWS_CACHE_TTL:
+            return articles
+
+    # Fetch feed URLs and author dept in one query
+    feed_rows = await db.pool.fetch(
+        """
+        SELECT anf.feed_url, a.dept
+        FROM author_news_feeds anf
+        LEFT JOIN authors a ON a.id ILIKE $1 OR a.id = $2
+        WHERE anf.author_id ILIKE $1 OR anf.author_id = $2
+        """,
+        f"%{short_id}%",
+        author_id,
+    )
+    if not feed_rows:
+        return []
+
+    feed_urls = [r["feed_url"] for r in feed_rows]
+    # All rows share the same author so grab dept from first row
+    dept = feed_rows[0]["dept"] if feed_rows else None
+    faculty_keywords = _get_faculty_keywords(dept)
+
+    # Fetch all feeds in parallel (sync I/O → thread pool)
+    loop = asyncio.get_event_loop()
+    results = await asyncio.gather(
+        *[loop.run_in_executor(None, _fetch_rss_url, url) for url in feed_urls]
+    )
+
+    # Merge, de-duplicate by URL, apply strict keyword filter
+    seen_urls: set = set()
+    all_items: list[NewsItem] = []
+
+    for batch in results:
+        for item in batch:
+            if item.url not in seen_urls:
+                if _article_is_academic(item, faculty_keywords):
+                    seen_urls.add(item.url)
+                    all_items.append(item)
+
+    all_items.sort(key=lambda x: x.published_at or "", reverse=True)
+    articles = all_items
+
+    # Store in cache
+    _news_cache[short_id] = (time.time(), articles)
+    return articles
+
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8000)
+
+

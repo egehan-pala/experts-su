@@ -3,7 +3,11 @@
 import { useParams, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import CoAuthorshipGraph from '@/components/CoAuthorshipGraph';
-import PublicationList from '@/components/PublicationList';
+import FingerprintChart from '@/components/charts/FingerprintChart';
+import CitationTimelineChart from '@/components/charts/CitationTimelineChart';
+import CollaborationMap from '@/components/CollaborationMap';
+import NewsSection from '@/components/NewsSection';
+import { API_URL } from '@/lib/config';
 
 interface Author {
     id: string;
@@ -14,6 +18,8 @@ interface Author {
     email?: string | null;
     phone?: string | null;
     areas_of_interest?: string | null;
+    pub_count?: number | null;
+    cited_by_count?: number | null;
     top_publication?: {
         title: string;
         year: number | null;
@@ -44,9 +50,58 @@ interface Publication {
     year: number | null;
     citations: number | null;
     venue: string | null;
+    venue_type?: string | null;
+    type?: string | null;
+    volume?: string | null;
+    issue?: string | null;
+    first_page?: string | null;
+    last_page?: string | null;
+    is_oa?: boolean | null;
     pdf_url?: string | null;
+    landing_page_url?: string | null;
     publication_date?: string | null;
+    authorships_json?: string | null;
+    topics_json?: string | null;
 }
+
+function PublicationDonut({ percentage, color }: { percentage: number; color: string }) {
+    const radius = 7.5;
+    const circumference = 2 * Math.PI * radius;
+    const offset = circumference - (percentage * circumference);
+
+    return (
+        <svg width="18" height="18" viewBox="0 0 20 20" style={{ flexShrink: 0 }}>
+            <circle cx="10" cy="10" r={radius} fill="transparent" stroke="rgba(255,255,255,0.1)" strokeWidth="3" />
+            <circle
+                cx="10"
+                cy="10"
+                r={radius}
+                fill="transparent"
+                stroke={color}
+                strokeWidth="3"
+                strokeDasharray={circumference}
+                strokeDashoffset={offset}
+                strokeLinecap="round"
+                transform="rotate(-90 10 10)"
+            />
+        </svg>
+    );
+}
+
+const FIELD_COLORS: Record<string, string> = {
+    'computer science': '#0070c0',
+    'engineering': '#ed7d31',
+    'medicine': '#7030a0',
+    'biology': '#70ad47',
+    'physics': '#c00000',
+    'mathematics': '#00b0f0',
+    'social sciences': '#70ad47',
+    'business': '#00b0f0',
+    'chemistry': '#ffc000',
+    'materials science': '#ed7d31',
+    'psychology': '#7030a0',
+    'default': '#94a3b8'
+};
 
 function RecentArticlesSection({ authorId }: { authorId: string }) {
     const [recentPubs, setRecentPubs] = useState<Publication[]>([]);
@@ -55,7 +110,7 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
     useEffect(() => {
         if (authorId) {
             const shortId = authorId.replace('https://openalex.org/', '').split('/').pop() || authorId;
-            fetch(`http://localhost:8000/authors/${shortId}/recent-publications`)
+            fetch(`${API_URL}/authors/${shortId}/recent-publications`)
                 .then(res => res.json())
                 .then(data => {
                     setRecentPubs(data || []);
@@ -72,7 +127,7 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
         if (!dateStr) return '';
         try {
             const date = new Date(dateStr);
-            return date.toLocaleDateString('en-US', { day: 'numeric', month: 'long', year: 'numeric' });
+            return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
         } catch { return dateStr; }
     };
 
@@ -81,41 +136,158 @@ function RecentArticlesSection({ authorId }: { authorId: string }) {
 
     return (
         <section style={{
-            marginTop: '4rem',
-            padding: '2rem',
-            backgroundColor: '#ffffff',
-            borderRadius: '20px',
-            border: '1px solid #e4e4e7',
-            boxShadow: '0 10px 30px rgba(0,0,0,0.04)',
+            marginTop: '0',
+            padding: '4rem 0',
+            backgroundColor: '#1E293B',
+            color: '#f8fafc',
+            width: '100vw',
+            position: 'relative',
+            left: '50%',
+            right: '50%',
+            marginLeft: '-50vw',
+            marginRight: '-50vw',
+            borderTop: '1px solid #334155',
+            fontFamily: 'var(--font-sans)',
+            overflow: 'hidden'
         }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '2rem', borderBottom: '1px solid #f4f4f5', paddingBottom: '1rem' }}>
-                <span style={{ fontSize: '1.5rem' }}>📰</span>
-                <h3 style={{ fontSize: '1.1rem', fontWeight: 800, color: '#d6001c', textTransform: 'uppercase', letterSpacing: '0.1em', margin: 0, fontFamily: 'var(--font-sans)' }}>
-                    Recent Publications
-                </h3>
-            </div>
+            <div style={{
+                maxWidth: '1200px',
+                margin: '0 auto',
+                padding: '0 5vw',
+                boxSizing: 'border-box'
+            }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', marginBottom: '3rem' }}>
+                    <span style={{ fontSize: '1.5rem', color: '#3b82f6' }}>
+                        <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                            <rect x="2" y="3" width="20" height="18" rx="2" ry="2" />
+                            <line x1="7" y1="8" x2="17" y2="8" />
+                            <line x1="7" y1="12" x2="17" y2="12" />
+                            <line x1="7" y1="16" x2="12" y2="16" />
+                        </svg>
+                    </span>
+                    <h2 style={{ fontSize: '1.5rem', fontWeight: 800, color: '#f8fafc', margin: 0, fontFamily: 'var(--font-serif)' }}>
+                        Recent Publications
+                    </h2>
+                </div>
 
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))', gap: '2.5rem' }}>
-                {recentPubs.map(pub => (
-                    <div key={pub.id} style={{ display: 'flex', flexDirection: 'column', gap: '0.6rem', padding: '1.25rem', backgroundColor: '#f9f9fb', borderRadius: '12px', border: '1px solid #f1f1f4', transition: 'transform 0.2s' }}>
-                        <span style={{ fontSize: '0.8rem', color: '#71717a', fontFamily: 'var(--font-serif)', fontStyle: 'italic', fontWeight: 500 }}>
-                            {formatDate(pub.publication_date)}
-                        </span>
-                        <h4 style={{ fontSize: '1rem', color: '#111', fontWeight: 700, lineHeight: 1.4, margin: 0, fontFamily: 'var(--font-serif)', minHeight: '2.8em' }}>
-                            {pub.title}
-                        </h4>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', marginTop: 'auto' }}>
-                            <span style={{ fontSize: '0.8rem', color: '#002855', fontWeight: 700, fontFamily: 'var(--font-sans)' }}>
-                                {pub.venue || 'Unknown Venue'}
-                            </span>
-                        </div>
-                        {pub.pdf_url && (
-                            <a href={pub.pdf_url} target="_blank" rel="noopener noreferrer" style={{ fontSize: '0.75rem', color: '#d6001c', fontWeight: 600, textDecoration: 'none', display: 'flex', alignItems: 'center', gap: '0.2rem', marginTop: '0.5rem' }}>
-                                PDF AVAILABLE ↗
-                            </a>
-                        )}
-                    </div>
-                ))}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '2.5rem' }}>
+                    {recentPubs.map(pub => {
+                        let authors: any[] = [];
+                        try {
+                            authors = pub.authorships_json ? JSON.parse(pub.authorships_json) : [];
+                        } catch (e) { console.error('Error parsing authors:', e); }
+
+                        let topics: any[] = [];
+                        try {
+                            topics = pub.topics_json ? JSON.parse(pub.topics_json) : [];
+                        } catch (e) { console.error('Error parsing topics:', e); }
+
+                        const pubLink = pub.landing_page_url || pub.pdf_url || `https://openalex.org/${pub.id}`;
+
+                        return (
+                            <div key={pub.id} style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: '0.8rem',
+                                paddingBottom: '2.5rem',
+                                borderBottom: '1px solid rgba(255,255,255,0.05)'
+                            }}>
+                                <a
+                                    href={pubLink}
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    style={{
+                                        fontSize: '1.25rem',
+                                        color: '#60a5fa',
+                                        fontWeight: 600,
+                                        lineHeight: 1.4,
+                                        textDecoration: 'none',
+                                        fontFamily: 'var(--font-serif)',
+                                        transition: 'color 0.2s',
+                                        maxWidth: '1000px'
+                                    }}
+                                    onMouseEnter={(e) => e.currentTarget.style.color = '#93c5fd'}
+                                    onMouseLeave={(e) => e.currentTarget.style.color = '#60a5fa'}
+                                >
+                                    {pub.title}
+                                </a>
+
+                                <div style={{ fontSize: '0.85rem', color: '#cbd5e1', lineHeight: 1.5 }}>
+                                    {authors.map((a, i) => {
+                                        const shortTargetId = authorId.replace('https://openalex.org/', '').split('/').pop() || authorId;
+                                        const authorFullId = a.author?.id || a.author_id || '';
+                                        const isTarget = authorFullId.includes(shortTargetId);
+                                        const displayName = a.author?.display_name || a.author_name || a.display_name || a.raw_name || 'Unknown Author';
+                                        return (
+                                            <span key={i}>
+                                                <span style={{ color: isTarget ? '#60a5fa' : '#cbd5e1', fontWeight: isTarget ? 700 : 400 }}>
+                                                    {displayName}
+                                                </span>
+                                                {i < authors.length - 1 ? ', ' : ''}
+                                            </span>
+                                        );
+                                    })}
+                                    <span style={{ color: '#94a3b8' }}>, {formatDate(pub.publication_date)}, </span>
+                                    <span style={{ fontStyle: 'italic', color: '#cbd5e1' }}>In: {pub.venue || 'Unknown Venue'}. </span>
+                                    {pub.volume && <span style={{ color: '#94a3b8' }}>{pub.volume}</span>}
+                                    {pub.issue && <span style={{ color: '#94a3b8' }}>, {pub.issue}</span>}
+                                    {(pub.first_page || pub.last_page) && (
+                                        <span style={{ color: '#94a3b8' }}>, p. {pub.first_page}{pub.last_page ? `-${pub.last_page}` : ''}</span>
+                                    )}
+                                </div>
+
+                                <div style={{ fontSize: '0.75rem', color: '#94a3b8', fontStyle: 'italic' }}>
+                                    Research output: {pub.type?.split('-').map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Publication'}
+                                </div>
+
+                                <div style={{ display: 'flex', gap: '1.25rem', marginTop: '0.2rem' }}>
+                                    {pub.is_oa && (
+                                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: '#f59e0b', fontWeight: 600 }}>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                                <path d="M7 11V7a5 5 0 0 1 10 0v4" />
+                                                <rect x="3" y="11" width="18" height="11" rx="2" />
+                                            </svg>
+                                            OPEN ACCESS
+                                        </div>
+                                    )}
+                                    {pub.pdf_url && (
+                                        <a href={pub.pdf_url} target="_blank" rel="noopener noreferrer" style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', fontSize: '0.75rem', color: '#94a3b8', fontWeight: 600, textDecoration: 'none' }}>
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5">
+                                                <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48" />
+                                            </svg>
+                                            FILE
+                                        </a>
+                                    )}
+                                </div>
+
+                                <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.75rem', marginTop: '0.5rem' }}>
+                                    {topics.slice(0, 5).map((t, idx) => {
+                                        const category = (t.field?.display_name || t.field_display_name || 'default').toLowerCase();
+                                        const color = FIELD_COLORS[category] || FIELD_COLORS['default'];
+                                        const topicName = t.display_name || t.name || 'Unknown Topic';
+                                        return (
+                                            <div key={idx} style={{
+                                                display: 'flex',
+                                                alignItems: 'center',
+                                                gap: '0.5rem',
+                                                padding: '4px 10px',
+                                                backgroundColor: 'rgba(255,255,255,0.03)',
+                                                border: '1px solid rgba(255,255,255,0.1)',
+                                                borderRadius: '4px',
+                                                fontSize: '0.75rem',
+                                                color: '#f8fafc',
+                                                fontWeight: 500
+                                            }}>
+                                                <PublicationDonut percentage={t.score || 0.5} color={color} />
+                                                {topicName}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
             </div>
         </section>
     );
@@ -129,7 +301,8 @@ export default function ProfilePage() {
     const [author, setAuthor] = useState<Author | null>(null);
     const [metrics, setMetrics] = useState<YearlyMetric[]>([]);
     const [loading, setLoading] = useState(true);
-    const [hoveredYear, setHoveredYear] = useState<YearlyMetric | null>(null);
+    const [selectedYear, setSelectedYear] = useState<number | null>(null);
+    const [activeTab, setActiveTab] = useState<string>('timeline');
 
     // Galaxy state
     const [galaxyCategory, setGalaxyCategory] = useState<GalaxyCategory>('source');
@@ -140,7 +313,8 @@ export default function ProfilePage() {
     const fetchGalaxy = async (cat: GalaxyCategory, drills: string[]) => {
         setGalaxyLoading(true);
         try {
-            let url = `http://localhost:8000/authors/${id}/galaxy?category=${cat}`;
+            const shortId = id.replace('https://openalex.org/', '').split('/').pop() || id;
+            let url = `${API_URL}/authors/${shortId}/galaxy?category=${cat}`;
             if (drills.length >= 1) url += `&drill=${encodeURIComponent(drills[0])}`;
             if (drills.length >= 2) url += `&drill2=${encodeURIComponent(drills[1])}`;
             const res = await fetch(url);
@@ -152,16 +326,20 @@ export default function ProfilePage() {
 
     useEffect(() => {
         if (id) {
+            const shortId = id.replace('https://openalex.org/', '').split('/').pop() || id;
             Promise.all([
-                fetch(`http://localhost:8000/authors/${id}`).then(res => res.json()),
-                fetch(`http://localhost:8000/authors/${id}/metrics`).then(res => res.json()),
+                fetch(`${API_URL}/authors/${shortId}`).then(res => res.json()),
+                fetch(`${API_URL}/authors/${shortId}/metrics`).then(res => res.json()),
             ])
                 .then(([authorData, metricsData]) => {
                     setAuthor(authorData);
                     setMetrics(metricsData);
                     setLoading(false);
                 })
-                .catch((err) => console.error(err));
+                .catch((err) => {
+                    console.error('Error fetching author profile:', err);
+                    setLoading(false);
+                });
         }
     }, [id]);
 
@@ -176,15 +354,11 @@ export default function ProfilePage() {
     // Calculate total citations
     const totalCitations = metrics.reduce((acc, m) => acc + (m.citations || 0), 0);
 
-    // Get recent years for sparkline (last 20 years)
-    const recentMetrics = metrics.slice(-20);
-    const maxCitations = Math.max(...recentMetrics.map(m => m.citations || 0), 1);
-
     if (loading) return <div className="container" style={{ paddingTop: '4rem' }}>Loading profile...</div>;
     if (!author) return <div className="container" style={{ paddingTop: '4rem' }}>Author not found</div>;
 
     return (
-        <div style={{ minHeight: '100vh', paddingBottom: '4rem' }}>
+        <div style={{ minHeight: '100vh' }}>
 
             {/* Editorial Profile Header */}
             <div style={{ backgroundColor: '#f4f4f5', padding: '4rem 0', borderBottom: '1px solid #e4e4e7' }}>
@@ -262,55 +436,14 @@ export default function ProfilePage() {
                                     <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>ORCID</span>
                                     <span style={{ fontFamily: 'monospace', color: '#111' }}>{author.orcid || 'N/A'}</span>
                                 </div>
-                                {/* Citations with interactive chart */}
-                                <div style={{ minWidth: '200px' }}>
+                                {/* Citations Total */}
+                                <div style={{ minWidth: '150px' }}>
                                     <span className="uppercase-label" style={{ color: '#71717a', display: 'block', marginBottom: '0.25rem' }}>
-                                        {hoveredYear ? `Citations in ${hoveredYear.year}` : 'Total Citations'}
+                                        Total Citations
                                     </span>
-                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                        <span style={{ fontWeight: 700, fontSize: '1.5rem', color: '#002855', transition: 'all 0.15s' }}>
-                                            {hoveredYear ? hoveredYear.citations.toLocaleString() : totalCitations.toLocaleString()}
-                                        </span>
-                                        {/* Interactive bar chart */}
-                                        {recentMetrics.length > 0 && (
-                                            <div
-                                                style={{
-                                                    display: 'flex',
-                                                    alignItems: 'flex-end',
-                                                    gap: '3px',
-                                                    height: '60px',
-                                                    padding: '8px 12px',
-                                                    backgroundColor: '#fff',
-                                                    borderRadius: '8px',
-                                                    border: '1px solid #e4e4e7',
-                                                    boxShadow: '0 1px 3px rgba(0,0,0,0.05)'
-                                                }}
-                                                onMouseLeave={() => setHoveredYear(null)}
-                                            >
-                                                {recentMetrics.map((m) => (
-                                                    <div
-                                                        key={m.year}
-                                                        onMouseEnter={() => setHoveredYear(m)}
-                                                        style={{
-                                                            width: '8px',
-                                                            height: `${Math.max((m.citations / maxCitations) * 50, 3)}px`,
-                                                            backgroundColor: hoveredYear?.year === m.year ? '#d6001c' : '#002855',
-                                                            borderRadius: '2px',
-                                                            cursor: 'pointer',
-                                                            transition: 'all 0.15s',
-                                                            opacity: hoveredYear && hoveredYear.year !== m.year ? 0.4 : 1
-                                                        }}
-                                                    />
-                                                ))}
-                                            </div>
-                                        )}
-                                        {recentMetrics.length > 0 && (
-                                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.7rem', color: '#a1a1aa' }}>
-                                                <span>{recentMetrics[0]?.year}</span>
-                                                <span>{recentMetrics[recentMetrics.length - 1]?.year}</span>
-                                            </div>
-                                        )}
-                                    </div>
+                                    <span style={{ fontWeight: 700, fontSize: '2.25rem', color: '#002855' }}>
+                                        {(author.cited_by_count ?? totalCitations).toLocaleString()}
+                                    </span>
                                 </div>
                             </div>
 
@@ -318,7 +451,7 @@ export default function ProfilePage() {
                             {author.top_publication && (
                                 <div style={{ marginTop: '2rem', padding: '1.5rem', backgroundColor: '#fff', borderRadius: '12px', border: '1px solid #e4e4e7', boxShadow: '0 2px 4px rgba(0,0,0,0.02)' }}>
                                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', marginBottom: '0.75rem' }}>
-                                        <span style={{ fontSize: '1.25rem' }}>🏆</span>
+                                        <span style={{ fontSize: '1.25rem' }}></span>
                                         <h3 style={{ fontSize: '1rem', fontWeight: 600, color: '#111', margin: 0 }}>Top Cited Paper</h3>
                                     </div>
                                     <p style={{ fontSize: '1.1rem', color: '#002855', fontWeight: 500, marginBottom: '0.5rem', lineHeight: 1.4 }}>
@@ -337,242 +470,76 @@ export default function ProfilePage() {
                 </div>
             </div>
 
-            {/* Layout Main Column */}
-            <div className="container" style={{ marginTop: '3rem' }}>
-                
-                {/* ✨ Research Galaxy — Multi-Level Constellation ✨ */}
-                {(() => {
-                    // ... (galaxy part stays same inside)
-                        const PALETTE = [
-                            'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-                            'linear-gradient(135deg, #f093fb 0%, #f5576c 100%)',
-                            'linear-gradient(135deg, #4facfe 0%, #00f2fe 100%)',
-                            'linear-gradient(135deg, #43e97b 0%, #38f9d7 100%)',
-                            'linear-gradient(135deg, #fa709a 0%, #fee140 100%)',
-                            'linear-gradient(135deg, #a18cd1 0%, #fbc2eb 100%)',
-                            'linear-gradient(135deg, #fccb90 0%, #d57eeb 100%)',
-                            'linear-gradient(135deg, #e0c3fc 0%, #8ec5fc 100%)',
-                            'linear-gradient(135deg, #f5576c 0%, #ff6a00 100%)',
-                            'linear-gradient(135deg, #13547a 0%, #80d0c7 100%)',
-                        ];
-                        const SOLID_COLORS = [
-                            '#667eea', '#f5576c', '#4facfe', '#43e97b', '#fa709a',
-                            '#a18cd1', '#fccb90', '#8ec5fc', '#f5576c', '#80d0c7'
-                        ];
-                        const CATEGORY_META: Record<GalaxyCategory, { icon: string; label: string; levels: string[] }> = {
-                            source: { icon: '🏛️', label: 'Source', levels: ['Sources', 'Subfields', 'Works'] },
-                            subfield: { icon: '🔬', label: 'Subfield', levels: ['Subfields', 'Works'] },
-                        };
-                        const meta = CATEGORY_META[galaxyCategory];
-                        const currentLevel = galaxyBreadcrumb.length;
-                        const levelLabel = meta.levels[currentLevel] || 'Details';
-                        const maxCount = Math.max(...galaxyNodes.map(n => n.count), 1);
+            {/* Tabs Navigation */}
+            <div style={{ display: 'flex', justifyContent: 'center', gap: '2rem', borderBottom: '1px solid #e4e4e7', backgroundColor: '#fff', padding: '0 2rem', position: 'sticky', top: 0, zIndex: 10 }}>
+                {['timeline', 'fingerprint', 'network', 'global', 'publications', 'news'].map(tab => (
+                    <button
+                        key={tab}
+                        onClick={() => setActiveTab(tab)}
+                        style={{
+                            padding: '1.2rem 1rem',
+                            background: 'none',
+                            border: 'none',
+                            borderBottom: activeTab === tab ? '3px solid #002855' : '3px solid transparent',
+                            color: activeTab === tab ? '#002855' : '#71717a',
+                            fontWeight: activeTab === tab ? 600 : 400,
+                            fontSize: '1rem',
+                            cursor: 'pointer',
+                            fontFamily: 'var(--font-sans)',
+                            transition: 'all 0.2s ease',
+                            marginBottom: '-1px',
+                            textTransform: 'capitalize'
+                        }}
+                    >
+                        {tab === 'network' ? 'Network Collaboration' : tab === 'global' ? 'Global Impact' : tab === 'publications' ? 'Recent Publications' : tab === 'news' ? 'News' : tab}
+                    </button>
+                ))}
+            </div>
 
-                        const handleBubbleClick = (node: GalaxyNode) => {
-                            if (!node.children_available) return;
-                            const newBreadcrumb = [...galaxyBreadcrumb, node.name];
-                            setGalaxyBreadcrumb(newBreadcrumb);
-                            fetchGalaxy(galaxyCategory, newBreadcrumb);
-                        };
+            {/* Tab Content */}
+            <div style={{ minHeight: '50vh' }}>
+                {activeTab === 'timeline' && (
+                    <CitationTimelineChart
+                        authorId={id}
+                        data={metrics}
+                        selectedYear={selectedYear}
+                        onYearSelect={setSelectedYear}
+                    />
+                )}
 
-                        const handleBreadcrumbClick = (level: number) => {
-                            const newBreadcrumb = galaxyBreadcrumb.slice(0, level);
-                            setGalaxyBreadcrumb(newBreadcrumb);
-                            fetchGalaxy(galaxyCategory, newBreadcrumb);
-                        };
+                {activeTab === 'fingerprint' && (
+                    <FingerprintChart authorId={id} />
+                )}
 
-                        return (
-                            <div>
-                                <h2 style={{ fontSize: '1.5rem', fontFamily: 'var(--font-serif)', color: '#111', marginBottom: '1rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                    <span style={{ fontSize: '1.25rem' }}>🔬</span>
-                                    Research Galaxy
-                                </h2>
+                {activeTab === 'network' && (
+                    <CoAuthorshipGraph authorId={id} authorName={author.name} />
+                )}
 
-                                {/* Category Tabs */}
-                                <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-                                    {(['source', 'subfield'] as GalaxyCategory[]).map(cat => {
-                                        const m = CATEGORY_META[cat];
-                                        const isActive = galaxyCategory === cat;
-                                        return (
-                                            <button
-                                                key={cat}
-                                                onClick={() => { setGalaxyCategory(cat); }}
-                                                style={{
-                                                    padding: '0.6rem 1.5rem',
-                                                    borderRadius: '12px 12px 0 0',
-                                                    border: 'none',
-                                                    cursor: 'pointer',
-                                                    fontWeight: 700,
-                                                    fontSize: '0.9rem',
-                                                    color: isActive ? '#fff' : '#52525b',
-                                                    background: isActive ? 'linear-gradient(135deg, #0f172a, #1e293b)' : '#f4f4f5',
-                                                    transition: 'all 0.3s',
-                                                    display: 'flex', alignItems: 'center', gap: '0.4rem',
-                                                }}
-                                            >
-                                                <span>{m.icon}</span> {m.label}
-                                            </button>
-                                        );
-                                    })}
-                                </div>
+                {activeTab === 'global' && (
+                    <CollaborationMap authorId={id} selectedYear={selectedYear} />
+                )}
 
-                                {/* Cosmic Panel */}
-                                <div style={{
-                                    background: 'linear-gradient(145deg, #0f172a 0%, #1e293b 40%, #0f172a 100%)',
-                                    borderRadius: '0 20px 20px 20px',
-                                    padding: '2rem',
-                                    position: 'relative',
-                                    overflow: 'hidden',
-                                    minHeight: '320px',
-                                }}>
-                                    {/* Twinkling stars */}
-                                    {[...Array(30)].map((_, i) => (
-                                        <div key={`star-${i}`} style={{
-                                            position: 'absolute',
-                                            width: `${1 + (i % 3)}px`, height: `${1 + (i % 3)}px`,
-                                            backgroundColor: 'rgba(255,255,255,0.4)',
-                                            borderRadius: '50%',
-                                            top: `${(i * 37) % 100}%`, left: `${(i * 53) % 100}%`,
-                                            animation: `twinkle ${2 + (i % 3)}s ease-in-out infinite`,
-                                            animationDelay: `${(i % 5) * 0.4}s`
-                                        }} />
-                                    ))}
-
-                                    {/* Breadcrumb Navigation */}
-                                    <div style={{ position: 'relative', zIndex: 2, marginBottom: '1.25rem', display: 'flex', alignItems: 'center', gap: '0.5rem', flexWrap: 'wrap' }}>
-                                        <button
-                                            onClick={() => handleBreadcrumbClick(0)}
-                                            style={{ background: 'none', border: 'none', color: galaxyBreadcrumb.length === 0 ? '#fff' : 'rgba(255,255,255,0.5)', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer', padding: 0 }}
-                                        >
-                                            {meta.icon} {meta.levels[0]}
-                                        </button>
-                                        {galaxyBreadcrumb.map((crumb, i) => (
-                                            <span key={i} style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                                                <span style={{ color: 'rgba(255,255,255,0.3)' }}>›</span>
-                                                <button
-                                                    onClick={() => handleBreadcrumbClick(i + 1)}
-                                                    style={{
-                                                        background: 'none', border: 'none',
-                                                        color: i === galaxyBreadcrumb.length - 1 ? '#fff' : 'rgba(255,255,255,0.5)',
-                                                        fontSize: '0.85rem', fontWeight: i === galaxyBreadcrumb.length - 1 ? 700 : 400,
-                                                        cursor: 'pointer', padding: 0,
-                                                        maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap'
-                                                    }}
-                                                >
-                                                    {crumb}
-                                                </button>
-                                            </span>
-                                        ))}
-                                    </div>
-
-                                    {/* Level indicator */}
-                                    <div style={{ position: 'relative', zIndex: 2, textAlign: 'center', marginBottom: '1rem' }}>
-                                        <span style={{ color: 'rgba(255,255,255,0.4)', fontSize: '0.75rem', textTransform: 'uppercase', letterSpacing: '2px' }}>
-                                            {levelLabel}
-                                        </span>
-                                    </div>
-
-                                    {/* Bubble Cloud */}
-                                    {galaxyLoading ? (
-                                        <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.6)', padding: '3rem', position: 'relative', zIndex: 2 }}>
-                                            Loading...
-                                        </div>
-                                    ) : galaxyNodes.length === 0 ? (
-                                        <div style={{ textAlign: 'center', color: 'rgba(255,255,255,0.4)', padding: '3rem', position: 'relative', zIndex: 2 }}>
-                                            No data available for this level
-                                        </div>
-                                    ) : (
-                                        <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'center', alignItems: 'center', gap: '12px', position: 'relative', zIndex: 2, padding: '0.5rem' }}>
-                                            {galaxyNodes.map((node, idx) => {
-                                                const ratio = node.count / maxCount;
-                                                const size = Math.max(58, Math.round(ratio * 140));
-                                                const colorIdx = idx % PALETTE.length;
-                                                const yOff = idx % 3 === 0 ? -6 : idx % 3 === 1 ? 6 : 0;
-                                                const isClickable = node.children_available;
-
-                                                return (
-                                                    <div
-                                                        key={`${node.name}-${idx}`}
-                                                        title={`${node.name}: ${node.count}`}
-                                                        onClick={() => isClickable && handleBubbleClick(node)}
-                                                        style={{
-                                                            width: `${size}px`, height: `${size}px`,
-                                                            borderRadius: '50%',
-                                                            background: PALETTE[colorIdx],
-                                                            display: 'flex', flexDirection: 'column',
-                                                            alignItems: 'center', justifyContent: 'center',
-                                                            color: '#fff',
-                                                            cursor: isClickable ? 'pointer' : 'default',
-                                                            position: 'relative',
-                                                            transform: `translateY(${yOff}px)`,
-                                                            animation: `bubblePop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) forwards`,
-                                                            animationDelay: `${idx * 0.06}s`,
-                                                            opacity: 0,
-                                                            boxShadow: `0 0 ${Math.round(ratio * 20 + 8)}px ${SOLID_COLORS[colorIdx]}66`,
-                                                            transition: 'transform 0.3s, box-shadow 0.3s',
-                                                            overflow: 'hidden', padding: '6px',
-                                                        }}
-                                                        onMouseEnter={(e) => {
-                                                            e.currentTarget.style.transform = `translateY(${yOff}px) scale(1.15)`;
-                                                            e.currentTarget.style.boxShadow = `0 0 ${Math.round(ratio * 30 + 14)}px ${SOLID_COLORS[colorIdx]}99`;
-                                                            e.currentTarget.style.zIndex = '10';
-                                                        }}
-                                                        onMouseLeave={(e) => {
-                                                            e.currentTarget.style.transform = `translateY(${yOff}px) scale(1)`;
-                                                            e.currentTarget.style.boxShadow = `0 0 ${Math.round(ratio * 20 + 8)}px ${SOLID_COLORS[colorIdx]}66`;
-                                                            e.currentTarget.style.zIndex = '1';
-                                                        }}
-                                                    >
-                                                        <span style={{
-                                                            fontSize: size > 90 ? '0.65rem' : '0.5rem',
-                                                            fontWeight: 600, textAlign: 'center', lineHeight: 1.2,
-                                                            textShadow: '0 1px 3px rgba(0,0,0,0.4)',
-                                                            display: '-webkit-box',
-                                                            WebkitLineClamp: size > 100 ? 3 : 2,
-                                                            WebkitBoxOrient: 'vertical',
-                                                            overflow: 'hidden', wordBreak: 'break-word',
-                                                        }}>{node.name}</span>
-                                                        <span style={{
-                                                            fontSize: size > 90 ? '0.9rem' : '0.7rem',
-                                                            fontWeight: 800, marginTop: '2px',
-                                                            textShadow: '0 1px 3px rgba(0,0,0,0.5)',
-                                                        }}>{node.count}</span>
-                                                    </div>
-                                                );
-                                            })}
-                                        </div>
-                                    )}
-                                </div>
-
-                                {/* Keyframes */}
-                                <style dangerouslySetInnerHTML={{
-                                    __html: `
-                                    @keyframes bubblePop {
-                                        from { opacity: 0; transform: scale(0.3) translateY(20px); }
-                                        to { opacity: 1; transform: scale(1) translateY(0); }
-                                    }
-                                    @keyframes twinkle {
-                                        0%, 100% { opacity: 0.3; }
-                                        50% { opacity: 1; }
-                                    }
-                                `}} />
-                            </div>
-                        );
-                    })()}
-
-                    {/* Co-authorship Network Graph */}
-                    <div style={{ marginTop: '3rem' }}>
-                        <CoAuthorshipGraph authorId={id} authorName={author.name} />
-                    </div>
-
-                    {/* Recent Publications Section (Full Width Below) */}
+                {activeTab === 'publications' && (
                     <RecentArticlesSection authorId={id} />
+                )}
 
-                    {/* Full Publications List with Filters */}
-                    <PublicationList authorId={id} />
-                </div>
+                {activeTab === 'news' && author && (
+                    <NewsSection authorId={id} authorName={author.name} />
+                )}
+            </div>
 
-            {/* Publications section removed - data is stored in backend for future search engine implementation */}
+            {/* Smooth Footer Transition Gradient */}
+            <div style={{
+                height: '80px',
+                width: '100vw',
+                position: 'relative',
+                left: '50%',
+                right: '50%',
+                marginLeft: '-50vw',
+                marginRight: '-50vw',
+                background: 'linear-gradient(to bottom, #1e293b, #002777)',
+                marginTop: '-1px' // Overlap slightly to prevent tiny line gaps
+            }} />
         </div>
     );
 }

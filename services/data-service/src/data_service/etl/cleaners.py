@@ -14,6 +14,7 @@ import json
 import re
 from typing import Any, Dict, List, Optional, Set, Tuple
 
+import httpx
 import unicodedata
 
 from ..config import get_settings
@@ -29,6 +30,7 @@ from ..schemas.db import (
 )
 from ..scrapers.faculty import scrape_all_faculty
 from ..logging import get_logger
+from .orcid import fetch_career_start_year
 
 
 logger = get_logger(__name__)
@@ -46,6 +48,25 @@ def _normalize_name_filter(n: str) -> str:
     return unicodedata.normalize('NFKD', n).encode('ASCII', 'ignore').decode('utf-8').lower().replace(" ", "")
 
 
+def _sanitize_name(name: str) -> str:
+    """Collapse any run of whitespace into a single space and strip edges.
+
+    Fixes names like 'Kamer  Kaya' (double space between parts) that come
+    from the web scraper or OpenAlex and would otherwise look garbled in
+    the UI and break the name-based internal/external matching in the API.
+
+    Examples
+    --------
+    >>> _sanitize_name('Meltem  Müftüler Baç')
+    'Meltem Müftüler Baç'
+    >>> _sanitize_name('  Onur  Varol  ')
+    'Onur Varol'
+    """
+    if not name:
+        return name
+    return re.sub(r'\s+', ' ', name).strip()
+
+
 def _safe_json(data: Any) -> Optional[str]:
     """Safely convert data to JSON string."""
     if data is None:
@@ -56,14 +77,106 @@ def _safe_json(data: Any) -> Optional[str]:
         return None
 
 
+def _is_false_positive_work(
+    work: "OAWork",
+    owner_orcid: Optional[str],
+    owner_oa_ids: Set[str],
+    institution_ror: str,
+    career_start_year: Optional[int] = None,
+) -> bool:
+    """Check whether a publication is likely a false positive for the owner author.
+
+    A work is considered a false positive when none of the following
+    confirmation signals are present in the authorship list:
+
+    1. **Author-ID match** — a co-author's OpenAlex ID matches one of the
+       owner's known IDs (primary or merged).
+    2. **ORCID match** — the owner has an ORCID and a co-author shares it.
+    3. **Affiliation match** — at least one co-author is affiliated with the
+       target institution (checked via ROR or raw affiliation string).
+
+    Returns True if the work should be considered a false positive.
+    """
+    # Temporal check: reject publications that predate the researcher's career.
+    # We allow a 4-year window before the earliest recorded education start in
+    # case the researcher co-authored something during their undergraduate studies.
+    if career_start_year is not None and work.publication_year is not None:
+        if work.publication_year < career_start_year - 4:
+            return True  # Cannot be this person's work
+
+    sabanci_keywords = {"sabanci", "sabancı", "sabanciuniv"}
+
+    has_author_id_match = False
+    has_orcid_match = False
+    has_affiliation_match = False
+
+    for authorship in work.authorships:
+        # Check 1: Author OpenAlex ID match
+        if authorship.author and authorship.author.id:
+            aid = authorship.author.id.split("/")[-1]
+            if aid in owner_oa_ids:
+                has_author_id_match = True
+                # Also check ORCID while we're here
+                if owner_orcid and authorship.author.orcid:
+                    auth_orcid = authorship.author.orcid.rstrip("/").split("/")[-1]
+                    owner_orcid_clean = owner_orcid.rstrip("/").split("/")[-1]
+                    if auth_orcid == owner_orcid_clean:
+                        has_orcid_match = True
+
+        # Check 2: ORCID match (on any co-author)
+        if owner_orcid and authorship.author and authorship.author.orcid:
+            auth_orcid = authorship.author.orcid.rstrip("/").split("/")[-1]
+            owner_orcid_clean = owner_orcid.rstrip("/").split("/")[-1]
+            if auth_orcid == owner_orcid_clean:
+                has_orcid_match = True
+
+        # Check 3: Affiliation match (institution ROR or string)
+        for inst in (authorship.institutions or []):
+            if inst.ror and institution_ror in inst.ror:
+                has_affiliation_match = True
+                break
+            if inst.display_name:
+                name_lower = inst.display_name.lower()
+                if any(kw in name_lower for kw in sabanci_keywords):
+                    has_affiliation_match = True
+                    break
+        for raw_aff in (authorship.raw_affiliation_strings or []):
+            raw_lower = raw_aff.lower()
+            if any(kw in raw_lower for kw in sabanci_keywords):
+                has_affiliation_match = True
+                break
+
+    # If the author's own OpenAlex ID appears in the authorship list, we trust it.
+    # The extra ORCID/affiliation checks catch edge cases where the ID was
+    # incorrectly merged upstream.
+    if has_author_id_match:
+        # If owner has an ORCID but it doesn't appear on the matching
+        # authorship entry AND no Sabancı affiliation is present, this may
+        # be a name-collision merge in OpenAlex.  Flag it.
+        if owner_orcid and not has_orcid_match and not has_affiliation_match:
+            return True
+        return False
+
+    # No author-ID match at all — only keep if ORCID or affiliation confirms
+    if has_orcid_match:
+        return False
+    if has_affiliation_match:
+        return False
+
+    # No confirming signal found
+    return True
+
+
 async def clean(db: Database) -> Tuple[
     List[Dict[str, Any]],  # authors
     List[Dict[str, Any]],  # publications
     List[Dict[str, str]],  # author_publications
     List[Dict[str, Any]],  # topics
     List[Dict[str, Any]],  # publication_topics
-    List[Dict[str, int]],  # metrics per author/year
+    List[Dict[str, int]],  # metrics per author/year (old aggregated)
     List[Dict[str, Any]],  # coauthor edges
+    List[Dict[str, Any]],  # author_citations_yearly (new structured)
+    List[Dict[str, Any]],  # publication_citations_yearly (new structured)
 ]:
     """Clean and deduplicate staged data, preserving all OpenAlex fields."""
     from pathlib import Path
@@ -114,6 +227,9 @@ async def clean(db: Database) -> Tuple[
         "unmatched": len(unmatched_authors),
     })
 
+    # NEW: Structured metrics for authors
+    author_citations_norm: List[Dict[str, Any]] = []
+
     # Merge authors that map to the same scraped faculty name
     dedup_map: Dict[str, AuthorRecord] = {}
     # Track OA ID → primary ID remap for author_publications
@@ -161,7 +277,7 @@ async def clean(db: Database) -> Tuple[
         
         rec = AuthorRecord(
             id=primary_key,
-            name=scraped_name,  # Use the canonical scraped name
+            name=_sanitize_name(scraped_name),  # Collapse extra whitespace (e.g. 'Kamer  Kaya' → 'Kamer Kaya')
             orcid=primary_author.orcid,
             
             # From scraping via match map
@@ -195,6 +311,23 @@ async def clean(db: Database) -> Tuple[
         )
         dedup_map[primary_key] = rec
         
+        # NEW: Extract structured citation metrics for author
+        # We handle merging by summing counts for the same year across merged authors
+        merged_counts: Dict[int, int] = {}
+        for a, _ in group:
+            if a.counts_by_year:
+                for entry in a.counts_by_year:
+                    yr = entry["year"]
+                    cnt = entry["cited_by_count"]
+                    merged_counts[yr] = merged_counts.get(yr, 0) + cnt
+        
+        for yr, cnt in merged_counts.items():
+            author_citations_norm.append({
+                "author_id": primary_key,
+                "year": yr,
+                "count": cnt
+            })
+        
         if len(all_oa_ids) > 1:
             logger.info({
                 "message": "Merged author",
@@ -203,6 +336,20 @@ async def clean(db: Database) -> Tuple[
                 "merged_ids": all_oa_ids,
             })
 
+    # --- ORCID enrichment: fetch career start year ---
+    logger.info({"message": "Starting ORCID career-start-year enrichment"})
+    orcid_enriched = 0
+    async with httpx.AsyncClient(timeout=10.0) as orcid_http:
+        for rec in dedup_map.values():
+            if not rec.is_faculty or not rec.orcid:
+                continue
+            year = await fetch_career_start_year(rec.orcid, orcid_http)
+            if year is not None:
+                rec.career_start_year = year
+                orcid_enriched += 1
+    logger.info({"message": "ORCID enrichment complete", "enriched": orcid_enriched})
+    # --- end ORCID enrichment ---
+
     authors_norm = [rec.model_dump() for rec in dedup_map.values()]
     logger.info({
         "message": "Cleaning complete (authors)",
@@ -210,13 +357,47 @@ async def clean(db: Database) -> Tuple[
         "multi_id_merges": sum(1 for r in dedup_map.values() if r.openalex_ids_json is not None),
     })
 
+    # Build lookup structures for false-positive detection
+    # owner_orcid_map: primary_author_id → ORCID (if available)
+    owner_orcid_map: Dict[str, Optional[str]] = {}
+    # owner_all_ids_map: primary_author_id → set of all known OA IDs (including merged)
+    owner_all_ids_map: Dict[str, Set[str]] = {}
+    for rec in dedup_map.values():
+        owner_orcid_map[rec.id] = rec.orcid
+        ids = {rec.id}
+        if rec.openalex_ids_json:
+            try:
+                ids.update(json.loads(rec.openalex_ids_json))
+            except (json.JSONDecodeError, TypeError):
+                pass
+        owner_all_ids_map[rec.id] = ids
+
+    # Build career_start_year lookup (primary_author_id → year)
+    career_start_map: Dict[str, Optional[int]] = {
+        rec.id: rec.career_start_year for rec in dedup_map.values()
+    }
+
+    # Build work→owner mapping from staging relations
+    # A work can be owned by multiple faculty authors (co-authored by two SU profs)
+    work_owner_map: Dict[str, Set[str]] = {}
+    for row in stg_relations:
+        rel = json.loads(row["payload"])
+        oa_author_id = rel["author_id"].split("/")[-1]
+        work_id = rel["work_id"].split("/")[-1]
+        # Remap to primary ID
+        primary_id = id_remap.get(oa_author_id, oa_author_id)
+        if primary_id in dedup_map:
+            work_owner_map.setdefault(work_id, set()).add(primary_id)
+
     # Parse works — apply quality filters (safety net for API-level filtering)
     settings = get_settings()
+    institution_ror = settings.openalex_ror_id
     allowed_types: Set[str] = set(settings.openalex_work_types)
     works: List[OAWork] = []
     skipped_paratext = 0
     skipped_retracted = 0
     skipped_type = 0
+    skipped_false_positive = 0
     for row in stg_publications:
         payload = json.loads(row["payload"])
         try:
@@ -233,6 +414,33 @@ async def clean(db: Database) -> Tuple[
             if allowed_types and work.type and work.type not in allowed_types:
                 skipped_type += 1
                 continue
+            # False-positive detection: verify the owner author is truly on this paper
+            work_short_id = work.id.split("/")[-1]
+            owners = work_owner_map.get(work_short_id, set())
+            if owners:
+                # Check each owner — the work is legit if ANY owner passes
+                is_fp_for_all = True
+                for owner_id in owners:
+                    orcid = owner_orcid_map.get(owner_id)
+                    all_ids = owner_all_ids_map.get(owner_id, {owner_id})
+                    if not _is_false_positive_work(
+                        work,
+                        orcid,
+                        all_ids,
+                        institution_ror,
+                        career_start_year=career_start_map.get(owner_id),
+                    ):
+                        is_fp_for_all = False
+                        break
+                if is_fp_for_all:
+                    skipped_false_positive += 1
+                    logger.debug({
+                        "message": "Skipped false-positive work",
+                        "work_id": work_short_id,
+                        "title": work.title,
+                        "owners": list(owners),
+                    })
+                    continue
             works.append(work)
         except Exception as exc:
             logger.error({"message": "Invalid work payload", "error": str(exc)})
@@ -243,12 +451,15 @@ async def clean(db: Database) -> Tuple[
         "skipped_paratext": skipped_paratext,
         "skipped_retracted": skipped_retracted,
         "skipped_type": skipped_type,
+        "skipped_false_positive": skipped_false_positive,
     })
 
     # Process publications
     publications_norm: List[Dict[str, Any]] = []
     topics_set: Dict[str, Dict[str, Any]] = {}
     publication_topics_norm: List[Dict[str, Any]] = []
+    # NEW: Structured metrics for publications
+    publication_citations_norm: List[Dict[str, Any]] = []
     
     # We will rebuild author_publications from the full authorship data
     # instead of relying on the incomplete stg_author_publications table.
@@ -420,6 +631,7 @@ async def clean(db: Database) -> Tuple[
             # Topics/Concepts as JSON
             primary_topic=primary_topic_name,
             topics_json=_safe_json(work.topics) if work.topics else None,
+            sdgs_json=_safe_json(work.sustainable_development_goals) if work.sustainable_development_goals else None,
             concepts_json=_safe_json([c.model_dump() for c in work.concepts]) if work.concepts else None,
             keywords_json=_safe_json(work.keywords) if work.keywords else None,
             
@@ -442,8 +654,22 @@ async def clean(db: Database) -> Tuple[
         )
         publications_norm.append(pub_rec.model_dump())
         
-        # Extract concepts as topics (with full info)
+        # NEW: Extract structured citation metrics for publication
+        if work.counts_by_year:
+            for entry in work.counts_by_year:
+                publication_citations_norm.append({
+                    "publication_id": pub_id,
+                    "year": entry["year"],
+                    "count": entry["cited_by_count"]
+                })
+            
+        # Re-extract concepts as topics (with Precision Improvement)
+        # Threshold at 0.5 to filter out noisy topic assignments as requested
+        TOPIC_THRESHOLD = 0.5
         for concept in work.concepts:
+            if concept.score < TOPIC_THRESHOLD:
+                continue
+                
             name = concept.display_name.strip()
             if name:
                 topics_set[name] = {
@@ -468,18 +694,42 @@ async def clean(db: Database) -> Tuple[
     
     # Compute metrics: publications and citations per author per year
     metrics: Dict[Tuple[str, int], Dict[str, int]] = {}
-    pub_info = {pub["id"]: (pub.get("year"), pub.get("citations", 0)) for pub in publications_norm}
+    pub_info = {
+        pub["id"]: {
+            "year": pub.get("year"),
+            # cited_by_count from OpenAlex can be None for some works — coerce to 0
+            "citations": pub.get("citations") or 0,
+            "counts_by_year": json.loads(pub.get("counts_by_year_json") or "[]")
+        }
+        for pub in publications_norm
+    }
     
     for rel in author_publications_norm:
         aid = rel["author_id"]
         pid = rel["publication_id"]
-        year, citations = pub_info.get(pid, (None, 0))
-        if year is None:
+        info = pub_info.get(pid)
+        if not info:
             continue
-        key = (aid, year)
-        entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
-        entry["pub_count"] += 1
-        entry["citations_year"] += citations or 0
+            
+        pub_year = info["year"]
+        if pub_year is not None:
+            key = (aid, pub_year)
+            entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
+            entry["pub_count"] += 1
+
+        counts_by_year = info["counts_by_year"]
+        if counts_by_year:
+            for c_entry in counts_by_year:
+                c_year = c_entry.get("year")
+                c_count = c_entry.get("cited_by_count", 0)
+                if c_year:
+                    key = (aid, c_year)
+                    entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
+                    entry["citations_year"] += c_count
+        elif pub_year:
+            key = (aid, pub_year)
+            entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
+            entry["citations_year"] += info["citations"] or 0
     
     metrics_norm = [
         {"author_id": aid, "year": year, "pub_count": data["pub_count"], "citations_year": data["citations_year"]}
@@ -534,4 +784,6 @@ async def clean(db: Database) -> Tuple[
         publication_topics_norm,
         metrics_norm,
         coauthor_edges_norm,
+        author_citations_norm,
+        publication_citations_norm,
     )

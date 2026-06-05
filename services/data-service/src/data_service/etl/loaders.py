@@ -30,6 +30,8 @@ async def load(
     publication_topics: List[Dict],
     metrics: List[Dict],
     coauthor_edges: List[Dict],
+    author_citations: List[Dict],
+    publication_citations: List[Dict],
 ) -> None:
     """Upsert all normalised entities into the database.
 
@@ -46,6 +48,8 @@ async def load(
         "author_metrics_yearly",
         "publication_topics",
         "author_publications",
+        "author_citations_yearly",
+        "publication_citations_yearly",
     ]:
         await db.execute(f"TRUNCATE {table} CASCADE")
     logger.info({"message": "✅ Relation tables truncated"})
@@ -144,6 +148,16 @@ async def load(
     await db.insert_coauthor_edges(coauthor_edges)
     logger.info({"message": "✅ Coauthor edges loaded"})
 
+    # Structured Author Citations
+    logger.info({"message": "▶ Loading author_citations_yearly...", "count": len(author_citations)})
+    await db.upsert_author_citations_yearly(author_citations)
+    logger.info({"message": "✅ Author citations loaded"})
+
+    # Structured Publication Citations
+    logger.info({"message": "▶ Loading publication_citations_yearly...", "count": len(publication_citations)})
+    await db.upsert_publication_citations_yearly(publication_citations)
+    logger.info({"message": "✅ Publication citations loaded"})
+
 
 async def save_data_locally(
     authors: List[Dict],
@@ -153,6 +167,8 @@ async def save_data_locally(
     publication_topics: List[Dict],
     metrics: List[Dict],
     coauthor_edges: List[Dict],
+    author_citations: List[Dict],
+    publication_citations: List[Dict],
 ) -> None:
     """Save cleaned data to local JSON files instead of uploading to Supabase.
 
@@ -190,6 +206,8 @@ async def save_data_locally(
         "publication_topics": publication_topics,
         "metrics": metrics,
         "coauthor_edges": coauthor_edges,
+        "author_citations_yearly": author_citations,
+        "publication_citations_yearly": publication_citations,
     }
 
     # Save each data type to a separate JSON file
@@ -210,6 +228,8 @@ async def save_data_locally(
             "publication_topics": len(publication_topics),
             "metrics": len(metrics),
             "coauthor_edges": len(coauthor_edges),
+            "author_citations_yearly": len(author_citations),
+            "publication_citations_yearly": len(publication_citations),
         },
         "output_directory": str(output_dir),
     }

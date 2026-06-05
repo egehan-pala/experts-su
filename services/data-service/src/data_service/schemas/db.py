@@ -47,6 +47,9 @@ class AuthorRecord(BaseModel):
     openalex_created_date: Optional[str] = None
     openalex_updated_date: Optional[str] = None
 
+    # Career start (from ORCID education/employment)
+    career_start_year: Optional[int] = None
+
 
 class PublicationRecord(BaseModel):
     """Complete publication record preserving all OpenAlex data."""
@@ -89,6 +92,7 @@ class PublicationRecord(BaseModel):
     # Topics/Concepts stored as JSON
     primary_topic: Optional[str] = None
     topics_json: Optional[str] = None
+    sdgs_json: Optional[str] = None
     concepts_json: Optional[str] = None
     keywords_json: Optional[str] = None
     

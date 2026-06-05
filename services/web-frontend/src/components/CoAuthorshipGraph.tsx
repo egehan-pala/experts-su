@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useRouter } from 'next/navigation';
+import { API_URL } from '@/lib/config';
 import dynamic from 'next/dynamic';
 import * as d3Force from 'd3-force';
 
@@ -77,16 +78,94 @@ const CLUSTER_COLORS = [
     '#A1887F'
 ];
 
+function findShortestPath(
+    nodes: { id: string; name: string }[],
+    links: { source: any; target: any }[],
+    query1: string,
+    query2: string
+): { pathNodeIds: Set<string>; pathEdgeKeys: Set<string> } | null {
+    const q1 = query1.toLowerCase();
+    const q2 = query2.toLowerCase();
+    const startNodes = nodes.filter(n => n.name.toLowerCase().includes(q1));
+    const endNodes = nodes.filter(n => n.name.toLowerCase().includes(q2));
+    if (startNodes.length === 0 || endNodes.length === 0) return null;
+
+    const adj: Record<string, string[]> = {};
+    for (const n of nodes) adj[n.id] = [];
+    for (const l of links) {
+        const s = typeof l.source === 'object' ? l.source.id : l.source;
+        const t = typeof l.target === 'object' ? l.target.id : l.target;
+        if (adj[s]) adj[s].push(t);
+        if (adj[t]) adj[t].push(s);
+    }
+
+    const endIds = new Set(endNodes.map(n => n.id));
+    let bestPath: string[] | null = null;
+
+    for (const startNode of startNodes) {
+        const visited = new Set<string>([startNode.id]);
+        const parent = new Map<string, string>();
+        const queue: string[] = [startNode.id];
+        let found: string | null = null;
+
+        while (queue.length > 0) {
+            const current = queue.shift()!;
+            if (endIds.has(current) && current !== startNode.id) { found = current; break; }
+            for (const nb of (adj[current] || [])) {
+                if (!visited.has(nb)) { visited.add(nb); parent.set(nb, current); queue.push(nb); }
+            }
+        }
+        if (found) {
+            const path: string[] = [];
+            let cur: string | undefined = found;
+            while (cur !== undefined) { path.unshift(cur); cur = parent.get(cur); }
+            if (!bestPath || path.length < bestPath.length) bestPath = path;
+        }
+    }
+    if (!bestPath) return null;
+
+    const pathNodeIds = new Set(bestPath);
+    const pathEdgeKeys = new Set<string>();
+    for (let i = 0; i < bestPath.length - 1; i++) {
+        pathEdgeKeys.add([bestPath[i], bestPath[i + 1]].sort().join('--'));
+    }
+    return { pathNodeIds, pathEdgeKeys };
+}
+
 export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
-    const [networkData, setNetworkData] = useState<NetworkData | null>(null);
+    const [rawNetworkData, setRawNetworkData] = useState<NetworkData | null>(null);
     const [loading, setLoading] = useState(true);
     const [yearRange, setYearRange] = useState({
         from: new Date().getFullYear() - 4,
         to: new Date().getFullYear()
     });
     const [collaboratorLimit, setCollaboratorLimit] = useState(25);
-    const [searchQuery, setSearchQuery] = useState('');
+    const [searchQuery1, setSearchQuery1] = useState('');
+    const [searchQuery2, setSearchQuery2] = useState('');
     const [hoveredNode, setHoveredNode] = useState<string | null>(null);
+    const [affiliationFilter, setAffiliationFilter] = useState<'all' | 'internal' | 'external'>('all');
+
+    // ✅ Derived filtered network data based on affiliation filter
+    const networkData = useMemo(() => {
+        if (!rawNetworkData) return null;
+        if (affiliationFilter === 'all') return rawNetworkData;
+
+        const filteredNodes = rawNetworkData.nodes.filter(n =>
+            affiliationFilter === 'internal' ? n.is_faculty === true : n.is_faculty !== true
+        );
+        const filteredNodeIds = new Set(filteredNodes.map(n => n.id));
+        const filteredLinks = rawNetworkData.links.filter(l => {
+            const s = typeof l.source === 'object' ? (l.source as any).id : l.source;
+            const t = typeof l.target === 'object' ? (l.target as any).id : l.target;
+            return filteredNodeIds.has(s) && filteredNodeIds.has(t);
+        });
+
+        return {
+            ...rawNetworkData,
+            nodes: filteredNodes,
+            links: filteredLinks
+        };
+    }, [rawNetworkData, affiliationFilter]);
 
     const router = useRouter();
     const containerRef = useRef<HTMLDivElement>(null);
@@ -122,7 +201,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         params.append('year_to', yearRange.to.toString());
         params.append('limit', collaboratorLimit.toString());
 
-        fetch(`http://localhost:8000/authors/${shortId}/network?${params.toString()}`)
+        fetch(`${API_URL}/authors/${shortId}/network?${params.toString()}`)
             .then((res) => res.json())
             .then((data: NetworkData) => {
                 // Critical Safety Filter: Ensure all links point to existing nodes
@@ -133,7 +212,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                     return nodeIds.has(s) && nodeIds.has(t);
                 });
 
-                setNetworkData({
+                setRawNetworkData({
                     ...data,
                     links: filteredLinks
                 });
@@ -167,12 +246,29 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
             return { minPapers: 0, maxPapers: 0 };
         }
 
-        const papers = networkData.links.map(l => l.value);
+        const linkPapers = networkData.links.map(l => l.value);
         return {
-            minPapers: Math.min(...papers),
-            maxPapers: Math.max(...papers)
+            minPapers: Math.min(...linkPapers),
+            maxPapers: Math.max(...linkPapers)
         };
     }, [networkData]);
+
+    const topAuthors = useMemo(() => {
+        if (!networkData?.nodes?.length) return [];
+        const sorted = [...networkData.nodes].sort((a, b) => (b.joint_papers || 0) - (a.joint_papers || 0));
+        return sorted.slice(0, 12);
+    }, [networkData]);
+
+    const maxAuthorCount = topAuthors.length > 0 ? (topAuthors[0].joint_papers || 1) : 1;
+
+    // Dual search derived values
+    const hasPathSearch = searchQuery1.length > 0 && searchQuery2.length > 0;
+    const singleSearchQuery = hasPathSearch ? '' : (searchQuery1 || searchQuery2);
+
+    const pathData = useMemo(() => {
+        if (!hasPathSearch || !networkData?.nodes.length) return null;
+        return findShortestPath(networkData.nodes, networkData.links, searchQuery1, searchQuery2);
+    }, [searchQuery1, searchQuery2, networkData, hasPathSearch]);
 
     // ✅ cluster anchor points to keep disconnected communities close together
     const clusterCenters = useMemo(() => {
@@ -192,8 +288,8 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
             return centers;
         }
 
-        // Small ring so all components stay visually close, like Rankless
-        const ringRadius = Math.max(30, Math.min(70, clusterIds.length * 10));
+        // Larger ring so components can spread out without overlapping
+        const ringRadius = Math.max(150, clusterIds.length * 50);
 
         clusterIds.forEach((cid, i) => {
             const angle = (i / clusterIds.length) * Math.PI * 2;
@@ -220,11 +316,11 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                 .id((d: any) => d.id)
                 .distance((link: any) => {
                     const w = link.value || 1;
-                    if (w >= 6) return 7;
-                    if (w >= 4) return 8;
-                    if (w >= 3) return 9;
-                    if (w === 2) return 11;
-                    return 13;
+                    if (w >= 6) return 120;
+                    if (w >= 4) return 160;
+                    if (w >= 3) return 200;
+                    if (w === 2) return 250;
+                    return 300;
                 })
                 .strength((link: any) => {
                     const w = link.value || 1;
@@ -239,13 +335,13 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         // Low repulsion so clusters do not push away too much
         fg.d3Force(
             'charge',
-            d3Force.forceManyBody().strength(-10)
+            d3Force.forceManyBody().strength(-1500)
         );
 
         // Small collision so nodes don't overlap but can stay tightly packed
         fg.d3Force(
             'collide',
-            d3Force.forceCollide().radius(5.5).strength(0.95)
+            d3Force.forceCollide().radius(45).strength(0.95)
         );
 
         // Global center
@@ -263,8 +359,9 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
             // Let's use the nodes reachable via the fg instance.
             for (const node of networkData.nodes as any[]) {
                 const target = clusterCenters.get(node.cluster_id) || { x: 0, y: 0 };
-                node.vx += (target.x - (node.x || 0)) * 0.20 * alpha;
-                node.vy += (target.y - (node.y || 0)) * 0.20 * alpha;
+                // Gentle pull so nodes can still repel each other
+                node.vx += (target.x - (node.x || 0)) * 0.05 * alpha;
+                node.vy += (target.y - (node.y || 0)) * 0.05 * alpha;
             }
         });
 
@@ -288,20 +385,20 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
             const node = obj as NetworkNode;
             const isHovered = hoveredNode === node.id;
-            const isMatch = searchQuery && node.name.toLowerCase().includes(searchQuery.toLowerCase());
-            const hasActiveSearch = searchQuery.length > 0;
+            const isOnPath = pathData?.pathNodeIds.has(node.id);
+            const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
+            const hasActiveSearch = singleSearchQuery.length > 0;
 
-            const alpha = hasActiveSearch ? (isMatch ? 1 : 0.12) : 1;
+            const alpha = pathData ? (isOnPath ? 1 : 0.08) : (hasActiveSearch ? (isMatch ? 1 : 0.12) : 1);
 
-            // Slightly stable screen-space radius
-            const radius = 4.5 / globalScale;
+            const radius = isOnPath ? 7.5 : 5;
 
             // Use cluster color when available, otherwise default blue
             const clusterColor =
                 CLUSTER_COLORS[((node.cluster_id || 1) - 1) % CLUSTER_COLORS.length] || '#3b82f6';
 
-            const fillColor = isHovered ? '#2563eb' : clusterColor;
-            const borderColor = isHovered ? '#0f172a' : '#ffffff';
+            const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
+            const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
 
             ctx.beginPath();
             ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
@@ -311,31 +408,30 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
 
             // Border width can still hint at center-joint paper count
             const borderW = isHovered
-                ? 2.5 / globalScale
-                : logScale(node.joint_papers, bounds.minPapers, bounds.maxPapers, 1.2, 2.4) / globalScale;
+                ? 2.5
+                : logScale(node.joint_papers, bounds.minPapers, bounds.maxPapers, 1.2, 2.4);
 
             ctx.lineWidth = borderW;
             ctx.strokeStyle = borderColor;
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            const showLabel = isHovered || isMatch;
-            if (showLabel) {
-                const label = node.name;
-                const fontSize = 12 / globalScale;
+            const label = node.name;
+            const fontSize = 5;
 
-                ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
+            ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'top';
 
-                // soft white background for readability
-                const textX = node.x || 0;
-                const textY = (node.y || 0) + radius + 4;
-                const metrics = ctx.measureText(label);
-                const paddingX = 4 / globalScale;
-                const paddingY = 2 / globalScale;
-                const textHeight = fontSize + paddingY * 2;
+            // soft white background for readability
+            const textX = node.x || 0;
+            const textY = (node.y || 0) + radius + 4;
+            const metrics = ctx.measureText(label);
+            const paddingX = 4;
+            const paddingY = 2;
+            const textHeight = fontSize + paddingY * 2;
 
+            if (isHovered || isMatch || isOnPath) {
                 ctx.fillStyle = 'rgba(255,255,255,0.92)';
                 ctx.fillRect(
                     textX - metrics.width / 2 - paddingX,
@@ -343,12 +439,22 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                     metrics.width + paddingX * 2,
                     textHeight
                 );
-
                 ctx.fillStyle = '#0f172a';
-                ctx.fillText(label, textX, textY);
+            } else {
+                ctx.fillStyle = 'rgba(255,255,255,0.7)';
+                ctx.fillRect(
+                    textX - metrics.width / 2 - paddingX,
+                    textY - paddingY,
+                    metrics.width + paddingX * 2,
+                    textHeight
+                );
+                ctx.fillStyle = '#475569';
             }
+
+            ctx.globalAlpha = alpha;
+            ctx.fillText(label, textX, textY);
         },
-        [hoveredNode, searchQuery, bounds]
+        [hoveredNode, singleSearchQuery, bounds, pathData]
     );
 
     const linkWidth = useCallback((l: any) => {
@@ -356,9 +462,16 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
 
         let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
 
-        const hasActiveSearch = searchQuery.length > 0;
-        const sourceMatch = searchQuery && l.source?.name?.toLowerCase().includes(searchQuery.toLowerCase());
-        const targetMatch = searchQuery && l.target?.name?.toLowerCase().includes(searchQuery.toLowerCase());
+        if (pathData) {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            const ek = [s, t].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? 4.5 : 0.25;
+        }
+
+        const hasActiveSearch = singleSearchQuery.length > 0;
+        const sourceMatch = singleSearchQuery && l.source?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
+        const targetMatch = singleSearchQuery && l.target?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
         const isRelated = sourceMatch || targetMatch;
 
         if (hasActiveSearch) {
@@ -366,15 +479,22 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         }
 
         return baseWidth;
-    }, [searchQuery, linkBounds]);
+    }, [singleSearchQuery, linkBounds, pathData]);
 
     const linkColor = useCallback((l: any) => {
-        const hasActiveSearch = searchQuery.length > 0;
+        if (pathData) {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            const ek = [s, t].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? 'rgba(251, 146, 60, 0.95)' : 'rgba(226, 232, 240, 0.08)';
+        }
+
+        const hasActiveSearch = singleSearchQuery.length > 0;
         const isMatch = (nodeName?: string) =>
-            searchQuery &&
+            singleSearchQuery &&
             nodeName &&
             typeof nodeName === 'string' &&
-            nodeName.toLowerCase().includes(searchQuery.toLowerCase());
+            nodeName.toLowerCase().includes(singleSearchQuery.toLowerCase());
 
         const isRelated = isMatch(l.source?.name) || isMatch(l.target?.name);
 
@@ -383,33 +503,36 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
         }
 
         return 'rgba(148, 163, 184, 0.75)';
-    }, [searchQuery]);
+    }, [singleSearchQuery, pathData]);
 
     const totalCitations = networkData?.nodes.reduce((sum, n) => sum + n.joint_citations, 0) || 0;
 
     return (
         <div
             style={{
-                marginTop: '2rem',
+                marginTop: '0',
                 display: 'flex',
                 flexDirection: 'column',
-                gap: '1.5rem',
                 width: '100vw',
                 position: 'relative',
                 left: '50%',
                 right: '50%',
                 marginLeft: '-50vw',
                 marginRight: '-50vw',
-                padding: '0 5vw',
+                backgroundColor: '#1e293b',
+                borderTop: '1px solid #334155',
+                borderBottom: '1px solid #334155',
+                padding: '3rem 0',
                 boxSizing: 'border-box'
             }}
         >
             <div
                 style={{
-                    background: '#1e293b',
-                    borderRadius: 12,
-                    padding: '1.5rem',
-                    border: '1px solid #334155'
+                    maxWidth: '1200px',
+                    width: '100%',
+                    margin: '0 auto',
+                    padding: '0 5vw',
+                    boxSizing: 'border-box'
                 }}
             >
                 <header
@@ -439,6 +562,44 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                     </div>
 
                     <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
+                        {/* Affiliation Filter (Internal/External/All) */}
+                        <div
+                            style={{
+                                display: 'flex',
+                                gap: '4px',
+                                alignItems: 'center',
+                                background: '#0f172a',
+                                padding: '6px 8px',
+                                borderRadius: '8px',
+                                border: '1px solid #334155'
+                            }}
+                        >
+                            {(['all', 'internal', 'external'] as const).map((filter) => (
+                                <button
+                                    key={filter}
+                                    onClick={() => setAffiliationFilter(filter)}
+                                    style={{
+                                        background: affiliationFilter === filter
+                                            ? (filter === 'internal' ? '#166534' : filter === 'external' ? '#1e40af' : '#3b82f6')
+                                            : '#1e293b',
+                                        border: affiliationFilter === filter
+                                            ? `1px solid ${filter === 'internal' ? '#22c55e' : filter === 'external' ? '#60a5fa' : '#60a5fa'}`
+                                            : '1px solid #334155',
+                                        borderRadius: 6,
+                                        color: affiliationFilter === filter ? '#f8fafc' : '#94a3b8',
+                                        padding: '5px 12px',
+                                        cursor: 'pointer',
+                                        fontSize: '0.75rem',
+                                        fontWeight: affiliationFilter === filter ? 700 : 500,
+                                        fontFamily: 'monospace',
+                                        transition: 'all 0.15s ease'
+                                    }}
+                                >
+                                    {filter === 'all' ? '🌐 All' : filter === 'internal' ? '🏛 Internal' : '🌍 External'}
+                                </button>
+                            ))}
+                        </div>
+
                         {/* Collaborator Limit Controls */}
                         <div
                             style={{
@@ -579,49 +740,52 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                             />
                         </div>
 
-                        {/* Node Search */}
+                        {/* Dual Author Search */}
                         <div
                             style={{
                                 display: 'flex',
-                                gap: '12px',
+                                gap: '6px',
                                 alignItems: 'center',
                                 background: '#0f172a',
-                                padding: '8px 16px',
+                                padding: '8px 12px',
                                 borderRadius: '8px',
-                                border: '1px solid #334155'
+                                border: `1px solid ${pathData ? '#fb923c' : (searchQuery1 && searchQuery2 && !pathData ? '#ef4444' : '#334155')}`
                             }}
                         >
                             <span style={{ fontSize: '0.9rem' }}>🔍</span>
                             <input
                                 type="text"
-                                placeholder="Search author..."
-                                value={searchQuery}
-                                onChange={(e) => setSearchQuery(e.target.value)}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: '#f8fafc',
-                                    fontSize: '0.875rem',
-                                    outline: 'none',
-                                    width: '150px'
-                                }}
+                                placeholder="Author 1..."
+                                value={searchQuery1}
+                                onChange={(e) => setSearchQuery1(e.target.value)}
+                                style={{ background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '0.875rem', outline: 'none', width: '110px' }}
                             />
-                            {searchQuery && (
-                                <button
-                                    onClick={() => setSearchQuery('')}
-                                    style={{
-                                        background: 'transparent',
-                                        border: 'none',
-                                        color: '#94a3b8',
-                                        cursor: 'pointer',
-                                        padding: 0,
-                                        fontSize: '0.8rem'
-                                    }}
-                                >
-                                    ✕
-                                </button>
+                            {searchQuery1 && (
+                                <button onClick={() => setSearchQuery1('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
+                            )}
+                            <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>↔</span>
+                            <span style={{ fontSize: '0.85rem' }}>👤</span>
+                            <input
+                                type="text"
+                                placeholder="Author 2..."
+                                value={searchQuery2}
+                                onChange={(e) => setSearchQuery2(e.target.value)}
+                                style={{ background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '0.875rem', outline: 'none', width: '110px' }}
+                            />
+                            {searchQuery2 && (
+                                <button onClick={() => setSearchQuery2('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
                             )}
                         </div>
+                        {searchQuery1 && searchQuery2 && !pathData && (
+                            <div style={{ background: '#451a03', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                ⚠ No path found
+                            </div>
+                        )}
+                        {pathData && (
+                            <div style={{ background: '#431407', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                🔗 Path: {pathData.pathNodeIds.size} nodes
+                            </div>
+                        )}
                     </div>
                 </header>
 
@@ -660,127 +824,27 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                             height: dimensions.height,
                             position: 'relative',
                             overflow: 'hidden',
-                            background: '#1e293b',
-                            borderRadius: 8
+                            background: '#0f172a', /* Darker background to separate from the outer container */
+                            borderRadius: '12px',
+                            border: '2px solid #334155', /* Visible frame for the network area */
+                            boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
                         }}
                     >
-                        {/* Summary Overlay Top Right */}
-                        <div
-                            style={{
-                                position: 'absolute',
-                                top: 20,
-                                right: 20,
-                                zIndex: 10,
-                                background: 'rgba(255, 255, 255, 0.95)',
-                                padding: '1.5rem',
-                                borderRadius: 12,
-                                border: '1px solid #e2e8f0',
-                                width: '280px',
-                                boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1), 0 2px 4px -2px rgb(0 0 0 / 0.1)',
-                                pointerEvents: 'none'
-                            }}
-                        >
-                            <h3
-                                style={{
-                                    fontSize: '0.85rem',
-                                    color: '#0f172a',
-                                    fontWeight: 800,
-                                    borderBottom: '2px solid #3b82f6',
-                                    paddingBottom: '0.5rem',
-                                    fontFamily: 'var(--font-heading)',
-                                    margin: '0 0 1rem 0'
-                                }}
-                            >
-                                NETWORK SUMMARY
-                            </h3>
-                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                <div>
-                                    <div
-                                        style={{
-                                            color: '#64748b',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 600,
-                                            textTransform: 'uppercase'
-                                        }}
-                                    >
-                                        Core Researcher
-                                    </div>
-                                    <div style={{ color: '#0f172a', fontSize: '1rem', fontWeight: 'bold' }}>
-                                        {authorName}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div
-                                        style={{
-                                            color: '#64748b',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 600,
-                                            textTransform: 'uppercase'
-                                        }}
-                                    >
-                                        Filtered Collaborators
-                                    </div>
-                                    <div style={{ color: '#3b82f6', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                                        {networkData.nodes.length}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div
-                                        style={{
-                                            color: '#64748b',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 600,
-                                            textTransform: 'uppercase'
-                                        }}
-                                    >
-                                        Total Joint Citations
-                                    </div>
-                                    <div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                                        {totalCitations.toLocaleString()}
-                                    </div>
-                                </div>
-                                <div>
-                                    <div
-                                        style={{
-                                            color: '#64748b',
-                                            fontSize: '0.65rem',
-                                            fontWeight: 600,
-                                            textTransform: 'uppercase'
-                                        }}
-                                    >
-                                        Active Period
-                                    </div>
-                                    <div style={{ color: '#0f172a', fontSize: '1rem', fontWeight: 'bold' }}>
-                                        {yearRange.from} — {yearRange.to}
-                                    </div>
-                                </div>
-                            </div>
-
-                            <div
-                                style={{
-                                    marginTop: '1rem',
-                                    fontSize: '0.65rem',
-                                    color: '#94a3b8',
-                                    lineHeight: 1.4
-                                }}
-                            >
-                                * Central researcher is omitted.
-                            </div>
-                        </div>
+                        {/* Summary Overlay removed and moved below */}
 
                         {/* Hover Overlay */}
                         <div
                             style={{
                                 position: 'absolute',
                                 top: 20,
-                                right: 320,
-                                zIndex: 10,
-                                background: 'rgba(255, 255, 255, 0.95)',
+                                right: 300,
+                                zIndex: 2,
+                                background: 'rgba(15, 23, 42, 0.95)',
                                 padding: '1rem',
                                 borderRadius: 12,
                                 border: '1px solid #3b82f6',
                                 width: '220px',
-                                boxShadow: '0 4px 6px -1px rgba(59, 130, 246, 0.2)',
+                                boxShadow: '0 8px 12px -3px rgba(59, 130, 246, 0.3)',
                                 opacity: hoveredNode ? 1 : 0,
                                 transition: 'opacity 0.2s ease',
                                 pointerEvents: 'none'
@@ -790,17 +854,17 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 SELECTED AUTHOR
                             </div>
                             <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                                {hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.name : 'None'}
+                                <span style={{ color: '#f8fafc' }}>{hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.name : 'None'}</span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                                <span style={{ color: '#64748b' }}>Joint Papers:</span>
-                                <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                                <span style={{ color: '#94a3b8' }}>Joint Papers:</span>
+                                <span style={{ fontWeight: 600, color: '#f8fafc' }}>
                                     {hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.joint_papers : 0}
                                 </span>
                             </div>
                             <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                                <span style={{ color: '#64748b' }}>Joint Citations:</span>
-                                <span style={{ fontWeight: 600, color: '#0f172a' }}>
+                                <span style={{ color: '#94a3b8' }}>Joint Citations:</span>
+                                <span style={{ fontWeight: 600, color: '#f8fafc' }}>
                                     {hoveredNode ? networkData.nodes.find(n => n.id === hoveredNode)?.joint_citations : 0}
                                 </span>
                             </div>
@@ -823,7 +887,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 }}
                                 nodeCanvasObject={nodeCanvasObject}
                                 nodePointerAreaPaint={(node: any, color, ctx, globalScale) => {
-                                    const radius = 6 / globalScale;
+                                    const radius = 6;
                                     ctx.fillStyle = color;
                                     ctx.beginPath();
                                     ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
@@ -838,33 +902,34 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                 }}
                                 linkWidth={linkWidth}
                                 linkColor={linkColor}
-                                linkDirectionalParticles={searchQuery ? 2 : 0}
+                                linkDirectionalParticles={(singleSearchQuery || pathData) ? 2 : 0}
                                 linkDirectionalParticleWidth={2}
                                 linkDirectionalParticleSpeed={0.005}
                             />
+                        </div>
 
-                            {/* Legend */}
+                        {/* Legend */}
                             <div
                                 style={{
                                     position: 'absolute',
                                     bottom: 15,
                                     left: 15,
-                                    background: 'rgba(255, 255, 255, 0.9)',
+                                    background: 'rgba(15, 23, 42, 0.9)',
                                     padding: '0.75rem',
                                     borderRadius: 8,
-                                    border: '1px solid #e2e8f0',
+                                    border: '1px solid #334155',
                                     pointerEvents: 'none',
                                     fontSize: '0.75rem',
-                                    color: '#0f172a',
+                                    color: '#f8fafc',
                                     fontFamily: 'monospace',
-                                    boxShadow: '0 2px 4px rgb(0 0 0 / 0.05)'
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.3)'
                                 }}
                             >
                                 <div
                                     style={{
                                         fontWeight: 'bold',
                                         marginBottom: '0.5rem',
-                                        borderBottom: '1px solid #e2e8f0',
+                                        borderBottom: '1px solid #334155',
                                         paddingBottom: '0.25rem'
                                     }}
                                 >
@@ -902,6 +967,223 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                     Clusters are compacted for readability
                                 </div>
                             </div>
+                            
+                            {/* Recenter Button */}
+                            <button
+                                onClick={() => {
+                                    try {
+                                        fgRef.current?.zoomToFit(400, 80);
+                                    } catch { }
+                                }}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: 15,
+                                    right: 15,
+                                    zIndex: 2,
+                                    background: 'rgba(15, 23, 42, 0.95)',
+                                    padding: '0.6rem 1rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid #334155',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    color: '#f8fafc',
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.1)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 6px 12px rgb(0 0 0 / 0.15)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = '0 4px 6px rgb(0 0 0 / 0.1)';
+                                }}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                </svg>
+                                Recenter Network
+                            </button>
+                        </div>
+                )}
+
+                {/* New Summary Row Below Network */}
+                {!loading && networkData && networkData.nodes.length > 0 && (
+                    <div
+                        style={{
+                            marginTop: '1.5rem',
+                            display: 'flex',
+                            justifyContent: 'space-between',
+                            alignItems: 'center',
+                            background: '#0f172a',
+                            padding: '1.5rem 2rem',
+                            borderRadius: '12px',
+                            border: '1px solid #334155',
+                            flexWrap: 'wrap',
+                            gap: '1.5rem',
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2)'
+                        }}
+                    >
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '2.5rem', flexWrap: 'wrap' }}>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Core Researcher
+                                </div>
+                                <div style={{ color: '#f8fafc', fontSize: '1.5rem', fontWeight: 'bold', lineHeight: 1.2 }}>
+                                    {authorName}
+                                </div>
+                            </div>
+                            
+                            <div style={{ width: '1px', height: '40px', background: '#334155' }} />
+                            
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+                                    Filtered Collaborators
+                                </div>
+                                <div style={{ color: '#3b82f6', fontSize: '1.5rem', fontWeight: 'bold', lineHeight: 1.2 }}>
+                                    {networkData.nodes.length}
+                                </div>
+                            </div>
+                            
+                            <div style={{ width: '1px', height: '40px', background: '#334155' }} />
+                            
+                            <div style={{ display: 'flex', gap: '2.5rem' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Total Joint Citations</div>
+                                    <div style={{ color: '#10b981', fontSize: '1.25rem', fontWeight: 'bold' }}>{totalCitations.toLocaleString()}</div>
+                                </div>
+                                <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                    <div style={{ color: '#94a3b8', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase' }}>Active Period</div>
+                                    <div style={{ color: '#f8fafc', fontSize: '1.25rem', fontWeight: 'bold' }}>{yearRange.from} — {yearRange.to}</div>
+                                </div>
+                            </div>
+                        </div>
+                        
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' }}>
+                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <circle cx="12" cy="12" r="10"></circle>
+                                    <line x1="12" y1="16" x2="12" y2="12"></line>
+                                    <line x1="12" y1="8" x2="12.01" y2="8"></line>
+                                </svg>
+                            </div>
+                            <div style={{ display: 'flex', flexDirection: 'column' }}>
+                                <div style={{ color: '#f8fafc', fontSize: '0.9rem', fontWeight: 700 }}>Network Overview</div>
+                                <div style={{ color: '#64748b', fontSize: '0.8rem' }}>* Central researcher omitted</div>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Top Connected Faculty Table */}
+                {!loading && networkData && networkData.nodes.length > 0 && (
+                    <div style={{
+                        marginTop: '1.5rem',
+                        backgroundColor: '#f8fafc',
+                        borderRadius: '10px',
+                        border: '1px solid #e2e8f0',
+                        overflow: 'hidden',
+                    }}>
+                        <div style={{
+                            padding: '0.75rem 1rem',
+                            borderBottom: '1px solid #e2e8f0',
+                            backgroundColor: '#f1f5f9',
+                        }}>
+                            <h3 style={{
+                                fontSize: '0.85rem',
+                                fontWeight: 700,
+                                color: '#334155',
+                                textTransform: 'uppercase',
+                                letterSpacing: '0.05em',
+                                margin: 0,
+                            }}>
+                                Top Collaborators (Joint Papers)
+                            </h3>
+                        </div>
+                        <div style={{ padding: '0.5rem 0' }}>
+                            {topAuthors.map((author, idx) => {
+                                const count = author.joint_papers || 0;
+                                const barWidth = Math.max(4, (count / maxAuthorCount) * 100);
+                                return (
+                                    <div
+                                        key={author.id}
+                                        style={{
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            padding: '0.4rem 1rem',
+                                            gap: '0.75rem',
+                                            transition: 'background 0.15s',
+                                            cursor: author.is_faculty ? 'pointer' : 'default',
+                                        }}
+                                        onMouseOver={(e) => {
+                                            if (author.is_faculty) {
+                                                e.currentTarget.style.backgroundColor = '#eff6ff';
+                                            }
+                                        }}
+                                        onMouseOut={(e) => {
+                                            if (author.is_faculty) {
+                                                e.currentTarget.style.backgroundColor = 'transparent';
+                                            }
+                                        }}
+                                        onClick={() => {
+                                            if (author.is_faculty) {
+                                                router.push(`/authors/${author.id}`);
+                                            }
+                                        }}
+                                    >
+                                        <span style={{
+                                            fontSize: '0.7rem',
+                                            color: '#94a3b8',
+                                            fontWeight: 600,
+                                            width: '1.5rem',
+                                            textAlign: 'right',
+                                        }}>
+                                            {idx + 1}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            color: '#1e293b',
+                                            fontWeight: 600,
+                                            width: '200px',
+                                            overflow: 'hidden',
+                                            textOverflow: 'ellipsis',
+                                            whiteSpace: 'nowrap',
+                                        }}>
+                                            {author.name}
+                                        </span>
+                                        <span style={{
+                                            fontSize: '0.7rem',
+                                            color: author.is_faculty ? '#3b82f6' : '#94a3b8',
+                                            fontWeight: 700,
+                                            width: '3rem',
+                                        }}>
+                                            {author.is_faculty ? 'Faculty' : 'External'}
+                                        </span>
+                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                            <div style={{
+                                                width: `${barWidth}%`,
+                                                height: '100%',
+                                                backgroundColor: '#3b82f6',
+                                                borderRadius: '3px',
+                                                transition: 'width 0.6s ease',
+                                            }} />
+                                        </div>
+                                        <span style={{
+                                            fontSize: '0.8rem',
+                                            color: '#3b82f6',
+                                            fontWeight: 700,
+                                            minWidth: '2rem',
+                                            textAlign: 'right',
+                                        }}>
+                                            {count}
+                                        </span>
+                                    </div>
+                                );
+                            })}
                         </div>
                     </div>
                 )}

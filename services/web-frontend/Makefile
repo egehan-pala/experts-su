@@ -4,7 +4,7 @@
 all: dev
 
 install:
-	npm install
+	npm install --legacy-peer-deps
 
 dev: install
 	./node_modules/.bin/next dev

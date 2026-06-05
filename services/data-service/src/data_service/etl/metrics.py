@@ -29,21 +29,45 @@ def compute_author_year_metrics(
         ``citations_year``.
     """
     # Build lookup for publication year and citations
-    pub_info: Dict[str, Tuple[int | None, int]] = {
-        pub["id"]: (pub.get("year"), pub.get("citations", 0))
+    pub_info: Dict[str, dict] = {
+        pub["id"]: {
+            "year": pub.get("year"),
+            "citations": pub.get("citations", 0),
+            "counts_by_year": pub.get("counts_by_year") or []
+        }
         for pub in publications
     }
     metrics: Dict[Tuple[str, int], Dict[str, int]] = {}
     for rel in author_publications:
         pid = rel["publication_id"]
         aid = rel["author_id"]
-        year, citations = pub_info.get(pid, (None, 0))
-        if year is None:
+        info = pub_info.get(pid)
+        if not info:
             continue
-        key = (aid, year)
-        entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
-        entry["pub_count"] += 1
-        entry["citations_year"] += citations or 0
+            
+        # 1. Update publication count for the year the paper was published
+        pub_year = info["year"]
+        if pub_year is not None:
+            key = (aid, pub_year)
+            entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
+            entry["pub_count"] += 1
+
+        # 2. Update citation counts for each year they were received
+        counts_by_year = info["counts_by_year"]
+        if counts_by_year:
+            # Granular data available: use it to distribute citations across years
+            for c_entry in counts_by_year:
+                c_year = c_entry.get("year")
+                c_count = c_entry.get("cited_by_count", 0)
+                if c_year:
+                    key = (aid, c_year)
+                    entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
+                    entry["citations_year"] += c_count
+        elif pub_year is not None:
+            # Fallback: attribute all citations to the publication year
+            key = (aid, pub_year)
+            entry = metrics.setdefault(key, {"pub_count": 0, "citations_year": 0})
+            entry["citations_year"] += info["citations"]
     return [
         {"author_id": aid, "year": year, **data} for (aid, year), data in metrics.items()
     ]

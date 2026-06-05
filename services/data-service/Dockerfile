@@ -49,6 +49,8 @@ COPY src src
 COPY sql sql
 COPY .env.example .env.example
 
+ENV PYTHONPATH=/app/src
+
 # Default command executes the Typer CLI. Commands are passed via
 # docker run arguments (e.g. `docker run ... collect`).
 CMD ["python", "-m", "data_service.cli"]

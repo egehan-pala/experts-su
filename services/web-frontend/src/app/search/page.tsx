@@ -1,7 +1,8 @@
 'use client';
 
 import { useSearchParams, useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, Suspense } from 'react';
+import { API_URL } from '@/lib/config';
 
 interface MatchSnippet {
     publication_title?: string | null;
@@ -18,6 +19,7 @@ interface PersonResult {
     image_url?: string | null;
     score: number;
     match_type: string;
+    pub_count?: number;
 }
 
 interface TopicResult {
@@ -36,20 +38,44 @@ interface SearchResponse {
     topic_results: TopicResult[];
 }
 
-export default function SearchPage() {
+function SearchPageContent() {
     const searchParams = useSearchParams();
     const q = searchParams.get('q');
+    const sdg = searchParams.get('sdg');
+    const sdgName = searchParams.get('sdg_name');
     const router = useRouter();
     const [response, setResponse] = useState<SearchResponse | null>(null);
     const [loading, setLoading] = useState(true);
+    const [departmentFilter, setDepartmentFilter] = useState('');
 
     useEffect(() => {
-        if (q) {
+        if (sdg) {
             setLoading(true);
-            fetch(`http://localhost:8000/search`, {
+            fetch(`${API_URL}/stats/sdg/${sdg}/experts`)
+                .then((res) => res.json())
+                .then((data: PersonResult[]) => {
+                    setResponse({
+                        intent: 'PERSON',
+                        person_results: data,
+                        topic_results: []
+                    });
+                    setLoading(false);
+                })
+                .catch((err) => {
+                    console.error(err);
+                    setLoading(false);
+                });
+        } else if (q) {
+            setLoading(true);
+            fetch(`${API_URL}/search`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ query: q, limit: 10, debug: true })
+                body: JSON.stringify({ 
+                    query: q, 
+                    limit: 10, 
+                    debug: true,
+                    filters: departmentFilter ? { department: departmentFilter } : null 
+                })
             })
                 .then((res) => res.json())
                 .then((data: SearchResponse) => {
@@ -61,7 +87,7 @@ export default function SearchPage() {
                     setLoading(false);
                 });
         }
-    }, [q]);
+    }, [q, sdg, departmentFilter]);
 
     const personResults = response?.person_results ?? [];
     const topicResults = response?.topic_results ?? [];
@@ -76,32 +102,64 @@ export default function SearchPage() {
                 <span>←</span> BACK TO HOME
             </button>
 
-            <div style={{ borderBottom: '1px solid #e4e4e7', paddingBottom: '1rem', marginBottom: '2rem' }}>
-                <h1 style={{ fontSize: '2.5rem', margin: 0, fontFamily: 'var(--font-serif)', color: '#111' }}>
-                    Expert Search Results
-                </h1>
-                <p style={{ color: '#52525b', marginTop: '0.5rem' }}>
-                    Finding experts in <span style={{ color: '#002855', fontWeight: 600 }}>"{q}"</span>
-                </p>
-                {response?.intent && (
-                    <div style={{ fontSize: '0.8rem', color: '#71717a', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                        <span style={{ padding: '0.1rem 0.5rem', background: '#f1f5f9', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
-                            Detected Intent: {response.intent}
-                        </span>
+            <div style={{ borderBottom: '1px solid #e4e4e7', paddingBottom: '1rem', marginBottom: '2rem', display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '1rem' }}>
+                <div>
+                    <h1 style={{ fontSize: '2.5rem', margin: 0, fontFamily: 'var(--font-serif)', color: '#111' }}>
+                        {sdg ? 'SDG Research Experts' : 'Expert Search Results'}
+                    </h1>
+                    <p style={{ color: '#52525b', marginTop: '0.5rem' }}>
+                        {sdg ? (
+                            <>Experts contributing to <span style={{ color: '#002855', fontWeight: 600 }}>"{sdgName || `SDG ${sdg}`}"</span></>
+                        ) : (
+                            <>Finding experts in <span style={{ color: '#002855', fontWeight: 600 }}>"{q}"</span></>
+                        )}
+                    </p>
+                    {response?.intent && (
+                        <div style={{ fontSize: '0.8rem', color: '#71717a', marginTop: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                            <span style={{ padding: '0.1rem 0.5rem', background: '#f1f5f9', borderRadius: '4px', border: '1px solid #e2e8f0' }}>
+                                Detected Intent: {response.intent}
+                            </span>
+                        </div>
+                    )}
+                </div>
+
+                {!sdg && (
+                    <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem', minWidth: '220px' }}>
+                        <label style={{ fontSize: '0.8rem', fontWeight: 600, color: '#52525b' }}>Filter by Department</label>
+                        <select 
+                            value={departmentFilter}
+                            onChange={(e) => setDepartmentFilter(e.target.value)}
+                            style={{
+                                padding: '0.6rem',
+                                borderRadius: '6px',
+                                border: '1px solid #d4d4d8',
+                                backgroundColor: 'white',
+                                color: '#111',
+                                fontSize: '0.9rem',
+                                cursor: 'pointer',
+                                outline: 'none',
+                                fontFamily: 'inherit'
+                            }}
+                        >
+                            <option value="">All Departments</option>
+                            <option value="FENS">Engineering and Natural Sciences (FENS)</option>
+                            <option value="FASS">Arts and Social Sciences (FASS)</option>
+                            <option value="SBS">Sabancı Business School (SBS)</option>
+                        </select>
                     </div>
                 )}
             </div>
 
             {loading ? (
                 <p style={{ color: '#52525b', fontStyle: 'italic' }}>Searching for experts...</p>
-            ) : !hasResults ? (
+            ) : (personResults.length === 0 && topicResults.length === 0) ? (
                 <div style={{ padding: '3rem', background: '#f4f4f5', textAlign: 'center', color: '#52525b' }}>
-                    No experts found for "{q}".
+                    No experts found for {sdg ? `"${sdgName || `SDG ${sdg}`}"` : `"${q}"`}.
                 </div>
             ) : (
                 <>
                     {/* PERSON RESULTS */}
-                    {personResults.length > 0 && (
+                    {personResults.length > 0 && response && (
                         <div style={{ marginBottom: '3rem' }}>
                             {response.intent === 'MIXED' && <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', color: '#111' }}>People</h2>}
                             <div className="experts-grid">
@@ -134,9 +192,17 @@ export default function SearchPage() {
                                         </div>
                                         <div className="su-card-content">
                                             <h3 className="su-card-title">{expert.name}</h3>
-                                            <p className="su-card-desc" style={{ marginBottom: '0.5rem', fontWeight: 600, color: '#111' }}>
+                                            <p className="su-card-desc" style={{ marginBottom: '0.25rem', fontWeight: 700, color: '#002855' }}>
                                                 {expert.dept || 'Sabanci University'}
                                             </p>
+                                            <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.5rem' }}>
+                                                Faculty Member
+                                            </p>
+                                            {(expert.score > 0 || (expert.pub_count !== undefined && expert.pub_count > 0)) && (
+                                                <div style={{ fontSize: '0.75rem', color: '#22c55e', fontWeight: 600 }}>
+                                                    {expert.pub_count} relevant works
+                                                </div>
+                                            )}
                                         </div>
                                     </div>
                                 ))}
@@ -145,7 +211,7 @@ export default function SearchPage() {
                     )}
 
                     {/* TOPIC RESULTS */}
-                    {topicResults.length > 0 && (
+                    {topicResults.length > 0 && response && (
                         <div>
                             {response.intent === 'MIXED' && <h2 style={{ fontSize: '1.5rem', marginBottom: '1.5rem', color: '#111' }}>Experts by Topic</h2>}
                             <div className="experts-grid">
@@ -186,8 +252,11 @@ export default function SearchPage() {
                                         </div>
                                         <div className="su-card-content">
                                             <h3 className="su-card-title">{expert.name}</h3>
-                                            <p className="su-card-desc" style={{ marginBottom: '0.5rem', fontWeight: 600, color: '#111' }}>
+                                            <p className="su-card-desc" style={{ marginBottom: '0.25rem', fontWeight: 700, color: '#002855' }}>
                                                 {expert.dept || 'Sabanci University'}
+                                            </p>
+                                            <p style={{ fontSize: '0.8rem', color: '#666', marginBottom: '0.5rem' }}>
+                                                Faculty Member
                                             </p>
                                             {expert.explanation && expert.explanation.length > 0 && (
                                                 <div style={{ fontSize: '0.8rem', color: '#52525b', marginTop: '0.5rem', borderTop: '1px solid #e4e4e7', paddingTop: '0.5rem' }}>
@@ -204,5 +273,13 @@ export default function SearchPage() {
                 </>
             )}
         </div>
+    );
+}
+
+export default function SearchPage() {
+    return (
+        <Suspense fallback={<div className="container" style={{ padding: '2rem 1.5rem 4rem' }}><p style={{ color: '#52525b', fontStyle: 'italic' }}>Loading search...</p></div>}>
+            <SearchPageContent />
+        </Suspense>
     );
 }

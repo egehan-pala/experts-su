@@ -58,8 +58,10 @@ def clean() -> None:
             publication_topics,
             metrics,
             coauthor_edges,
+            author_citations,
+            publication_citations,
         ) = await clean_stage(db)
-        # Save cleaned data locally instead of uploading to Supabase
+        # Save cleaned data locally
         await save_data_locally(
             authors,
             publications,
@@ -68,6 +70,8 @@ def clean() -> None:
             publication_topics,
             metrics,
             coauthor_edges,
+            author_citations,
+            publication_citations,
         )
         typer.echo(f"Cleaned and saved {len(authors)} authors, {len(publications)} publications to data_exports/")
         await db.close()
@@ -92,6 +96,8 @@ def load() -> None:
             publication_topics,
             metrics,
             coauthor_edges,
+            author_citations,
+            publication_citations,
         ) = await clean_stage(db)
         # Load into PostgreSQL
         await load_stage(
@@ -103,6 +109,8 @@ def load() -> None:
             publication_topics,
             metrics,
             coauthor_edges,
+            author_citations,
+            publication_citations,
         )
         typer.echo(f"Data loaded into PostgreSQL database")
         await db.close()
@@ -146,6 +154,8 @@ def full_run() -> None:
                 publication_topics,
                 metrics,
                 coauthor_edges,
+                author_citations,
+                publication_citations,
             ) = await clean_stage(db)
             typer.echo(f"✅ Cleaning complete. {len(authors)} authors, {len(publications)} publications passed filters.\n")
             
@@ -159,6 +169,8 @@ def full_run() -> None:
                 publication_topics,
                 metrics,
                 coauthor_edges,
+                author_citations,
+                publication_citations,
             )
             typer.echo("✅ Snapshot saved locally.\n")
             
@@ -173,6 +185,8 @@ def full_run() -> None:
                 publication_topics,
                 metrics,
                 coauthor_edges,
+                author_citations,
+                publication_citations,
             )
             typer.echo("✅ Upload complete!\n")
             
@@ -613,6 +627,8 @@ def clean_and_load() -> None:
                 publication_topics,
                 metrics,
                 coauthor_edges,
+                author_citations,
+                publication_citations,
             ) = await clean_stage(db)
             typer.echo(f"✅ Cleaning complete. {len(authors)} authors, {len(publications)} publications.\n")
             
@@ -626,6 +642,8 @@ def clean_and_load() -> None:
                 publication_topics,
                 metrics,
                 coauthor_edges,
+                author_citations,
+                publication_citations,
             )
             typer.echo("✅ Snapshot saved locally.\n")
             
@@ -640,6 +658,8 @@ def clean_and_load() -> None:
                 publication_topics,
                 metrics,
                 coauthor_edges,
+                author_citations,
+                publication_citations,
             )
             typer.echo("✅ Upload complete (simulated)!\n")
             

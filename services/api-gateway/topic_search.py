@@ -54,25 +54,48 @@ async def topic_search(
     if department:
         dept_filter = "AND a.dept ILIKE $3"
         params.append(f"%{department}%")
+        params.append(query)
+        q_param = "$4"
+    else:
+        params.append(query)
+        q_param = "$3"
 
     rows = await pool.fetch(f"""
-        SELECT
-            fc.faculty_id,
-            a.name,
-            a.dept,
-            a.image_url,
-            a.email,
-            fc.publication_title,
-            fc.chunk_text,
-            fc.year,
-            fc.source_type,
-            1 - (fc.embedding <=> $1::vector) AS similarity
-        FROM faculty_chunks fc
-        JOIN authors a ON fc.faculty_id = a.id
-        WHERE a.is_faculty = TRUE
-          {dept_filter}
-        ORDER BY fc.embedding <=> $1::vector
-        LIMIT $2
+        WITH vector_matches AS (
+            SELECT
+                fc.faculty_id, a.name, a.dept, a.image_url, a.email,
+                fc.publication_title, fc.chunk_text, fc.year, fc.source_type,
+                1 - (fc.embedding <=> $1::vector) AS vector_sim,
+                ROW_NUMBER() OVER (ORDER BY fc.embedding <=> $1::vector) as rank_v,
+                1000 as rank_t
+            FROM faculty_chunks fc
+            JOIN authors a ON fc.faculty_id = a.id
+            WHERE a.is_faculty = TRUE AND fc.chunk_text IS NOT NULL
+              {dept_filter}
+            ORDER BY fc.embedding <=> $1::vector
+            LIMIT $2
+        ),
+        text_matches AS (
+            SELECT
+                fc.faculty_id, a.name, a.dept, a.image_url, a.email,
+                fc.publication_title, fc.chunk_text, fc.year, fc.source_type,
+                1 - (fc.embedding <=> $1::vector) AS vector_sim,
+                1000 as rank_v,
+                ROW_NUMBER() OVER (ORDER BY ts_rank_cd(to_tsvector('english', fc.chunk_text), websearch_to_tsquery('english', {q_param})) DESC) as rank_t
+            FROM faculty_chunks fc
+            JOIN authors a ON fc.faculty_id = a.id
+            WHERE a.is_faculty = TRUE AND fc.chunk_text IS NOT NULL
+              {dept_filter}
+              AND to_tsvector('english', fc.chunk_text) @@ websearch_to_tsquery('english', {q_param})
+            ORDER BY ts_rank_cd(to_tsvector('english', fc.chunk_text), websearch_to_tsquery('english', {q_param})) DESC
+            LIMIT $2
+        ),
+        combined AS (
+            SELECT * FROM vector_matches
+            UNION ALL
+            SELECT * FROM text_matches
+        )
+        SELECT * FROM combined
     """, *params)
 
     # 3. Aggregate chunks by faculty
@@ -80,15 +103,27 @@ async def topic_search(
     faculty_chunks: dict[str, list] = defaultdict(list)
     faculty_info: dict[str, dict] = {}
 
+    chunk_map = {}
     for row in rows:
+        key = (row["faculty_id"], row["chunk_text"])
+        if key not in chunk_map:
+            chunk_map[key] = {
+                "faculty_id": row["faculty_id"],
+                "publication_title": row["publication_title"],
+                "chunk_text": row["chunk_text"],
+                "year": row["year"],
+                "source_type": row["source_type"],
+                "vector_sim": row.get("vector_sim", 0.0),
+                "rank_v": 1000,
+                "rank_t": 1000,
+            }
+        
+        if row["rank_v"] < 1000:
+            chunk_map[key]["rank_v"] = row["rank_v"]
+        if row["rank_t"] < 1000:
+            chunk_map[key]["rank_t"] = row["rank_t"]
+            
         fid = row["faculty_id"]
-        faculty_chunks[fid].append({
-            "similarity": float(row["similarity"]),
-            "publication_title": row["publication_title"],
-            "chunk_text": row["chunk_text"],
-            "year": row["year"],
-            "source_type": row["source_type"],
-        })
         if fid not in faculty_info:
             faculty_info[fid] = {
                 "name": row["name"],
@@ -97,8 +132,26 @@ async def topic_search(
                 "email": row["email"],
             }
 
+    # Calculate RRF score for unique chunks
+    for key, c in chunk_map.items():
+        # RRF formula: 1 / (k + rank)
+        # Scaled up for readable floats
+        rrf_score = (1.0 / (60 + c["rank_v"])) + (1.0 / (60 + c["rank_t"]))
+        
+        faculty_chunks[c["faculty_id"]].append({
+            "similarity": rrf_score,
+            "vector_sim": c["vector_sim"],
+            "publication_title": c["publication_title"],
+            "chunk_text": c["chunk_text"],
+            "year": c["year"],
+            "source_type": c["source_type"],
+        })
+
     # 4. Score and rank faculties
-    scored: list[tuple[str, float, list]] = []
+    scored: list[tuple[str, float, list, float]] = []
+
+    import datetime
+    current_year = datetime.datetime.now().year
 
     for fid, chunks in faculty_chunks.items():
         # Sort chunks by similarity descending
@@ -109,7 +162,18 @@ async def topic_search(
         avg_sim = sum(c["similarity"] for c in top_chunks) / len(top_chunks)
         faculty_score = max_sim * MAX_SIM_WEIGHT + avg_sim * AVG_TOP_WEIGHT
 
-        scored.append((fid, faculty_score, top_chunks))
+        max_v_sim = top_chunks[0]["vector_sim"]
+        avg_v_sim = sum(c["vector_sim"] for c in top_chunks) / len(top_chunks)
+        display_score = max_v_sim * MAX_SIM_WEIGHT + avg_v_sim * AVG_TOP_WEIGHT
+
+        # Smart Ranking (Recency Boost)
+        years = [c["year"] for c in top_chunks if isinstance(c["year"], int)]
+        if years:
+            latest_year = max(years)
+            if (current_year - latest_year) <= 3:
+                faculty_score *= 1.15
+
+        scored.append((fid, faculty_score, top_chunks, display_score))
 
     # Sort by faculty score
     scored.sort(key=lambda x: x[1], reverse=True)
@@ -117,7 +181,7 @@ async def topic_search(
 
     # 5. Build response
     results: List[TopicResult] = []
-    for fid, score, top_chunks in scored:
+    for fid, score, top_chunks, display_score in scored:
         info = faculty_info[fid]
         snippets = []
         for c in top_chunks:
@@ -125,7 +189,7 @@ async def topic_search(
                 publication_title=c["publication_title"],
                 snippet=_snippet(c["chunk_text"]),
                 year=c["year"],
-                similarity=round(c["similarity"], 4),
+                similarity=round(c["vector_sim"], 4),
             ))
 
         results.append(TopicResult(
@@ -134,7 +198,7 @@ async def topic_search(
             dept=info["dept"],
             image_url=info["image_url"],
             email=info["email"],
-            similarity=round(score, 4),
+            similarity=round(display_score, 4),
             explanation=snippets,
         ))
 
