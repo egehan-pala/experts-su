@@ -1083,20 +1083,20 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                 {!loading && networkData && networkData.nodes.length > 0 && (
                     <div style={{
                         marginTop: '1.5rem',
-                        backgroundColor: '#f8fafc',
+                        backgroundColor: '#0f172a',
                         borderRadius: '10px',
-                        border: '1px solid #e2e8f0',
+                        border: '1px solid #334155',
                         overflow: 'hidden',
                     }}>
                         <div style={{
                             padding: '0.75rem 1rem',
-                            borderBottom: '1px solid #e2e8f0',
-                            backgroundColor: '#f1f5f9',
+                            borderBottom: '1px solid #334155',
+                            backgroundColor: '#1e293b',
                         }}>
                             <h3 style={{
                                 fontSize: '0.85rem',
                                 fontWeight: 700,
-                                color: '#334155',
+                                color: '#cbd5e1',
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.05em',
                                 margin: 0,
@@ -1121,7 +1121,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                         }}
                                         onMouseOver={(e) => {
                                             if (author.is_faculty) {
-                                                e.currentTarget.style.backgroundColor = '#eff6ff';
+                                                e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
                                             }
                                         }}
                                         onMouseOut={(e) => {
@@ -1146,7 +1146,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                         </span>
                                         <span style={{
                                             fontSize: '0.8rem',
-                                            color: '#1e293b',
+                                            color: '#f8fafc',
                                             fontWeight: 600,
                                             width: '200px',
                                             overflow: 'hidden',
@@ -1163,7 +1163,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                                         }}>
                                             {author.is_faculty ? 'Faculty' : 'External'}
                                         </span>
-                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
                                             <div style={{
                                                 width: `${barWidth}%`,
                                                 height: '100%',

@@ -408,9 +408,9 @@ export default function DepartmentNetworkGraph() {
                 right: '50%',
                 marginLeft: '-50vw',
                 marginRight: '-50vw',
-                backgroundColor: '#ffffff',
-                borderTop: '1px solid #e2e8f0',
-                borderBottom: '1px solid #e2e8f0',
+                backgroundColor: '#1e293b',
+                borderTop: '1px solid #334155',
+                borderBottom: '1px solid #334155',
                 padding: '3rem 0',
                 boxSizing: 'border-box'
             }}
@@ -439,7 +439,7 @@ export default function DepartmentNetworkGraph() {
                             style={{
                                 fontSize: '1.5rem',
                                 fontFamily: '"Courier New", Courier, monospace',
-                                color: '#1e293b',
+                                color: '#f8fafc',
                                 fontWeight: 800
                             }}
                         >
@@ -486,10 +486,10 @@ export default function DepartmentNetworkGraph() {
                                 display: 'flex',
                                 gap: '6px',
                                 alignItems: 'center',
-                                background: '#f8fafc',
+                                background: '#0f172a',
                                 padding: '6px 12px',
                                 borderRadius: '8px',
-                                border: `1px solid ${pathData ? '#fb923c' : (searchQuery1 && searchQuery2 && !pathData ? '#ef4444' : '#e2e8f0')}`
+                                border: `1px solid ${pathData ? '#fb923c' : (searchQuery1 && searchQuery2 && !pathData ? '#ef4444' : '#334155')}`
                             }}
                         >
                             <span style={{ fontSize: '0.9rem' }}>🔍</span>
@@ -498,7 +498,7 @@ export default function DepartmentNetworkGraph() {
                                 placeholder="Author 1..."
                                 value={searchQuery1}
                                 onChange={(e) => setSearchQuery1(e.target.value)}
-                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '100px' }}
+                                style={{ background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '0.875rem', outline: 'none', width: '100px' }}
                             />
                             {searchQuery1 && (
                                 <button onClick={() => setSearchQuery1('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
@@ -510,19 +510,19 @@ export default function DepartmentNetworkGraph() {
                                 placeholder="Author 2..."
                                 value={searchQuery2}
                                 onChange={(e) => setSearchQuery2(e.target.value)}
-                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '100px' }}
+                                style={{ background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '0.875rem', outline: 'none', width: '100px' }}
                             />
                             {searchQuery2 && (
                                 <button onClick={() => setSearchQuery2('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
                             )}
                         </div>
                         {searchQuery1 && searchQuery2 && !pathData && (
-                            <div style={{ background: '#fef2f2', color: '#ef4444', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <div style={{ background: '#451a03', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 ⚠ No path
                             </div>
                         )}
                         {pathData && (
-                            <div style={{ background: '#fff7ed', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <div style={{ background: '#431407', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 🔗 {pathData.pathNodeIds.size} nodes
                             </div>
                         )}
@@ -535,9 +535,9 @@ export default function DepartmentNetworkGraph() {
                         height: dimensions.height,
                         position: 'relative',
                         overflow: 'hidden',
-                        background: '#f8fafc',
+                        background: '#0f172a',
                         borderRadius: '12px',
-                        border: '2px solid #e2e8f0',
+                        border: '2px solid #334155',
                         boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
                     }}
                 >
@@ -565,7 +565,7 @@ export default function DepartmentNetworkGraph() {
                                     top: 250,
                                     right: 20,
                                     zIndex: 2,
-                                    background: 'rgba(255, 255, 255, 0.95)',
+                                    background: 'rgba(15, 23, 42, 0.95)',
                                     padding: '1rem',
                                     borderRadius: 12,
                                     border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6'}`,
@@ -579,18 +579,18 @@ export default function DepartmentNetworkGraph() {
                                 <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
                                     {hoveredNodeData?.dept ? `${hoveredNodeData.dept} AUTHOR` : 'SELECTED AUTHOR'}
                                 </div>
-                                <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                                    <span style={{ color: '#1e293b' }}>{hoveredNodeData?.name || 'None'}</span>
+                                <div style={{ color: '#f8fafc', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+                                    <span style={{ color: '#f8fafc' }}>{hoveredNodeData?.name || 'None'}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
                                     <span style={{ color: '#94a3b8' }}>Joint Papers:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    <span style={{ fontWeight: 600, color: '#f8fafc' }}>
                                         {hoveredNode ? nodeJointPapers[hoveredNode] || 0 : 0}
                                     </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                                     <span style={{ color: '#94a3b8' }}>Collaborators:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    <span style={{ fontWeight: 600, color: '#f8fafc' }}>
                                         {hoveredCollaborators}
                                     </span>
                                 </div>
@@ -638,13 +638,13 @@ export default function DepartmentNetworkGraph() {
                                     position: 'absolute',
                                     bottom: 15,
                                     left: 15,
-                                    background: 'rgba(255, 255, 255, 0.9)',
+                                    background: 'rgba(15, 23, 42, 0.9)',
                                     padding: '0.75rem',
                                     borderRadius: 8,
-                                    border: '1px solid #e2e8f0',
+                                    border: '1px solid #334155',
                                     pointerEvents: 'none',
                                     fontSize: '0.75rem',
-                                    color: '#1e293b',
+                                    color: '#f8fafc',
                                     fontFamily: 'monospace',
                                     boxShadow: '0 4px 6px rgb(0 0 0 / 0.3)'
                                 }}
@@ -653,7 +653,7 @@ export default function DepartmentNetworkGraph() {
                                     style={{
                                         fontWeight: 'bold',
                                         marginBottom: '0.5rem',
-                                        borderBottom: '1px solid #e2e8f0',
+                                        borderBottom: '1px solid #334155',
                                         paddingBottom: '0.25rem'
                                     }}
                                 >
@@ -703,14 +703,14 @@ export default function DepartmentNetworkGraph() {
                                     bottom: 15,
                                     right: 15,
                                     zIndex: 2,
-                                    background: 'rgba(255, 255, 255, 0.95)',
+                                    background: 'rgba(15, 23, 42, 0.95)',
                                     padding: '0.6rem 1rem',
                                     borderRadius: '8px',
-                                    border: '1px solid #e2e8f0',
+                                    border: '1px solid #334155',
                                     cursor: 'pointer',
                                     fontSize: '0.85rem',
                                     fontWeight: 600,
-                                    color: '#0f172a',
+                                    color: '#f8fafc',
                                     boxShadow: '0 4px 6px rgb(0 0 0 / 0.1)',
                                     display: 'flex',
                                     alignItems: 'center',
@@ -743,13 +743,13 @@ export default function DepartmentNetworkGraph() {
                             display: 'flex',
                             justifyContent: 'space-between',
                             alignItems: 'center',
-                            background: '#f8fafc',
+                            background: '#0f172a',
                             padding: '1.5rem 2rem',
                             borderRadius: '12px',
-                            border: '1px solid #e2e8f0',
+                            border: '1px solid #334155',
                             flexWrap: 'wrap',
                             gap: '1.5rem',
-                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03)'
+                            boxShadow: '0 4px 6px -1px rgba(0, 0, 0, 0.4), 0 2px 4px -1px rgba(0, 0, 0, 0.2)'
                         }}
                     >
                         <div style={{ display: 'flex', alignItems: 'center', gap: '2.5rem', flexWrap: 'wrap' }}>
@@ -762,7 +762,7 @@ export default function DepartmentNetworkGraph() {
                                 </div>
                             </div>
                             
-                            <div style={{ width: '1px', height: '40px', background: '#e2e8f0' }} />
+                            <div style={{ width: '1px', height: '40px', background: '#334155' }} />
                             
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
                                 <div style={{ color: '#64748b', fontSize: '0.75rem', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
@@ -773,7 +773,7 @@ export default function DepartmentNetworkGraph() {
                                 </div>
                             </div>
                             
-                            <div style={{ width: '1px', height: '40px', background: '#e2e8f0' }} />
+                            <div style={{ width: '1px', height: '40px', background: '#334155' }} />
                             
                             <div style={{ display: 'flex', gap: '2rem' }}>
                                 <div style={{ display: 'flex', flexDirection: 'column' }}>
@@ -792,7 +792,7 @@ export default function DepartmentNetworkGraph() {
                         </div>
                         
                         <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
-                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#4f46e5' }}>
+                            <div style={{ width: '40px', height: '40px', borderRadius: '50%', background: 'rgba(59, 130, 246, 0.1)', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#3b82f6' }}>
                                 <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                                     <circle cx="12" cy="12" r="10"></circle>
                                     <line x1="12" y1="16" x2="12" y2="12"></line>
@@ -800,7 +800,7 @@ export default function DepartmentNetworkGraph() {
                                 </svg>
                             </div>
                             <div style={{ display: 'flex', flexDirection: 'column' }}>
-                                <div style={{ color: '#1e293b', fontSize: '0.9rem', fontWeight: 700 }}>Network Overview</div>
+                                <div style={{ color: '#f8fafc', fontSize: '0.9rem', fontWeight: 700 }}>Network Overview</div>
                                 <div style={{ color: '#64748b', fontSize: '0.8rem' }}>Global collaboration metrics</div>
                             </div>
                         </div>
@@ -811,20 +811,20 @@ export default function DepartmentNetworkGraph() {
                 {!loading && graphData && graphData.nodes.length > 0 && (
                     <div style={{
                         marginTop: '1.5rem',
-                        backgroundColor: '#f8fafc',
+                        backgroundColor: '#0f172a',
                         borderRadius: '10px',
-                        border: '1px solid #e2e8f0',
+                        border: '1px solid #334155',
                         overflow: 'hidden',
                     }}>
                         <div style={{
                             padding: '0.75rem 1rem',
-                            borderBottom: '1px solid #e2e8f0',
-                            backgroundColor: '#f1f5f9',
+                            borderBottom: '1px solid #334155',
+                            backgroundColor: '#1e293b',
                         }}>
                             <h3 style={{
                                 fontSize: '0.85rem',
                                 fontWeight: 700,
-                                color: '#334155',
+                                color: '#cbd5e1',
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.05em',
                                 margin: 0,
@@ -848,7 +848,7 @@ export default function DepartmentNetworkGraph() {
                                             cursor: 'pointer',
                                         }}
                                         onMouseOver={(e) => {
-                                            e.currentTarget.style.backgroundColor = '#eff6ff';
+                                            e.currentTarget.style.backgroundColor = 'rgba(59, 130, 246, 0.1)';
                                         }}
                                         onMouseOut={(e) => {
                                             e.currentTarget.style.backgroundColor = 'transparent';
@@ -866,7 +866,7 @@ export default function DepartmentNetworkGraph() {
                                         </span>
                                         <span style={{
                                             fontSize: '0.8rem',
-                                            color: '#1e293b',
+                                            color: '#f8fafc',
                                             fontWeight: 600,
                                             width: '200px',
                                             overflow: 'hidden',
@@ -883,7 +883,7 @@ export default function DepartmentNetworkGraph() {
                                         }}>
                                             {author.dept || ''}
                                         </span>
-                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
                                             <div style={{
                                                 width: `${barWidth}%`,
                                                 height: '100%',

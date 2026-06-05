@@ -432,9 +432,9 @@ export default function CitationOverlapGraph() {
                 right: '50%',
                 marginLeft: '-50vw',
                 marginRight: '-50vw',
-                backgroundColor: '#ffffff',
-                borderTop: '1px solid #e2e8f0',
-                borderBottom: '1px solid #e2e8f0',
+                backgroundColor: '#1e293b',
+                borderTop: '1px solid #334155',
+                borderBottom: '1px solid #334155',
                 padding: '3rem 0',
                 boxSizing: 'border-box'
             }}
@@ -463,7 +463,7 @@ export default function CitationOverlapGraph() {
                             style={{
                                 fontSize: '1.5rem',
                                 fontFamily: '"Courier New", Courier, monospace',
-                                color: '#1e293b',
+                                color: '#f8fafc',
                                 fontWeight: 800
                             }}
                         >
@@ -510,10 +510,10 @@ export default function CitationOverlapGraph() {
                                 display: 'flex',
                                 gap: '6px',
                                 alignItems: 'center',
-                                background: '#f8fafc',
+                                background: '#0f172a',
                                 padding: '8px 12px',
                                 borderRadius: '8px',
-                                border: `1px solid ${pathData ? '#fb923c' : (searchQuery1 && searchQuery2 && !pathData ? '#ef4444' : '#e2e8f0')}`
+                                border: `1px solid ${pathData ? '#fb923c' : (searchQuery1 && searchQuery2 && !pathData ? '#ef4444' : '#334155')}`
                             }}
                         >
                             <span style={{ fontSize: '0.9rem' }}>🔍</span>
@@ -522,7 +522,7 @@ export default function CitationOverlapGraph() {
                                 placeholder="Author 1..."
                                 value={searchQuery1}
                                 onChange={(e) => setSearchQuery1(e.target.value)}
-                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '110px' }}
+                                style={{ background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '0.875rem', outline: 'none', width: '110px' }}
                             />
                             {searchQuery1 && (
                                 <button onClick={() => setSearchQuery1('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
@@ -534,19 +534,19 @@ export default function CitationOverlapGraph() {
                                 placeholder="Author 2..."
                                 value={searchQuery2}
                                 onChange={(e) => setSearchQuery2(e.target.value)}
-                                style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '110px' }}
+                                style={{ background: 'transparent', border: 'none', color: '#f8fafc', fontSize: '0.875rem', outline: 'none', width: '110px' }}
                             />
                             {searchQuery2 && (
                                 <button onClick={() => setSearchQuery2('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>
                             )}
                         </div>
                         {searchQuery1 && searchQuery2 && !pathData && (
-                            <div style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <div style={{ background: '#451a03', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 ⚠ No path found
                             </div>
                         )}
                         {pathData && (
-                            <div style={{ background: '#fff7ed', color: '#ea580c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
+                            <div style={{ background: '#431407', color: '#fb923c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
                                 🔗 Path: {pathData.pathNodeIds.size} nodes
                             </div>
                         )}
@@ -559,9 +559,9 @@ export default function CitationOverlapGraph() {
                         height: dimensions.height,
                         position: 'relative',
                         overflow: 'hidden',
-                        background: '#f8fafc',
+                        background: '#0f172a',
                         borderRadius: '12px',
-                        border: '2px solid #e2e8f0',
+                        border: '2px solid #334155',
                         boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
                     }}
                 >
@@ -570,8 +570,8 @@ export default function CitationOverlapGraph() {
                             <div style={{ textAlign: 'center' }}>
                                 <div style={{ fontSize: '2rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⟳</div>
                                 <div>Building citation overlap network...</div>
-                                <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Analyzing shared references across all faculty publications</div>
-                                <div style={{ fontSize: '0.7rem', marginTop: '0.25rem', color: '#334155' }}>First load may take up to a minute</div>
+                                <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#94a3b8' }}>Analyzing shared references across all faculty publications</div>
+                                <div style={{ fontSize: '0.7rem', marginTop: '0.25rem', color: '#64748b' }}>First load may take up to a minute</div>
                             </div>
                         </div>
                     ) : !graphData || graphData.nodes.length === 0 ? (
@@ -587,10 +587,10 @@ export default function CitationOverlapGraph() {
                                     top: 20,
                                     right: -10,
                                     zIndex: 10,
-                                    background: 'rgba(255, 255, 255, 0.95)',
+                                    background: 'rgba(15, 23, 42, 0.95)',
                                     padding: '1.5rem',
                                     borderRadius: 12,
-                                    border: '1px solid #e2e8f0',
+                                    border: '1px solid #334155',
                                     width: '280px',
                                     boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)',
                                     pointerEvents: 'none'
@@ -599,7 +599,7 @@ export default function CitationOverlapGraph() {
                                 <h3
                                     style={{
                                         fontSize: '0.85rem',
-                                        color: '#1e293b',
+                                        color: '#f8fafc',
                                         fontWeight: 800,
                                         borderBottom: '2px solid #a855f7',
                                         paddingBottom: '0.5rem',
@@ -658,7 +658,7 @@ export default function CitationOverlapGraph() {
                                     top: 280,
                                     right: 20,
                                     zIndex: 10,
-                                    background: 'rgba(255, 255, 255, 0.95)',
+                                    background: 'rgba(15, 23, 42, 0.95)',
                                     padding: '1rem',
                                     borderRadius: 12,
                                     border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#a855f7'}`,
@@ -672,18 +672,18 @@ export default function CitationOverlapGraph() {
                                 <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#a855f7', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
                                     {hoveredNodeData?.dept ? `${hoveredNodeData.dept} AUTHOR` : 'SELECTED AUTHOR'}
                                 </div>
-                                <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                                    <span style={{ color: '#1e293b' }}>{hoveredNodeData?.name || 'None'}</span>
+                                <div style={{ color: '#f8fafc', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+                                    <span style={{ color: '#f8fafc' }}>{hoveredNodeData?.name || 'None'}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
                                     <span style={{ color: '#94a3b8' }}>Shared Citations:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    <span style={{ fontWeight: 600, color: '#f8fafc' }}>
                                         {hoveredNode ? nodeSharedCitations[hoveredNode] || 0 : 0}
                                     </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                                     <span style={{ color: '#94a3b8' }}>Intellectual Peers:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    <span style={{ fontWeight: 600, color: '#f8fafc' }}>
                                         {hoveredPeers}
                                     </span>
                                 </div>
@@ -731,13 +731,13 @@ export default function CitationOverlapGraph() {
                                     position: 'absolute',
                                     bottom: 15,
                                     left: 15,
-                                    background: 'rgba(255, 255, 255, 0.9)',
+                                    background: 'rgba(15, 23, 42, 0.9)',
                                     padding: '0.75rem',
                                     borderRadius: 8,
-                                    border: '1px solid #e2e8f0',
+                                    border: '1px solid #334155',
                                     pointerEvents: 'none',
                                     fontSize: '0.75rem',
-                                    color: '#1e293b',
+                                    color: '#f8fafc',
                                     fontFamily: 'monospace',
                                     boxShadow: '0 4px 6px rgb(0 0 0 / 0.3)'
                                 }}
@@ -746,7 +746,7 @@ export default function CitationOverlapGraph() {
                                     style={{
                                         fontWeight: 'bold',
                                         marginBottom: '0.5rem',
-                                        borderBottom: '1px solid #e2e8f0',
+                                        borderBottom: '1px solid #334155',
                                         paddingBottom: '0.25rem'
                                     }}
                                 >
@@ -791,20 +791,20 @@ export default function CitationOverlapGraph() {
                 {!loading && graphData && graphData.nodes.length > 0 && (
                     <div style={{
                         marginTop: '1.5rem',
-                        backgroundColor: '#f8fafc',
+                        backgroundColor: '#0f172a',
                         borderRadius: '10px',
-                        border: '1px solid #e2e8f0',
+                        border: '1px solid #334155',
                         overflow: 'hidden',
                     }}>
                         <div style={{
                             padding: '0.75rem 1rem',
-                            borderBottom: '1px solid #e2e8f0',
-                            backgroundColor: '#f1f5f9',
+                            borderBottom: '1px solid #334155',
+                            backgroundColor: '#1e293b',
                         }}>
                             <h3 style={{
                                 fontSize: '0.85rem',
                                 fontWeight: 700,
-                                color: '#334155',
+                                color: '#cbd5e1',
                                 textTransform: 'uppercase',
                                 letterSpacing: '0.05em',
                                 margin: 0,
@@ -828,7 +828,7 @@ export default function CitationOverlapGraph() {
                                             cursor: 'pointer',
                                         }}
                                         onMouseOver={(e) => {
-                                            e.currentTarget.style.backgroundColor = '#faf5ff';
+                                            e.currentTarget.style.backgroundColor = 'rgba(168, 85, 247, 0.12)';
                                         }}
                                         onMouseOut={(e) => {
                                             e.currentTarget.style.backgroundColor = 'transparent';
@@ -846,7 +846,7 @@ export default function CitationOverlapGraph() {
                                         </span>
                                         <span style={{
                                             fontSize: '0.8rem',
-                                            color: '#1e293b',
+                                            color: '#f8fafc',
                                             fontWeight: 600,
                                             width: '200px',
                                             overflow: 'hidden',
@@ -863,7 +863,7 @@ export default function CitationOverlapGraph() {
                                         }}>
                                             {author.dept || ''}
                                         </span>
-                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#e2e8f0', borderRadius: '3px', overflow: 'hidden' }}>
+                                        <div style={{ flex: 1, position: 'relative', height: '6px', backgroundColor: '#334155', borderRadius: '3px', overflow: 'hidden' }}>
                                             <div style={{
                                                 width: `${barWidth}%`,
                                                 height: '100%',
