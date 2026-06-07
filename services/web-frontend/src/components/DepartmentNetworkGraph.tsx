@@ -38,9 +38,9 @@ interface GlobalGraph {
 }
 
 const DEPT_COLORS: Record<string, string> = {
-    FENS: '#3b82f6',  // blue
-    FASS: '#f59e0b',  // amber
-    SBS: '#10b981',   // green
+    FENS: '#378ADD',
+    FASS: '#1D9E75',
+    SBS: '#D85A30',
 };
 
 const DEPT_LABELS: Record<string, string> = {
@@ -50,8 +50,8 @@ const DEPT_LABELS: Record<string, string> = {
 };
 
 function getDeptColor(dept: string | null): string {
-    if (!dept) return '#94a3b8';
-    return DEPT_COLORS[dept] || '#94a3b8';
+    if (!dept) return '#7F77DD';
+    return DEPT_COLORS[dept] || '#7F77DD';
 }
 
 // Logarithmic scale helper for link widths
@@ -218,14 +218,30 @@ export default function DepartmentNetworkGraph() {
 
         fg.d3Force('link', d3Force.forceLink()
             .id((d: any) => d.id)
-            .distance(300)
-            .strength(0.3)
+            .distance((l: any) => {
+                const val = l.value || 1;
+                const normalizedWeight = Math.min(1, val / (linkBounds.maxPapers || 1));
+                return 160 + (1 - normalizedWeight) * 80;
+            })
+            .strength((l: any) => {
+                const val = l.value || 1;
+                const normalizedWeight = Math.min(1, val / (linkBounds.maxPapers || 1));
+                return normalizedWeight * 0.7 + 0.1;
+            })
         );
-        fg.d3Force('charge', d3Force.forceManyBody().strength(-800));
-        fg.d3Force('collide', d3Force.forceCollide().radius(50).strength(0.8));
-        fg.d3Force('center', d3Force.forceCenter(0, 0));
+        fg.d3Force('charge', d3Force.forceManyBody().strength(-1000).distanceMax(500));
+        fg.d3Force('collide', d3Force.forceCollide().radius((n: any) => {
+            const count = nodeJointPapers[n.id] || 1;
+            const r = Math.sqrt(count) * 4 + 6;
+            return r + 12;
+        }).strength(0.8));
+        fg.d3Force('center', d3Force.forceCenter(0, 0).strength(0.05));
         fg.d3Force('gravityX', d3Force.forceX(0).strength(0.06));
         fg.d3Force('gravityY', d3Force.forceY(0).strength(0.06));
+        
+        if (fg.d3AlphaDecay) fg.d3AlphaDecay(0.02);
+        if (fg.d3VelocityDecay) fg.d3VelocityDecay(0.4);
+        
         fg.d3ReheatSimulation();
 
         // Fit after a small delay to let forces settle
@@ -233,7 +249,7 @@ export default function DepartmentNetworkGraph() {
             try { fg.zoomToFit(500, 80); } catch { }
         }, 1200);
         return () => clearTimeout(t);
-    }, [visibleData]);
+    }, [visibleData, linkBounds, nodeJointPapers]);
 
     const hasPathSearch = searchQuery1.length > 0 && searchQuery2.length > 0;
     const singleSearchQuery = hasPathSearch ? '' : (searchQuery1 || searchQuery2);
@@ -242,6 +258,12 @@ export default function DepartmentNetworkGraph() {
         if (!hasPathSearch || !visibleData?.nodes.length) return null;
         return findShortestPath(visibleData.nodes, visibleData.links, searchQuery1, searchQuery2);
     }, [searchQuery1, searchQuery2, visibleData, hasPathSearch]);
+
+    useEffect(() => {
+        if (fgRef.current) {
+            fgRef.current.d3ReheatSimulation();
+        }
+    }, [activeDept, singleSearchQuery, pathData]);
 
     const nodeCanvasObject = useCallback(
         (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -257,11 +279,20 @@ export default function DepartmentNetworkGraph() {
             if (pathData) alpha = isOnPath ? 1 : 0.08;
             else if (hasSearch) alpha = isMatch ? 1 : 0.08;
             else if (isDeptFiltered && !isDeptNode) alpha = 0.3;
+            else if (hoveredNode) {
+                const isConnected = visibleData.links.some((l: any) => 
+                    ((typeof l.source === 'object' ? l.source.id : l.source) === node.id && (typeof l.target === 'object' ? l.target.id : l.target) === hoveredNode) ||
+                    ((typeof l.target === 'object' ? l.target.id : l.target) === node.id && (typeof l.source === 'object' ? l.source.id : l.source) === hoveredNode)
+                );
+                if (!isHovered && !isConnected) alpha = 0.1;
+            }
 
-            const radius = isOnPath ? 8 : (isHovered ? 7 : 5);
+            const count = nodeJointPapers[node.id] || 1;
+            const radius = Math.sqrt(count) * 4 + 6;
+            
             const clusterColor = getDeptColor(node.dept);
-            const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
-            const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
+            const fillColor = isHovered ? '#ffffff' : clusterColor;
+            const borderColor = '#ffffff';
 
             ctx.beginPath();
             ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
@@ -269,16 +300,16 @@ export default function DepartmentNetworkGraph() {
             ctx.fillStyle = fillColor;
             ctx.fill();
 
-            const borderW = isHovered ? 2.5 : (isMatch ? 2.0 : 1.2);
+            const borderW = 1.5;
             ctx.lineWidth = borderW;
             ctx.strokeStyle = borderColor;
             ctx.stroke();
             ctx.globalAlpha = 1;
 
-            const showLabel = alpha > 0.1; // Show labels for non-faded nodes
+            const showLabel = alpha > 0.1;
             if (showLabel) {
                 const label = node.name;
-                const fontSize = 5; // Fixed size in simulation space to prevent overlap
+                const fontSize = 5;
 
                 ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
                 ctx.textAlign = 'center';
@@ -291,42 +322,38 @@ export default function DepartmentNetworkGraph() {
                 const paddingY = 2;
                 const textHeight = fontSize + paddingY * 2;
 
-                if (isHovered || isMatch || isOnPath) {
-                    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-                    ctx.fillRect(
-                        textX - metrics.width / 2 - paddingX,
-                        textY - paddingY,
-                        metrics.width + paddingX * 2,
-                        textHeight
-                    );
-                    ctx.fillStyle = '#0f172a';
-                } else {
-                    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-                    ctx.fillRect(
-                        textX - metrics.width / 2 - paddingX,
-                        textY - paddingY,
-                        metrics.width + paddingX * 2,
-                        textHeight
-                    );
-                    ctx.fillStyle = '#475569';
-                }
-                
+                ctx.fillStyle = 'rgba(13,17,23,0.8)';
+                ctx.fillRect(
+                    textX - metrics.width / 2 - paddingX,
+                    textY - paddingY,
+                    metrics.width + paddingX * 2,
+                    textHeight
+                );
+                ctx.fillStyle = '#ffffff';
+
                 ctx.globalAlpha = alpha;
                 ctx.fillText(label, textX, textY);
             }
         },
-        [hoveredNode, singleSearchQuery, activeDept, pathData]
+        [hoveredNode, singleSearchQuery, activeDept, pathData, visibleData, nodeJointPapers]
     );
 
     const linkWidth = useCallback((l: any) => {
         const val = l.value || 1;
-        let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
+        let baseWidth = Math.log(val + 1) * 1.5 + 0.5;
+
+        let multiplier = 1;
+        if (hoveredNode) {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            if (s === hoveredNode || t === hoveredNode) multiplier = 1.5;
+        }
 
         if (pathData) {
             const s = typeof l.source === 'object' ? l.source.id : l.source;
             const t = typeof l.target === 'object' ? l.target.id : l.target;
             const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 4.5 : 0.25;
+            return pathData.pathEdgeKeys.has(ek) ? 4.5 * multiplier : 0.25;
         }
 
         const hasActiveSearch = singleSearchQuery.length > 0;
@@ -334,51 +361,33 @@ export default function DepartmentNetworkGraph() {
         const targetMatch = singleSearchQuery && l.target?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
         const isRelated = sourceMatch || targetMatch;
 
-        if (hasActiveSearch) return isRelated ? baseWidth : 0.25;
-        return baseWidth;
-    }, [singleSearchQuery, linkBounds, pathData]);
+        if (hasActiveSearch) return isRelated ? baseWidth * multiplier : 0.25;
+        return baseWidth * multiplier;
+    }, [singleSearchQuery, pathData, hoveredNode]);
 
     const linkColor = useCallback((l: any) => {
-        if (pathData) {
-            const s = typeof l.source === 'object' ? l.source.id : l.source;
-            const t = typeof l.target === 'object' ? l.target.id : l.target;
-            const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 'rgba(251, 146, 60, 0.9)' : 'rgba(148, 163, 184, 0.1)';
-        }
-
-        const hasActiveSearch = singleSearchQuery.length > 0;
-        const isMatch = (nodeName?: string) =>
-            singleSearchQuery && nodeName && typeof nodeName === 'string' &&
-            nodeName.toLowerCase().includes(singleSearchQuery.toLowerCase());
-
-        const isRelated = isMatch(l.source?.name) || isMatch(l.target?.name);
-        if (hasActiveSearch) {
-            return isRelated ? 'rgba(148, 163, 184, 0.95)' : 'rgba(226, 232, 240, 0.18)';
-        }
-
-        // Color by department
         const sDept = typeof l.source === 'object' ? l.source.dept : null;
-        const tDept = typeof l.target === 'object' ? l.target.dept : null;
-
-        if (activeDept) {
-            const isSourceActive = sDept === activeDept;
-            const isTargetActive = tDept === activeDept;
-            
-            if (isSourceActive && isTargetActive) {
-                return getDeptColor(sDept).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(sDept).startsWith('#') ? '88' : '');
-            } else if (isSourceActive || isTargetActive) {
-                return 'rgba(148, 163, 184, 0.4)';
-            } else {
-                return 'rgba(226, 232, 240, 0.1)';
-            }
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+        const baseColor = getDeptColor(sDept);
+        
+        let opacity = 0.25;
+        if (hoveredNode) {
+            if (sId === hoveredNode || tId === hoveredNode) opacity = 0.9;
+            else opacity = 0.05;
         }
 
-        if (sDept && tDept && sDept === tDept) {
-            return getDeptColor(sDept).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(sDept).startsWith('#') ? '88' : '');
+        if (pathData) {
+            const ek = [sId, tId].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? `rgba(251, 146, 60, ${opacity > 0.5 ? 1 : 0.9})` : `rgba(148, 163, 184, 0.05)`;
         }
 
-        return 'rgba(148, 163, 184, 0.65)';
-    }, [singleSearchQuery, activeDept, pathData]);
+        const hex = baseColor.replace('#', '');
+        const r = parseInt(hex.substring(0,2), 16) || 127;
+        const g = parseInt(hex.substring(2,4), 16) || 119;
+        const b = parseInt(hex.substring(4,6), 16) || 221;
+        return `rgba(${r},${g},${b},${opacity})`;
+    }, [singleSearchQuery, pathData, hoveredNode]);
 
 
     // Extract hovered node full details
@@ -535,10 +544,10 @@ export default function DepartmentNetworkGraph() {
                         height: dimensions.height,
                         position: 'relative',
                         overflow: 'hidden',
-                        background: '#f8fafc',
+                        background: '#0d1117',
                         borderRadius: '12px',
-                        border: '2px solid #e2e8f0',
-                        boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
+                        border: '2px solid #334155',
+                        boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)'
                     }}
                 >
                         {loading ? (
@@ -564,13 +573,13 @@ export default function DepartmentNetworkGraph() {
                                     position: 'absolute',
                                     top: 250,
                                     right: 20,
-                                    zIndex: 2,
-                                    background: 'rgba(255, 255, 255, 0.95)',
+                                    zIndex: 10,
+                                    background: '#0d1117',
                                     padding: '1rem',
                                     borderRadius: 12,
                                     border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6'}`,
                                     width: '220px',
-                                    boxShadow: '0 8px 12px -3px rgba(0, 0, 0, 0.3)',
+                                    boxShadow: '0 8px 12px -3px rgba(0, 0, 0, 0.5)',
                                     opacity: hoveredNodeData ? 1 : 0,
                                     transition: 'opacity 0.2s ease',
                                     pointerEvents: 'none'
@@ -579,18 +588,18 @@ export default function DepartmentNetworkGraph() {
                                 <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
                                     {hoveredNodeData?.dept ? `${hoveredNodeData.dept} AUTHOR` : 'SELECTED AUTHOR'}
                                 </div>
-                                <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                                    <span style={{ color: '#1e293b' }}>{hoveredNodeData?.name || 'None'}</span>
+                                <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+                                    <span style={{ color: '#ffffff' }}>{hoveredNodeData?.name || 'None'}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
                                     <span style={{ color: '#94a3b8' }}>Joint Papers:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    <span style={{ fontWeight: 600, color: '#ffffff' }}>
                                         {hoveredNode ? nodeJointPapers[hoveredNode] || 0 : 0}
                                     </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                                     <span style={{ color: '#94a3b8' }}>Collaborators:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    <span style={{ fontWeight: 600, color: '#ffffff' }}>
                                         {hoveredCollaborators}
                                     </span>
                                 </div>
@@ -601,6 +610,9 @@ export default function DepartmentNetworkGraph() {
                                     ref={fgRef}
                                     width={dimensions.width}
                                     height={dimensions.height}
+                                    backgroundColor="#0d1117"
+                                    d3AlphaDecay={0.02}
+                                    d3VelocityDecay={0.4}
                                     graphData={visibleData}
                                     enableNodeDrag={true}
                                     enableZoomInteraction={true}
@@ -638,22 +650,22 @@ export default function DepartmentNetworkGraph() {
                                     position: 'absolute',
                                     bottom: 15,
                                     left: 15,
-                                    background: 'rgba(255, 255, 255, 0.9)',
+                                    background: 'rgba(13, 17, 23, 0.8)',
                                     padding: '0.75rem',
                                     borderRadius: 8,
-                                    border: '1px solid #e2e8f0',
+                                    border: '1px solid #334155',
                                     pointerEvents: 'none',
                                     fontSize: '0.75rem',
-                                    color: '#1e293b',
+                                    color: '#f8fafc',
                                     fontFamily: 'monospace',
-                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.3)'
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.5)'
                                 }}
                             >
                                 <div
                                     style={{
                                         fontWeight: 'bold',
                                         marginBottom: '0.5rem',
-                                        borderBottom: '1px solid #e2e8f0',
+                                        borderBottom: '1px solid #334155',
                                         paddingBottom: '0.25rem'
                                     }}
                                 >
@@ -663,31 +675,23 @@ export default function DepartmentNetworkGraph() {
                                     <div key={dept} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                                         <div
                                             style={{
-                                                width: 8,
-                                                height: 8,
+                                                width: 10,
+                                                height: 10,
                                                 borderRadius: '50%',
-                                                background: getDeptColor(dept)
+                                                background: getDeptColor(dept),
+                                                border: '1px solid #fff'
                                             }}
                                         />
-                                        <span>{dept} (Node)</span>
+                                        <span>{dept}</span>
                                     </div>
                                 ))}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', marginTop: '6px' }}>
-                                    <div style={{ width: 20, height: 2, background: '#94a3b8' }} />
-                                    <span>Edge width ∝ Shared works</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', marginTop: '8px' }}>
+                                    <div style={{ width: 14, height: 14, borderRadius: '50%', border: '1px solid #fff', background: 'transparent' }} />
+                                    <span>Node size ∝ Connections</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                    <div
-                                        style={{
-                                            width: 10,
-                                            height: 10,
-                                            borderRadius: '50%',
-                                            background: '#3b82f6',
-                                            border: '2px solid #fff',
-                                            boxSizing: 'border-box'
-                                        }}
-                                    />
-                                    <span>Hover for profile info</span>
+                                    <div style={{ width: 20, height: 3, background: '#94a3b8' }} />
+                                    <span>Edge width ∝ Joint papers</span>
                                 </div>
                             </div>
 
@@ -695,7 +699,10 @@ export default function DepartmentNetworkGraph() {
                             <button
                                 onClick={() => {
                                     try {
-                                        fgRef.current?.zoomToFit(400, 80);
+                                        if (fgRef.current) {
+                                            fgRef.current.d3ReheatSimulation();
+                                            fgRef.current.zoomToFit(400, 80);
+                                        }
                                     } catch { }
                                 }}
                                 style={{
@@ -703,15 +710,15 @@ export default function DepartmentNetworkGraph() {
                                     bottom: 15,
                                     right: 15,
                                     zIndex: 2,
-                                    background: 'rgba(255, 255, 255, 0.95)',
+                                    background: '#0d1117',
                                     padding: '0.6rem 1rem',
                                     borderRadius: '8px',
-                                    border: '1px solid #e2e8f0',
+                                    border: '1px solid #334155',
                                     cursor: 'pointer',
                                     fontSize: '0.85rem',
                                     fontWeight: 600,
-                                    color: '#0f172a',
-                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.1)',
+                                    color: '#f8fafc',
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.5)',
                                     display: 'flex',
                                     alignItems: 'center',
                                     gap: '0.5rem',
@@ -719,11 +726,11 @@ export default function DepartmentNetworkGraph() {
                                 }}
                                 onMouseEnter={(e) => {
                                     e.currentTarget.style.transform = 'translateY(-2px)';
-                                    e.currentTarget.style.boxShadow = '0 6px 12px rgb(0 0 0 / 0.15)';
+                                    e.currentTarget.style.boxShadow = '0 6px 12px rgb(0 0 0 / 0.7)';
                                 }}
                                 onMouseLeave={(e) => {
                                     e.currentTarget.style.transform = 'translateY(0)';
-                                    e.currentTarget.style.boxShadow = '0 4px 6px rgb(0 0 0 / 0.1)';
+                                    e.currentTarget.style.boxShadow = '0 4px 6px rgb(0 0 0 / 0.5)';
                                 }}
                             >
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">

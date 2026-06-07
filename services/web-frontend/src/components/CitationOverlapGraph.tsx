@@ -38,9 +38,9 @@ interface GlobalGraph {
 }
 
 const DEPT_COLORS: Record<string, string> = {
-    FENS: '#3b82f6',  // blue
-    FASS: '#f59e0b',  // amber
-    SBS: '#10b981',   // green
+    FENS: '#378ADD',
+    FASS: '#1D9E75',
+    SBS: '#D85A30',
 };
 
 const DEPT_LABELS: Record<string, string> = {
@@ -50,8 +50,8 @@ const DEPT_LABELS: Record<string, string> = {
 };
 
 function getDeptColor(dept: string | null): string {
-    if (!dept) return '#94a3b8';
-    return DEPT_COLORS[dept] || '#94a3b8';
+    if (!dept) return '#7F77DD';
+    return DEPT_COLORS[dept] || '#7F77DD';
 }
 
 function logScale(value: number, minVal: number, maxVal: number, minScale: number, maxScale: number) {
@@ -268,21 +268,43 @@ export default function CitationOverlapGraph() {
 
         fg.d3Force('link', d3Force.forceLink()
             .id((d: any) => d.id)
-            .distance(300)
-            .strength(0.3)
+            .distance((l: any) => {
+                const val = l.value || 1;
+                const normalizedWeight = Math.min(1, val / (linkBounds.maxPapers || 1));
+                return 160 + (1 - normalizedWeight) * 80;
+            })
+            .strength((l: any) => {
+                const val = l.value || 1;
+                const normalizedWeight = Math.min(1, val / (linkBounds.maxPapers || 1));
+                return normalizedWeight * 0.7 + 0.1;
+            })
         );
-        fg.d3Force('charge', d3Force.forceManyBody().strength(-800));
-        fg.d3Force('collide', d3Force.forceCollide().radius(50).strength(0.8));
-        fg.d3Force('center', d3Force.forceCenter(0, 0));
+        fg.d3Force('charge', d3Force.forceManyBody().strength(-1000).distanceMax(500));
+        fg.d3Force('collide', d3Force.forceCollide().radius((n: any) => {
+            const count = nodeSharedCitations[n.id] || 1;
+            const r = Math.sqrt(count) * 4 + 6;
+            return r + 12;
+        }).strength(0.8));
+        fg.d3Force('center', d3Force.forceCenter(0, 0).strength(0.05));
         fg.d3Force('gravityX', d3Force.forceX(0).strength(0.06));
         fg.d3Force('gravityY', d3Force.forceY(0).strength(0.06));
+        
+        if (fg.d3AlphaDecay) fg.d3AlphaDecay(0.02);
+        if (fg.d3VelocityDecay) fg.d3VelocityDecay(0.4);
+        
         fg.d3ReheatSimulation();
 
         const t = setTimeout(() => {
             try { fg.zoomToFit(500, 80); } catch { }
         }, 1200);
         return () => clearTimeout(t);
-    }, [visibleData]);
+    }, [visibleData, linkBounds, nodeSharedCitations]);
+
+    useEffect(() => {
+        if (fgRef.current) {
+            fgRef.current.d3ReheatSimulation();
+        }
+    }, [activeDept, singleSearchQuery, pathData]);
 
     const nodeCanvasObject = useCallback(
         (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
@@ -298,11 +320,20 @@ export default function CitationOverlapGraph() {
             if (pathData) alpha = isOnPath ? 1 : 0.08;
             else if (hasSearch) alpha = isMatch ? 1 : 0.08;
             else if (isDeptFiltered && !isDeptNode) alpha = 0.3;
+            else if (hoveredNode) {
+                const isConnected = visibleData.links.some((l: any) => 
+                    ((typeof l.source === 'object' ? l.source.id : l.source) === node.id && (typeof l.target === 'object' ? l.target.id : l.target) === hoveredNode) ||
+                    ((typeof l.target === 'object' ? l.target.id : l.target) === node.id && (typeof l.source === 'object' ? l.source.id : l.source) === hoveredNode)
+                );
+                if (!isHovered && !isConnected) alpha = 0.1;
+            }
 
-            const radius = isHovered ? 7 : (isOnPath ? 6.5 : 5);
+            const count = nodeSharedCitations[node.id] || 1;
+            const radius = Math.sqrt(count) * 4 + 6;
+            
             const clusterColor = getDeptColor(node.dept);
-            const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
-            const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
+            const fillColor = isHovered ? '#ffffff' : clusterColor;
+            const borderColor = '#ffffff';
 
             ctx.beginPath();
             ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
@@ -310,7 +341,7 @@ export default function CitationOverlapGraph() {
             ctx.fillStyle = fillColor;
             ctx.fill();
 
-            const borderW = isHovered ? 2.5 : (isMatch ? 2.0 : 1.2);
+            const borderW = 1.5;
             ctx.lineWidth = borderW;
             ctx.strokeStyle = borderColor;
             ctx.stroke();
@@ -332,42 +363,38 @@ export default function CitationOverlapGraph() {
                 const paddingY = 2;
                 const textHeight = fontSize + paddingY * 2;
 
-                if (isHovered || isMatch || isOnPath) {
-                    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-                    ctx.fillRect(
-                        textX - metrics.width / 2 - paddingX,
-                        textY - paddingY,
-                        metrics.width + paddingX * 2,
-                        textHeight
-                    );
-                    ctx.fillStyle = '#0f172a';
-                } else {
-                    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-                    ctx.fillRect(
-                        textX - metrics.width / 2 - paddingX,
-                        textY - paddingY,
-                        metrics.width + paddingX * 2,
-                        textHeight
-                    );
-                    ctx.fillStyle = '#475569';
-                }
+                ctx.fillStyle = 'rgba(13,17,23,0.8)';
+                ctx.fillRect(
+                    textX - metrics.width / 2 - paddingX,
+                    textY - paddingY,
+                    metrics.width + paddingX * 2,
+                    textHeight
+                );
+                ctx.fillStyle = '#ffffff';
 
                 ctx.globalAlpha = alpha;
                 ctx.fillText(label, textX, textY);
             }
         },
-        [hoveredNode, singleSearchQuery, activeDept, pathData]
+        [hoveredNode, singleSearchQuery, activeDept, pathData, visibleData, nodeSharedCitations]
     );
 
     const linkWidth = useCallback((l: any) => {
         const val = l.value || 1;
-        let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
+        let baseWidth = Math.log(val + 1) * 1.5 + 0.5;
+
+        let multiplier = 1;
+        if (hoveredNode) {
+            const s = typeof l.source === 'object' ? l.source.id : l.source;
+            const t = typeof l.target === 'object' ? l.target.id : l.target;
+            if (s === hoveredNode || t === hoveredNode) multiplier = 1.5;
+        }
 
         if (pathData) {
             const s = typeof l.source === 'object' ? l.source.id : l.source;
             const t = typeof l.target === 'object' ? l.target.id : l.target;
             const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 4.5 : 0.25;
+            return pathData.pathEdgeKeys.has(ek) ? 4.5 * multiplier : 0.25;
         }
 
         const hasActiveSearch = singleSearchQuery.length > 0;
@@ -375,36 +402,33 @@ export default function CitationOverlapGraph() {
         const targetMatch = singleSearchQuery && l.target?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
         const isRelated = sourceMatch || targetMatch;
 
-        if (hasActiveSearch) return isRelated ? baseWidth : 0.25;
-        return baseWidth;
-    }, [singleSearchQuery, linkBounds, pathData]);
+        if (hasActiveSearch) return isRelated ? baseWidth * multiplier : 0.25;
+        return baseWidth * multiplier;
+    }, [singleSearchQuery, pathData, hoveredNode]);
 
     const linkColor = useCallback((l: any) => {
+        const sDept = typeof l.source === 'object' ? l.source.dept : null;
+        const sId = typeof l.source === 'object' ? l.source.id : l.source;
+        const tId = typeof l.target === 'object' ? l.target.id : l.target;
+        const baseColor = getDeptColor(sDept);
+        
+        let opacity = 0.25;
+        if (hoveredNode) {
+            if (sId === hoveredNode || tId === hoveredNode) opacity = 0.9;
+            else opacity = 0.05;
+        }
+
         if (pathData) {
-            const s = typeof l.source === 'object' ? l.source.id : l.source;
-            const t = typeof l.target === 'object' ? l.target.id : l.target;
-            const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 'rgba(251, 146, 60, 0.95)' : 'rgba(226, 232, 240, 0.08)';
+            const ek = [sId, tId].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? `rgba(251, 146, 60, ${opacity > 0.5 ? 1 : 0.9})` : `rgba(148, 163, 184, 0.05)`;
         }
 
-        const hasActiveSearch = singleSearchQuery.length > 0;
-        const isMatch = (nodeName?: string) =>
-            singleSearchQuery && nodeName && typeof nodeName === 'string' &&
-            nodeName.toLowerCase().includes(singleSearchQuery.toLowerCase());
-
-        const isRelated = isMatch(l.source?.name) || isMatch(l.target?.name);
-        if (hasActiveSearch) {
-            return isRelated ? 'rgba(148, 163, 184, 0.95)' : 'rgba(226, 232, 240, 0.18)';
-        }
-
-        const s = typeof l.source === 'object' ? l.source.dept : null;
-        const t = typeof l.target === 'object' ? l.target.dept : null;
-        if (s && t && s === t) {
-            return getDeptColor(s).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(s).startsWith('#') ? '88' : '');
-        }
-
-        return 'rgba(148, 163, 184, 0.65)';
-    }, [singleSearchQuery, pathData]);
+        const hex = baseColor.replace('#', '');
+        const r = parseInt(hex.substring(0,2), 16) || 127;
+        const g = parseInt(hex.substring(2,4), 16) || 119;
+        const b = parseInt(hex.substring(4,6), 16) || 221;
+        return `rgba(${r},${g},${b},${opacity})`;
+    }, [singleSearchQuery, pathData, hoveredNode]);
 
     const hoveredNodeData = useMemo(() => {
         if (!hoveredNode) return null;
@@ -559,10 +583,10 @@ export default function CitationOverlapGraph() {
                         height: dimensions.height,
                         position: 'relative',
                         overflow: 'hidden',
-                        background: '#f8fafc',
+                        background: '#0d1117',
                         borderRadius: '12px',
-                        border: '2px solid #e2e8f0',
-                        boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
+                        border: '2px solid #334155',
+                        boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.5)'
                     }}
                 >
                     {loading ? (
@@ -658,12 +682,12 @@ export default function CitationOverlapGraph() {
                                     top: 280,
                                     right: 20,
                                     zIndex: 10,
-                                    background: 'rgba(255, 255, 255, 0.95)',
+                                    background: '#0d1117',
                                     padding: '1rem',
                                     borderRadius: 12,
                                     border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#a855f7'}`,
                                     width: '220px',
-                                    boxShadow: '0 8px 12px -3px rgba(0, 0, 0, 0.3)',
+                                    boxShadow: '0 8px 12px -3px rgba(0, 0, 0, 0.5)',
                                     opacity: hoveredNodeData ? 1 : 0,
                                     transition: 'opacity 0.2s ease',
                                     pointerEvents: 'none'
@@ -672,18 +696,18 @@ export default function CitationOverlapGraph() {
                                 <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#a855f7', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
                                     {hoveredNodeData?.dept ? `${hoveredNodeData.dept} AUTHOR` : 'SELECTED AUTHOR'}
                                 </div>
-                                <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                                    <span style={{ color: '#1e293b' }}>{hoveredNodeData?.name || 'None'}</span>
+                                <div style={{ color: '#ffffff', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+                                    <span style={{ color: '#ffffff' }}>{hoveredNodeData?.name || 'None'}</span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
                                     <span style={{ color: '#94a3b8' }}>Shared Citations:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    <span style={{ fontWeight: 600, color: '#ffffff' }}>
                                         {hoveredNode ? nodeSharedCitations[hoveredNode] || 0 : 0}
                                     </span>
                                 </div>
                                 <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
                                     <span style={{ color: '#94a3b8' }}>Intellectual Peers:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
+                                    <span style={{ fontWeight: 600, color: '#ffffff' }}>
                                         {hoveredPeers}
                                     </span>
                                 </div>
@@ -694,6 +718,9 @@ export default function CitationOverlapGraph() {
                                     ref={fgRef}
                                     width={dimensions.width}
                                     height={dimensions.height}
+                                    backgroundColor="#0d1117"
+                                    d3AlphaDecay={0.02}
+                                    d3VelocityDecay={0.4}
                                     graphData={visibleData}
                                     enableNodeDrag={true}
                                     enableZoomInteraction={true}
@@ -731,22 +758,22 @@ export default function CitationOverlapGraph() {
                                     position: 'absolute',
                                     bottom: 15,
                                     left: 15,
-                                    background: 'rgba(255, 255, 255, 0.9)',
+                                    background: 'rgba(13, 17, 23, 0.8)',
                                     padding: '0.75rem',
                                     borderRadius: 8,
-                                    border: '1px solid #e2e8f0',
+                                    border: '1px solid #334155',
                                     pointerEvents: 'none',
                                     fontSize: '0.75rem',
-                                    color: '#1e293b',
+                                    color: '#f8fafc',
                                     fontFamily: 'monospace',
-                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.3)'
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.5)'
                                 }}
                             >
                                 <div
                                     style={{
                                         fontWeight: 'bold',
                                         marginBottom: '0.5rem',
-                                        borderBottom: '1px solid #e2e8f0',
+                                        borderBottom: '1px solid #334155',
                                         paddingBottom: '0.25rem'
                                     }}
                                 >
@@ -756,33 +783,69 @@ export default function CitationOverlapGraph() {
                                     <div key={dept} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
                                         <div
                                             style={{
-                                                width: 8,
-                                                height: 8,
+                                                width: 10,
+                                                height: 10,
                                                 borderRadius: '50%',
-                                                background: getDeptColor(dept)
+                                                background: getDeptColor(dept),
+                                                border: '1px solid #fff'
                                             }}
                                         />
-                                        <span>{dept} (Node)</span>
+                                        <span>{dept}</span>
                                     </div>
                                 ))}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', marginTop: '6px' }}>
-                                    <div style={{ width: 20, height: 2, background: '#94a3b8' }} />
-                                    <span>Edge width ∝ Shared citations</span>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', marginTop: '8px' }}>
+                                    <div style={{ width: 14, height: 14, borderRadius: '50%', border: '1px solid #fff', background: 'transparent' }} />
+                                    <span>Node size ∝ Connections</span>
                                 </div>
                                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                    <div
-                                        style={{
-                                            width: 10,
-                                            height: 10,
-                                            borderRadius: '50%',
-                                            background: '#a855f7',
-                                            border: '2px solid #fff',
-                                            boxSizing: 'border-box'
-                                        }}
-                                    />
-                                    <span>Hover for profile info</span>
+                                    <div style={{ width: 20, height: 3, background: '#94a3b8' }} />
+                                    <span>Edge width ∝ Shared citations</span>
                                 </div>
                             </div>
+                            
+                            {/* Recenter Button */}
+                            <button
+                                onClick={() => {
+                                    try {
+                                        if (fgRef.current) {
+                                            fgRef.current.d3ReheatSimulation();
+                                            fgRef.current.zoomToFit(400, 80);
+                                        }
+                                    } catch { }
+                                }}
+                                style={{
+                                    position: 'absolute',
+                                    bottom: 15,
+                                    right: 15,
+                                    zIndex: 2,
+                                    background: '#0d1117',
+                                    padding: '0.6rem 1rem',
+                                    borderRadius: '8px',
+                                    border: '1px solid #334155',
+                                    cursor: 'pointer',
+                                    fontSize: '0.85rem',
+                                    fontWeight: 600,
+                                    color: '#f8fafc',
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.5)',
+                                    display: 'flex',
+                                    alignItems: 'center',
+                                    gap: '0.5rem',
+                                    transition: 'all 0.2s ease'
+                                }}
+                                onMouseEnter={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(-2px)';
+                                    e.currentTarget.style.boxShadow = '0 6px 12px rgb(0 0 0 / 0.7)';
+                                }}
+                                onMouseLeave={(e) => {
+                                    e.currentTarget.style.transform = 'translateY(0)';
+                                    e.currentTarget.style.boxShadow = '0 4px 6px rgb(0 0 0 / 0.5)';
+                                }}
+                            >
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
+                                </svg>
+                                Recenter Network
+                            </button>
                         </>
                     )}
                 </div>
