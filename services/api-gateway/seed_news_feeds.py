@@ -22,8 +22,16 @@ DB_DSN = (
 
 
 def build_name_sabancu_url(name: str) -> str:
-    """Search for author name AND exact phrase 'Sabancı Üniversitesi'."""
-    q = urllib.parse.quote(f'"{name}" "Sabancı Üniversitesi"')
+    """Search for the exact author name plus the (loose) term 'Sabancı'.
+
+    The name is kept as an exact phrase (in quotes) so results must mention the
+    person, but 'Sabancı' is left unquoted so we are not restricted to articles
+    containing the exact phrase 'Sabancı Üniversitesi'. This widens coverage for
+    less-famous faculty. Article quality is still enforced downstream by the
+    trusted-source + academic-keyword filter in the API.
+    """
+    clean_name = " ".join(name.split())  # collapse any double spaces in the name
+    q = urllib.parse.quote(f'"{clean_name}" Sabancı')
     return f"https://news.google.com/rss/search?q={q}&hl=tr&gl=TR&ceid=TR:tr"
 
 

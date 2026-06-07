@@ -1872,6 +1872,7 @@ async def get_global_collaborations(
 # ─────────────────────────────────────────
 
 import time
+import re
 import xml.etree.ElementTree as ET
 import urllib.request
 import urllib.parse
@@ -2115,15 +2116,44 @@ def _is_trusted_source(item: "NewsItem") -> bool:
     return any(domain in check_url for domain in _TRUSTED_NEWS_DOMAINS)
 
 
+# Tabloid / personal-life / entertainment / sports stems. If any of these
+# appear in the title or summary the article is rejected outright, even if it
+# also contains an academic keyword (e.g. "ödül"). Matched as a word-prefix
+# (\b<stem>) so Turkish suffixes are covered (boşan → boşanma/boşandı/...).
+_NEWS_BLOCKLIST = [
+    # Personal life / relationships
+    "boşan", "boşuyor", "boşadı", "nafaka", "evlen", "evlilik", "nişanlan",
+    "sevgili", "metres", "aldat", "flört", "düğün", "aşk hayat",
+    # Tabloid / gossip
+    "magazin", "paparazzi", "dedikodu", "ünlü oyuncu", "ünlü isim",
+    # Astrology / lifestyle
+    "burçlar", "astrolog", "horoskop", "fal ",
+    # Sports
+    "şampiyonluk", "gol attı", "transfer oldu", "maç sonu", "puan durumu",
+    # Crime / accident tabloid
+    "cinayet", "gözaltı", "tutukland",
+]
+
+
+def _is_blocklisted(item: "NewsItem") -> bool:
+    """Return True if the article looks like tabloid/personal/non-academic news."""
+    text = ((item.title or "") + " " + (item.summary or "")).lower()
+    return any(re.search(r"\b" + re.escape(stem), text) for stem in _NEWS_BLOCKLIST)
+
+
 def _article_is_academic(item: "NewsItem", faculty_keywords: list[str]) -> bool:
     """
-    Return True only if BOTH conditions are met:
+    Return True only if ALL conditions are met:
     1. The article comes from a trusted news domain (checked via source_url).
-    2. The article title+summary contains at least one keyword from the
+    2. The article title+summary does NOT contain any blocklisted (tabloid /
+       personal-life / sports / entertainment) term.
+    3. The article title+summary contains at least one keyword from the
        universal list OR the author's faculty-specific list.
     Untrusted sources (e.g. bianet.org, activist blogs) are rejected outright.
     """
     if not _is_trusted_source(item):
+        return False
+    if _is_blocklisted(item):
         return False
     text = ((item.title or "") + " " + (item.summary or "")).lower()
     all_keywords = _NEWS_KEYWORDS_UNIVERSAL + faculty_keywords
