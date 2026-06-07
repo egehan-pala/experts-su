@@ -1,19 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/config';
-import dynamic from 'next/dynamic';
 import * as d3Force from 'd3-force';
-
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
-    ssr: false,
-    loading: () => (
-        <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-            Loading graph engine...
-        </div>
-    )
-});
+import * as d3 from 'd3';
 
 interface GlobalNode {
     id: string;
@@ -37,6 +28,17 @@ interface GlobalGraph {
     links: GlobalLink[];
 }
 
+interface LayoutNode extends GlobalNode {
+    x: number;
+    y: number;
+}
+
+interface LayoutLink {
+    source: LayoutNode;
+    target: LayoutNode;
+    value: number;
+}
+
 const DEPT_COLORS: Record<string, string> = {
     FENS: '#3b82f6',  // blue
     FASS: '#f59e0b',  // amber
@@ -52,6 +54,14 @@ const DEPT_LABELS: Record<string, string> = {
 function getDeptColor(dept: string | null): string {
     if (!dept) return '#94a3b8';
     return DEPT_COLORS[dept] || '#94a3b8';
+}
+
+// Hex color to rgba helper
+function hexToRgba(hex: string, alpha: number): string {
+    const r = parseInt(hex.slice(1, 3), 16);
+    const g = parseInt(hex.slice(3, 5), 16);
+    const b = parseInt(hex.slice(5, 7), 16);
+    return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
 // Logarithmic scale helper for link widths
@@ -127,27 +137,13 @@ export default function DepartmentNetworkGraph() {
     const [searchQuery2, setSearchQuery2] = useState('');
     const [hoveredNode, setHoveredNode] = useState<string | null>(null);
     const [activeDept, setActiveDept] = useState<string | null>(null);
+    const [selectedNode, setSelectedNode] = useState<string | null>(null);
 
     const router = useRouter();
-    const containerRef = useRef<HTMLDivElement>(null);
-    const fgRef = useRef<any>(null);
-    const [dimensions, setDimensions] = useState({ width: 1200, height: 750 });
+    const svgRef = useRef<SVGSVGElement>(null);
+    const gRef = useRef<SVGGElement>(null);
+    const zoomRef = useRef<any>(null);
 
-    // Responsive sizing
-    useEffect(() => {
-        if (!containerRef.current) return;
-        const el = containerRef.current;
-        const ro = new ResizeObserver(() => {
-            setDimensions({
-                width: el.clientWidth || 1200,
-                height: Math.max(600, Math.floor((el.clientWidth || 1200) * 0.6))
-            });
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
-
-    // Fetch global network
     useEffect(() => {
         setLoading(true);
         fetch(`${API_URL}/network/global`)
@@ -167,6 +163,101 @@ export default function DepartmentNetworkGraph() {
         if (!graphData) return { nodes: [], links: [] };
         return graphData;
     }, [graphData]);
+
+    // Pre-compute layout with d3-force
+    const layoutData = useMemo(() => {
+        if (!visibleData.nodes.length) return null;
+
+        const nodes: LayoutNode[] = visibleData.nodes.map(n => ({ ...n, x: 0, y: 0 }));
+        const links = visibleData.links.map(l => ({
+            source: typeof l.source === 'object' ? (l.source as GlobalNode).id : l.source,
+            target: typeof l.target === 'object' ? (l.target as GlobalNode).id : l.target,
+            value: l.value,
+        }));
+
+        const depts = [...new Set(nodes.map(n => n.dept).filter(Boolean))] as string[];
+        const ringRadius = Math.max(60, depts.length * 20);
+        const clusterCenters = new Map<string, { x: number; y: number }>();
+        depts.forEach((dept, i) => {
+            const angle = (i / depts.length) * Math.PI * 2;
+            clusterCenters.set(dept, {
+                x: Math.cos(angle) * ringRadius,
+                y: Math.sin(angle) * ringRadius
+            });
+        });
+
+        const sim = d3Force.forceSimulation(nodes as any)
+            .force('link', d3Force.forceLink(links as any)
+                .id((d: any) => d.id)
+                .distance(38)
+                .strength(0.3)
+            )
+            .force('charge', d3Force.forceManyBody().strength(-400))
+            .force('collide', d3Force.forceCollide().radius(25).strength(0.8))
+            .force('center', d3Force.forceCenter(0, 0))
+            .force('gravityX', d3Force.forceX(0).strength(0.06))
+            .force('gravityY', d3Force.forceY(0).strength(0.06));
+
+        sim.stop();
+        for (let i = 0; i < 300; i++) {
+            const alpha = sim.alpha();
+            for (const node of nodes as any[]) {
+                if (node.dept) {
+                    const target = clusterCenters.get(node.dept) || { x: 0, y: 0 };
+                    node.vx += (target.x - (node.x || 0)) * 0.05 * alpha;
+                    node.vy += (target.y - (node.y || 0)) * 0.05 * alpha;
+                }
+            }
+            sim.tick();
+        }
+
+        // Build node map
+        const nodeMap = new Map<string, LayoutNode>();
+        for (const n of nodes) nodeMap.set(n.id, n as LayoutNode);
+
+        // Resolve links to layout nodes
+        const resolvedLinks: LayoutLink[] = (links as any[]).map(l => ({
+            source: typeof l.source === 'object' ? nodeMap.get(l.source.id)! : nodeMap.get(l.source)!,
+            target: typeof l.target === 'object' ? nodeMap.get(l.target.id)! : nodeMap.get(l.target)!,
+            value: l.value,
+        })).filter(l => l.source && l.target);
+
+        // Compute bounding box
+        const padding = 80;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const n of nodes) {
+            if (n.x < minX) minX = n.x;
+            if (n.x > maxX) maxX = n.x;
+            if (n.y < minY) minY = n.y;
+            if (n.y > maxY) maxY = n.y;
+        }
+        const vbX = minX - padding;
+        const vbY = minY - padding;
+        const vbW = maxX - minX + padding * 2;
+        const vbH = maxY - minY + padding * 2;
+
+        return {
+            nodes: nodes as LayoutNode[],
+            links: resolvedLinks,
+            viewBox: `${vbX} ${vbY} ${vbW} ${vbH}`,
+            width: vbW,
+            height: vbH,
+        };
+    }, [visibleData]);
+
+    useEffect(() => {
+        if (!svgRef.current || !gRef.current || !layoutData) return;
+        const svg = d3.select(svgRef.current);
+        const g = d3.select(gRef.current);
+        const zoom = d3.zoom<SVGSVGElement, unknown>()
+            .scaleExtent([0.1, 4])
+            .on('zoom', (event) => {
+                g.attr('transform', event.transform);
+            });
+        zoomRef.current = zoom;
+        svg.call(zoom);
+        svg.on("dblclick.zoom", null);
+    }, [layoutData]);
 
     const totalStats = useMemo(() => {
         if (!visibleData.nodes.length) return { fens: 0, fass: 0, sbs: 0, total: 0, links: 0 };
@@ -211,181 +302,36 @@ export default function DepartmentNetworkGraph() {
 
     const maxAuthorCount = topAuthors.length > 0 ? (nodeJointPapers[topAuthors[0].id] || 1) : 1;
 
-    // Force configuration
-    useEffect(() => {
-        if (!fgRef.current || !visibleData?.nodes?.length) return;
-        const fg = fgRef.current;
-
-        fg.d3Force('link', d3Force.forceLink()
-            .id((d: any) => d.id)
-            .distance(300)
-            .strength(0.3)
-        );
-        fg.d3Force('charge', d3Force.forceManyBody().strength(-800));
-        fg.d3Force('collide', d3Force.forceCollide().radius(50).strength(0.8));
-        fg.d3Force('center', d3Force.forceCenter(0, 0));
-        fg.d3Force('gravityX', d3Force.forceX(0).strength(0.06));
-        fg.d3Force('gravityY', d3Force.forceY(0).strength(0.06));
-        fg.d3ReheatSimulation();
-
-        // Fit after a small delay to let forces settle
-        const t = setTimeout(() => {
-            try { fg.zoomToFit(500, 80); } catch { }
-        }, 1200);
-        return () => clearTimeout(t);
-    }, [visibleData]);
-
     const hasPathSearch = searchQuery1.length > 0 && searchQuery2.length > 0;
     const singleSearchQuery = hasPathSearch ? '' : (searchQuery1 || searchQuery2);
-
     const pathData = useMemo(() => {
         if (!hasPathSearch || !visibleData?.nodes.length) return null;
         return findShortestPath(visibleData.nodes, visibleData.links, searchQuery1, searchQuery2);
     }, [searchQuery1, searchQuery2, visibleData, hasPathSearch]);
 
-    const nodeCanvasObject = useCallback(
-        (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-            const node = obj as GlobalNode;
-            const isHovered = hoveredNode === node.id;
-            const isOnPath = pathData?.pathNodeIds.has(node.id);
-            const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
-            const hasSearch = singleSearchQuery.length > 0;
-            const isDeptFiltered = !!activeDept;
-            const isDeptNode = node.dept === activeDept;
-
-            let alpha = 1;
-            if (pathData) alpha = isOnPath ? 1 : 0.08;
-            else if (hasSearch) alpha = isMatch ? 1 : 0.08;
-            else if (isDeptFiltered && !isDeptNode) alpha = 0.3;
-
-            const radius = isOnPath ? 8 : (isHovered ? 7 : 5);
-            const clusterColor = getDeptColor(node.dept);
-            const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
-            const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
-
-            ctx.beginPath();
-            ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle = fillColor;
-            ctx.fill();
-
-            const borderW = isHovered ? 2.5 : (isMatch ? 2.0 : 1.2);
-            ctx.lineWidth = borderW;
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-            ctx.globalAlpha = 1;
-
-            const showLabel = alpha > 0.1; // Show labels for non-faded nodes
-            if (showLabel) {
-                const label = node.name;
-                const fontSize = 5; // Fixed size in simulation space to prevent overlap
-
-                ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-
-                const textX = node.x || 0;
-                const textY = (node.y || 0) + radius + 4;
-                const metrics = ctx.measureText(label);
-                const paddingX = 4;
-                const paddingY = 2;
-                const textHeight = fontSize + paddingY * 2;
-
-                if (isHovered || isMatch || isOnPath) {
-                    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-                    ctx.fillRect(
-                        textX - metrics.width / 2 - paddingX,
-                        textY - paddingY,
-                        metrics.width + paddingX * 2,
-                        textHeight
-                    );
-                    ctx.fillStyle = '#0f172a';
-                } else {
-                    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-                    ctx.fillRect(
-                        textX - metrics.width / 2 - paddingX,
-                        textY - paddingY,
-                        metrics.width + paddingX * 2,
-                        textHeight
-                    );
-                    ctx.fillStyle = '#475569';
-                }
-                
-                ctx.globalAlpha = alpha;
-                ctx.fillText(label, textX, textY);
-            }
-        },
-        [hoveredNode, singleSearchQuery, activeDept, pathData]
-    );
-
-    const linkWidth = useCallback((l: any) => {
-        const val = l.value || 1;
-        let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
-
-        if (pathData) {
-            const s = typeof l.source === 'object' ? l.source.id : l.source;
-            const t = typeof l.target === 'object' ? l.target.id : l.target;
-            const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 4.5 : 0.25;
-        }
-
-        const hasActiveSearch = singleSearchQuery.length > 0;
-        const sourceMatch = singleSearchQuery && l.source?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
-        const targetMatch = singleSearchQuery && l.target?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
-        const isRelated = sourceMatch || targetMatch;
-
-        if (hasActiveSearch) return isRelated ? baseWidth : 0.25;
-        return baseWidth;
-    }, [singleSearchQuery, linkBounds, pathData]);
-
-    const linkColor = useCallback((l: any) => {
-        if (pathData) {
-            const s = typeof l.source === 'object' ? l.source.id : l.source;
-            const t = typeof l.target === 'object' ? l.target.id : l.target;
-            const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 'rgba(251, 146, 60, 0.9)' : 'rgba(148, 163, 184, 0.1)';
-        }
-
-        const hasActiveSearch = singleSearchQuery.length > 0;
-        const isMatch = (nodeName?: string) =>
-            singleSearchQuery && nodeName && typeof nodeName === 'string' &&
-            nodeName.toLowerCase().includes(singleSearchQuery.toLowerCase());
-
-        const isRelated = isMatch(l.source?.name) || isMatch(l.target?.name);
-        if (hasActiveSearch) {
-            return isRelated ? 'rgba(148, 163, 184, 0.95)' : 'rgba(226, 232, 240, 0.18)';
-        }
-
-        // Color by department
-        const sDept = typeof l.source === 'object' ? l.source.dept : null;
-        const tDept = typeof l.target === 'object' ? l.target.dept : null;
-
-        if (activeDept) {
-            const isSourceActive = sDept === activeDept;
-            const isTargetActive = tDept === activeDept;
-            
-            if (isSourceActive && isTargetActive) {
-                return getDeptColor(sDept).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(sDept).startsWith('#') ? '88' : '');
-            } else if (isSourceActive || isTargetActive) {
-                return 'rgba(148, 163, 184, 0.4)';
-            } else {
-                return 'rgba(226, 232, 240, 0.1)';
+    // Hover/Selected-connected nodes and edges
+    const hoverConnected = useMemo(() => {
+        const activeNode = selectedNode || hoveredNode;
+        if (!activeNode || !layoutData) return { nodeIds: new Set<string>(), edgeKeys: new Set<string>() };
+        const nodeIds = new Set<string>([activeNode]);
+        const edgeKeys = new Set<string>();
+        for (const l of layoutData.links) {
+            const sId = l.source.id;
+            const tId = l.target.id;
+            if (sId === activeNode || tId === activeNode) {
+                nodeIds.add(sId);
+                nodeIds.add(tId);
+                edgeKeys.add([sId, tId].sort().join('--'));
             }
         }
+        return { nodeIds, edgeKeys };
+    }, [hoveredNode, selectedNode, layoutData]);
 
-        if (sDept && tDept && sDept === tDept) {
-            return getDeptColor(sDept).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(sDept).startsWith('#') ? '88' : '');
-        }
-
-        return 'rgba(148, 163, 184, 0.65)';
-    }, [singleSearchQuery, activeDept, pathData]);
-
-
-    // Extract hovered node full details
-    const hoveredNodeData = useMemo(() => {
-        if (!hoveredNode) return null;
-        return visibleData.nodes.find(n => n.id === hoveredNode) || null;
-    }, [hoveredNode, visibleData]);
+    const activeNodeData = useMemo(() => {
+        const id = selectedNode || hoveredNode;
+        if (!id || !layoutData) return null;
+        return layoutData.nodes.find(n => n.id === id);
+    }, [selectedNode, hoveredNode, layoutData]);
 
     const hoveredCollaborators = useMemo(() => {
         if (!hoveredNode) return 0;
@@ -396,31 +342,116 @@ export default function DepartmentNetworkGraph() {
         }, 0);
     }, [hoveredNode, visibleData]);
 
+    // Compute edge style
+    function getEdgeStyle(link: LayoutLink): { stroke: string; strokeWidth: number; opacity: number } {
+        const activeNode = selectedNode || hoveredNode;
+        const edgeKey = [link.source.id, link.target.id].sort().join('--');
+        const val = link.value || 1;
+        const baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
+
+        // Path search mode
+        if (pathData) {
+            if (pathData.pathEdgeKeys.has(edgeKey)) {
+                return { stroke: 'rgba(251, 146, 60, 0.9)', strokeWidth: 4.5, opacity: 1 };
+            }
+            return { stroke: 'rgba(148, 163, 184, 0.1)', strokeWidth: 0.25, opacity: 1 };
+        }
+
+        // Single search mode
+        const hasActiveSearch = singleSearchQuery.length > 0;
+        if (hasActiveSearch) {
+            const sq = singleSearchQuery.toLowerCase();
+            const sourceMatch = link.source.name?.toLowerCase().includes(sq);
+            const targetMatch = link.target.name?.toLowerCase().includes(sq);
+            const isRelated = sourceMatch || targetMatch;
+            if (isRelated) {
+                return { stroke: 'rgba(148, 163, 184, 0.95)', strokeWidth: baseWidth, opacity: 1 };
+            }
+            return { stroke: 'rgba(226, 232, 240, 0.18)', strokeWidth: 0.25, opacity: 1 };
+        }
+
+        // Hover/Selection mode
+        if (activeNode) {
+            if (hoverConnected.edgeKeys.has(edgeKey)) {
+                const sDept = link.source.dept;
+                const tDept = link.target.dept;
+                if (sDept && tDept && sDept === tDept) {
+                    return { stroke: hexToRgba(getDeptColor(sDept), 0.8), strokeWidth: baseWidth * 1.3, opacity: 1 };
+                }
+                return { stroke: 'rgba(148, 163, 184, 0.9)', strokeWidth: baseWidth * 1.3, opacity: 1 };
+            }
+            return { stroke: 'rgba(226, 232, 240, 0.12)', strokeWidth: baseWidth * 0.5, opacity: 1 };
+        }
+
+        // Active department filter
+        const sDept = link.source.dept;
+        const tDept = link.target.dept;
+
+        if (activeDept) {
+            const isSourceActive = sDept === activeDept;
+            const isTargetActive = tDept === activeDept;
+            if (isSourceActive && isTargetActive) {
+                return { stroke: hexToRgba(getDeptColor(sDept), 0.6), strokeWidth: baseWidth, opacity: 1 };
+            } else if (isSourceActive || isTargetActive) {
+                return { stroke: 'rgba(148, 163, 184, 0.4)', strokeWidth: baseWidth, opacity: 1 };
+            } else {
+                return { stroke: 'rgba(226, 232, 240, 0.1)', strokeWidth: baseWidth * 0.5, opacity: 1 };
+            }
+        }
+
+        // Default: same dept colored, cross-dept gray
+        if (sDept && tDept && sDept === tDept) {
+            return { stroke: hexToRgba(getDeptColor(sDept), 0.5), strokeWidth: baseWidth, opacity: 1 };
+        }
+
+        return { stroke: 'rgba(148, 163, 184, 0.65)', strokeWidth: baseWidth, opacity: 1 };
+    }
+
+    // Compute node style
+    function getNodeStyle(node: LayoutNode): { fill: string; stroke: string; strokeWidth: number; radius: number; opacity: number; textColor: string } {
+        const activeNode = selectedNode || hoveredNode;
+        const isSelected = activeNode === node.id;
+        const isOnPath = pathData?.pathNodeIds.has(node.id);
+        const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
+        const hasSearch = singleSearchQuery.length > 0;
+        const isDeptFiltered = !!activeDept;
+        const isDeptNode = node.dept === activeDept;
+
+        let alpha = 1;
+        if (pathData) alpha = isOnPath ? 1 : 0.08;
+        else if (hasSearch) alpha = isMatch ? 1 : 0.08;
+        else if (activeNode) alpha = hoverConnected.nodeIds.has(node.id) ? 1 : 0.12;
+        else if (isDeptFiltered && !isDeptNode) alpha = 0.3;
+
+        const radius = isOnPath ? 11 : (isSelected ? 10 : 8);
+        const clusterColor = getDeptColor(node.dept);
+        const fillColor = isSelected ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
+        const borderColor = isSelected ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
+        const borderW = isSelected ? 2.5 : (isMatch ? 2.0 : 1.2);
+        const textColor = (isSelected || isMatch || isOnPath) ? '#0f172a' : '#475569';
+
+        return { fill: fillColor, stroke: borderColor, strokeWidth: borderW, radius, opacity: alpha, textColor };
+    }
+
     return (
         <div
             style={{
                 marginTop: '0',
                 display: 'flex',
                 flexDirection: 'column',
-                width: '100vw',
-                position: 'relative',
-                left: '50%',
-                right: '50%',
-                marginLeft: '-50vw',
-                marginRight: '-50vw',
+                width: '100%',
                 backgroundColor: '#ffffff',
-                borderTop: '1px solid #e2e8f0',
-                borderBottom: '1px solid #e2e8f0',
-                padding: '3rem 0',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '2rem 1rem',
                 boxSizing: 'border-box'
             }}
         >
             <div
                 style={{
-                    maxWidth: '1300px',
                     width: '100%',
                     margin: '0 auto',
-                    padding: '0 2vw',
+                    padding: '0 8%',
                     boxSizing: 'border-box'
                 }}
             >
@@ -460,9 +491,9 @@ export default function DepartmentNetworkGraph() {
                                     display: 'flex', alignItems: 'center', gap: '0.5rem',
                                     padding: '0.4rem 1rem',
                                     borderRadius: '8px',
-                                    border: `1px solid ${activeDept === dept ? getDeptColor(dept) : '#334155'}`,
-                                    backgroundColor: activeDept === dept ? getDeptColor(dept) : '#0f172a',
-                                    color: activeDept === dept ? '#fff' : getDeptColor(dept),
+                                    border: `1px solid ${activeDept === dept ? getDeptColor(dept) : '#e2e8f0'}`,
+                                    backgroundColor: activeDept === dept ? getDeptColor(dept) : '#ffffff',
+                                    color: activeDept === dept ? '#ffffff' : '#64748b',
                                     fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer',
                                     transition: 'all 0.2s'
                                 }}
@@ -532,7 +563,8 @@ export default function DepartmentNetworkGraph() {
                 <div
                     style={{
                         width: '100%',
-                        height: dimensions.height,
+                        height: '85vh',
+                        minHeight: '600px',
                         position: 'relative',
                         overflow: 'hidden',
                         background: '#f8fafc',
@@ -553,84 +585,176 @@ export default function DepartmentNetworkGraph() {
                             <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
                                 No collaboration data available.
                             </div>
-                        ) : (
+                        ) : layoutData ? (
                             <>
-                                {/* Summary Overlay removed and moved below */}
+                                {/* Node Info Box */}
+                            {activeNodeData && (
+                                <div
+                                    style={{
+                                        position: 'absolute',
+                                        top: 15,
+                                        right: 15,
+                                        width: '280px',
+                                        background: 'rgba(255, 255, 255, 0.95)',
+                                        border: '1px solid #e2e8f0',
+                                        borderRadius: '12px',
+                                        padding: '1rem',
+                                        pointerEvents: selectedNode ? 'auto' : 'none',
+                                        boxShadow: '0 10px 15px -3px rgb(0 0 0 / 0.1), 0 4px 6px -4px rgb(0 0 0 / 0.1)',
+                                        zIndex: 20
+                                    }}
+                                >
+                                    <div style={{ color: activeNodeData.dept ? getDeptColor(activeNodeData.dept) : '#3b82f6', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
+                                        {activeNodeData.dept || 'UNKNOWN DEPT'}
+                                    </div>
 
+                                    <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
+                                        {activeNodeData.name}
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
+                                        <span style={{ color: '#64748b' }}>Total Papers:</span>
+                                        <span style={{ color: '#0f172a', fontWeight: 'bold' }}>{nodeJointPapers[activeNodeData.id] || 0}</span>
+                                    </div>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
+                                        <span style={{ color: '#64748b' }}>Connections:</span>
+                                        <span style={{ color: '#0f172a', fontWeight: 'bold' }}>
+                                            {layoutData?.links.filter(l => l.source.id === activeNodeData.id || l.target.id === activeNodeData.id).length}
+                                        </span>
+                                    </div>
 
-                                {/* Node Hover Box (Absolute center or follow cursor? Let's fix to right block like before) */}
-                            <div
+                                    {selectedNode === activeNodeData.id && (
+                                        <button
+                                            onClick={() => router.push(`/authors/${activeNodeData.id}`)}
+                                            style={{
+                                                marginTop: '1rem',
+                                                width: '100%',
+                                                padding: '0.5rem',
+                                                background: '#3b82f6',
+                                                color: '#fff',
+                                                border: 'none',
+                                                borderRadius: '6px',
+                                                cursor: 'pointer',
+                                                fontWeight: 'bold',
+                                                fontSize: '0.8rem'
+                                            }}
+                                        >
+                                            Go to Profile →
+                                        </button>
+                                    )}
+                                </div>
+                            )}
+
+                            {/* SVG Graph */}
+                            <svg
+                                ref={svgRef}
+                                className="co-authorship-svg"
+                                onClick={() => setSelectedNode(null)}
+                                viewBox={layoutData.viewBox}
+                                style={{ width: '100%', height: '100%', display: 'block', cursor: 'grab' }}
+                                preserveAspectRatio="xMidYMid meet"
+                            >
+                                <style>{`
+                                    .co-authorship-svg text { pointer-events: none; }
+                                    .co-authorship-svg .graph-node { cursor: pointer; transition: opacity 0.2s ease; }
+                                    .co-authorship-svg line { transition: stroke 0.2s ease, stroke-width 0.2s ease, opacity 0.2s ease; }
+                                    .co-authorship-svg:active { cursor: grabbing !important; }
+                                `}</style>
+
+                                <g ref={gRef}>
+                                {/* Edges */}
+                                <g className="edges">
+                                    {layoutData.links.map((link, i) => {
+                                        const style = getEdgeStyle(link);
+                                        return (
+                                            <line
+                                                key={i}
+                                                x1={link.source.x}
+                                                y1={link.source.y}
+                                                x2={link.target.x}
+                                                y2={link.target.y}
+                                                stroke={style.stroke}
+                                                strokeWidth={style.strokeWidth}
+                                                opacity={style.opacity}
+                                            />
+                                        );
+                                    })}
+                                </g>
+
+                                {/* Nodes */}
+                                <g className="nodes">
+                                    {layoutData.nodes.map(node => {
+                                        const style = getNodeStyle(node);
+                                        const showLabel = style.opacity > 0.1;
+                                        return (
+                                                <g
+                                                    key={node.id}
+                                                    className="graph-node"
+                                                    opacity={style.opacity}
+                                                    onClick={(e) => { e.stopPropagation(); setSelectedNode(node.id); }}
+                                                    onMouseEnter={() => setHoveredNode(node.id)}
+                                                    onMouseLeave={() => setHoveredNode(null)}
+                                                >
+                                                <circle
+                                                    cx={node.x}
+                                                    cy={node.y}
+                                                    r={style.radius}
+                                                    fill={style.fill}
+                                                    stroke={style.stroke}
+                                                    strokeWidth={style.strokeWidth}
+                                                />
+                                                {/* Invisible larger hit area for hover */}
+                                                <circle
+                                                    cx={node.x}
+                                                    cy={node.y}
+                                                    r={Math.max(style.radius, 10)}
+                                                    fill="transparent"
+                                                    stroke="none"
+                                                />
+                                                {showLabel && (
+                                                    <text
+                                                        x={node.x}
+                                                        y={node.y + style.radius + 7}
+                                                        textAnchor="middle"
+                                                        fontSize={8}
+                                                        fontFamily='"Courier New", Courier, monospace'
+                                                        fontWeight={600}
+                                                        fill={style.textColor}
+                                                    >
+                                                        {node.name}
+                                                    </text>
+                                                )}
+                                            </g>
+                                        );
+                                    })}
+                                </g>
+                                </g>
+                            </svg>
+
+                            {/* Recenter Button */}
+                            <button
+                                onClick={() => {
+                                    if (svgRef.current && zoomRef.current) {
+                                        d3.select(svgRef.current).transition().duration(750).call(zoomRef.current.transform, d3.zoomIdentity);
+                                    }
+                                }}
                                 style={{
                                     position: 'absolute',
-                                    top: 250,
-                                    right: 20,
-                                    zIndex: 2,
-                                    background: 'rgba(255, 255, 255, 0.95)',
-                                    padding: '1rem',
-                                    borderRadius: 12,
-                                    border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6'}`,
-                                    width: '220px',
-                                    boxShadow: '0 8px 12px -3px rgba(0, 0, 0, 0.3)',
-                                    opacity: hoveredNodeData ? 1 : 0,
-                                    transition: 'opacity 0.2s ease',
-                                    pointerEvents: 'none'
+                                    bottom: 15,
+                                    right: 15,
+                                    background: '#ffffff',
+                                    border: '1px solid #e2e8f0',
+                                    padding: '0.5rem 1rem',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    fontSize: '0.8rem',
+                                    fontWeight: 600,
+                                    color: '#1e293b',
+                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.1)',
+                                    zIndex: 10
                                 }}
                             >
-                                <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
-                                    {hoveredNodeData?.dept ? `${hoveredNodeData.dept} AUTHOR` : 'SELECTED AUTHOR'}
-                                </div>
-                                <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                                    <span style={{ color: '#1e293b' }}>{hoveredNodeData?.name || 'None'}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                                    <span style={{ color: '#94a3b8' }}>Joint Papers:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        {hoveredNode ? nodeJointPapers[hoveredNode] || 0 : 0}
-                                    </span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                                    <span style={{ color: '#94a3b8' }}>Collaborators:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        {hoveredCollaborators}
-                                    </span>
-                                </div>
-                            </div>
-
-                            <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
-                                <ForceGraph2D
-                                    ref={fgRef}
-                                    width={dimensions.width}
-                                    height={dimensions.height}
-                                    graphData={visibleData}
-                                    enableNodeDrag={true}
-                                    enableZoomInteraction={true}
-                                    enablePanInteraction={true}
-                                    cooldownTicks={220}
-                                    onEngineStop={() => {
-                                        try {
-                                            fgRef.current?.zoomToFit(300, 80);
-                                        } catch { }
-                                    }}
-                                    nodeCanvasObject={nodeCanvasObject}
-                                    nodePointerAreaPaint={(node: any, color, ctx, globalScale) => {
-                                        const radius = 6 / globalScale;
-                                        ctx.fillStyle = color;
-                                        ctx.beginPath();
-                                        ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
-                                        ctx.fill();
-                                    }}
-                                    onNodeHover={(node: any) => setHoveredNode(node ? node.id : null)}
-                                    nodeLabel={() => ''}
-                                    onNodeClick={(node: any) => {
-                                        if (node.id) router.push(`/authors/${node.id}`);
-                                    }}
-                                    linkWidth={linkWidth}
-                                    linkColor={linkColor}
-                                    linkDirectionalParticles={(singleSearchQuery || pathData) ? 2 : 0}
-                                    linkDirectionalParticleWidth={2}
-                                    linkDirectionalParticleSpeed={0.005}
-                                />
-                            </div>
+                                Recenter Network
+                            </button>
 
                             {/* Legend */}
                             <div
@@ -687,52 +811,11 @@ export default function DepartmentNetworkGraph() {
                                             boxSizing: 'border-box'
                                         }}
                                     />
-                                    <span>Hover for profile info</span>
+                                    <span>Click for profile info</span>
                                 </div>
                             </div>
-
-                            {/* Recenter Button */}
-                            <button
-                                onClick={() => {
-                                    try {
-                                        fgRef.current?.zoomToFit(400, 80);
-                                    } catch { }
-                                }}
-                                style={{
-                                    position: 'absolute',
-                                    bottom: 15,
-                                    right: 15,
-                                    zIndex: 2,
-                                    background: 'rgba(255, 255, 255, 0.95)',
-                                    padding: '0.6rem 1rem',
-                                    borderRadius: '8px',
-                                    border: '1px solid #e2e8f0',
-                                    cursor: 'pointer',
-                                    fontSize: '0.85rem',
-                                    fontWeight: 600,
-                                    color: '#0f172a',
-                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.1)',
-                                    display: 'flex',
-                                    alignItems: 'center',
-                                    gap: '0.5rem',
-                                    transition: 'all 0.2s ease'
-                                }}
-                                onMouseEnter={(e) => {
-                                    e.currentTarget.style.transform = 'translateY(-2px)';
-                                    e.currentTarget.style.boxShadow = '0 6px 12px rgb(0 0 0 / 0.15)';
-                                }}
-                                onMouseLeave={(e) => {
-                                    e.currentTarget.style.transform = 'translateY(0)';
-                                    e.currentTarget.style.boxShadow = '0 4px 6px rgb(0 0 0 / 0.1)';
-                                }}
-                            >
-                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                                    <path d="M15 3h6v6M9 21H3v-6M21 3l-7 7M3 21l7-7" />
-                                </svg>
-                                Recenter Network
-                            </button>
                         </>
-                    )}
+                    ) : null}
                 </div>
 
                 {/* New Summary Row Below Network */}
@@ -914,4 +997,3 @@ export default function DepartmentNetworkGraph() {
         </div>
     );
 }
-

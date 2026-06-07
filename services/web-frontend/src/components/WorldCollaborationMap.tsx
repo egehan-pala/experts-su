@@ -133,10 +133,7 @@ export default function WorldCollaborationMap() {
   };
 
   const getMarkerRadius = (count: number) => {
-    const minRadius = 5;
-    const maxRadius = 16;
-    const ratio = Math.sqrt(count) / Math.sqrt(maxCount);
-    return minRadius + ratio * (maxRadius - minRadius);
+    return 4; // Fixed small size for all nodes to prevent overlap
   };
 
   if (loading) {

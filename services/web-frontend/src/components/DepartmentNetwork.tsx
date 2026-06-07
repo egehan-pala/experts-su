@@ -1,19 +1,9 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/config';
-import dynamic from 'next/dynamic';
 import * as d3Force from 'd3-force';
-
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
-    ssr: false,
-    loading: () => (
-        <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-            Loading graph engine...
-        </div>
-    )
-});
 
 interface GlobalNode {
     id: string;
@@ -38,9 +28,9 @@ interface GlobalGraph {
 }
 
 const DEPT_COLORS: Record<string, string> = {
-    FENS: '#3b82f6',  // blue
-    FASS: '#f59e0b',  // amber
-    SBS: '#10b981',   // green
+    FENS: '#3b82f6',
+    FASS: '#f59e0b',
+    SBS: '#10b981',
 };
 
 const DEPT_LABELS: Record<string, string> = {
@@ -54,7 +44,6 @@ function getDeptColor(dept: string | null): string {
     return DEPT_COLORS[dept] || '#94a3b8';
 }
 
-// Logarithmic scale helper for link widths
 function logScale(value: number, minVal: number, maxVal: number, minScale: number, maxScale: number) {
     if (value <= minVal) return minScale;
     if (value >= maxVal) return maxScale;
@@ -129,23 +118,6 @@ export default function DepartmentNetworkGraph() {
     const [activeDept, setActiveDept] = useState<string | null>(null);
 
     const router = useRouter();
-    const containerRef = useRef<HTMLDivElement>(null);
-    const fgRef = useRef<any>(null);
-    const [dimensions, setDimensions] = useState({ width: 1200, height: 750 });
-
-    // Responsive sizing
-    useEffect(() => {
-        if (!containerRef.current) return;
-        const el = containerRef.current;
-        const ro = new ResizeObserver(() => {
-            setDimensions({
-                width: el.clientWidth || 1200,
-                height: Math.max(600, Math.floor((el.clientWidth || 1200) * 0.6))
-            });
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
 
     // Fetch global network
     useEffect(() => {
@@ -162,7 +134,7 @@ export default function DepartmentNetworkGraph() {
             });
     }, []);
 
-    // Visible graph data
+    // Visible graph data with dept filtering
     const visibleData = useMemo(() => {
         if (!graphData) return { nodes: [], links: [] };
         if (!activeDept) return graphData;
@@ -200,10 +172,7 @@ export default function DepartmentNetworkGraph() {
     const linkBounds = useMemo(() => {
         if (!visibleData?.links.length) return { minPapers: 1, maxPapers: 1 };
         const papers = visibleData.links.map(l => l.value || 1);
-        return {
-            minPapers: Math.min(...papers),
-            maxPapers: Math.max(...papers)
-        };
+        return { minPapers: Math.min(...papers), maxPapers: Math.max(...papers) };
     }, [visibleData]);
 
     const nodeJointPapers = useMemo(() => {
@@ -217,7 +186,6 @@ export default function DepartmentNetworkGraph() {
         return counts;
     }, [visibleData]);
 
-    // Dual search derived values
     const hasPathSearch = searchQuery1.length > 0 && searchQuery2.length > 0;
     const singleSearchQuery = hasPathSearch ? '' : (searchQuery1 || searchQuery2);
 
@@ -226,142 +194,59 @@ export default function DepartmentNetworkGraph() {
         return findShortestPath(visibleData.nodes, visibleData.links, searchQuery1, searchQuery2);
     }, [searchQuery1, searchQuery2, visibleData, hasPathSearch]);
 
-    // Force configuration
-    useEffect(() => {
-        if (!fgRef.current || !visibleData?.nodes?.length) return;
-        const fg = fgRef.current;
+    // Pre-compute layout
+    const layoutData = useMemo(() => {
+        if (!visibleData?.nodes.length) return null;
 
-        fg.d3Force('link', d3Force.forceLink()
-            .id((d: any) => d.id)
-            .distance(120)
-            .strength(0.4)
-        );
-        fg.d3Force('charge', d3Force.forceManyBody().strength(-120));
-        fg.d3Force('collide', d3Force.forceCollide().radius(14).strength(0.8));
-        fg.d3Force('center', d3Force.forceCenter(0, 0));
-        fg.d3Force('gravityX', d3Force.forceX(0).strength(0.06));
-        fg.d3Force('gravityY', d3Force.forceY(0).strength(0.06));
-        fg.d3ReheatSimulation();
+        const nodes = visibleData.nodes.map(n => ({ ...n }));
+        const links = visibleData.links.map(l => ({
+            source: typeof l.source === 'object' ? (l.source as any).id : l.source,
+            target: typeof l.target === 'object' ? (l.target as any).id : l.target,
+            value: l.value,
+        }));
 
-        // Fit after a small delay to let forces settle
-        const t = setTimeout(() => {
-            try { fg.zoomToFit(500, 80); } catch { }
-        }, 1200);
-        return () => clearTimeout(t);
+        const sim = d3Force.forceSimulation(nodes as any)
+            .force('link', d3Force.forceLink(links as any).id((d: any) => d.id).distance(120).strength(0.4))
+            .force('charge', d3Force.forceManyBody().strength(-120))
+            .force('collide', d3Force.forceCollide().radius(14).strength(0.8))
+            .force('center', d3Force.forceCenter(0, 0))
+            .force('gravityX', d3Force.forceX(0).strength(0.06))
+            .force('gravityY', d3Force.forceY(0).strength(0.06))
+            .stop();
+
+        for (let i = 0; i < 300; i++) sim.tick();
+
+        const padding = 60;
+        const xs = nodes.map(n => (n as any).x || 0);
+        const ys = nodes.map(n => (n as any).y || 0);
+        const minX = Math.min(...xs) - padding;
+        const maxX = Math.max(...xs) + padding;
+        const minY = Math.min(...ys) - padding;
+        const maxY = Math.max(...ys) + padding;
+
+        return {
+            nodes: nodes as (GlobalNode & { x: number; y: number })[],
+            links: links as any[],
+            viewBox: `${minX} ${minY} ${maxX - minX} ${maxY - minY}`,
+        };
     }, [visibleData]);
 
-
-    const nodeCanvasObject = useCallback(
-        (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-            const node = obj as GlobalNode;
-            const isHovered = hoveredNode === node.id;
-            const isOnPath = pathData?.pathNodeIds.has(node.id);
-            const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
-            const hasSearch = singleSearchQuery.length > 0;
-            const isDeptFiltered = !!activeDept;
-            const isDeptNode = node.dept === activeDept;
-
-            let alpha = 1;
-            if (pathData) alpha = isOnPath ? 1 : 0.08;
-            else if (hasSearch) alpha = isMatch ? 1 : 0.08;
-            else if (isDeptFiltered && !isDeptNode) alpha = 0.3;
-
-            const radius = isHovered ? 7 / globalScale : (isOnPath ? 6.5 / globalScale : 5 / globalScale);
-            const clusterColor = getDeptColor(node.dept);
-            const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
-            const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
-
-            ctx.beginPath();
-            ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle = fillColor;
-            ctx.fill();
-
-            const borderW = isHovered ? 2.5 / globalScale : (isMatch ? 2.0 / globalScale : 1.2 / globalScale);
-            ctx.lineWidth = borderW;
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-            ctx.globalAlpha = 1;
-
-            if (isHovered || isMatch || isOnPath) {
-                const label = node.name;
-                const fontSize = 12 / globalScale;
-
-                ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-
-                const textX = node.x || 0;
-                const textY = (node.y || 0) + radius + 4;
-                const metrics = ctx.measureText(label);
-                const paddingX = 4 / globalScale;
-                const paddingY = 2 / globalScale;
-                const textHeight = fontSize + paddingY * 2;
-
-                ctx.fillStyle = 'rgba(255,255,255,0.92)';
-                ctx.fillRect(
-                    textX - metrics.width / 2 - paddingX,
-                    textY - paddingY,
-                    metrics.width + paddingX * 2,
-                    textHeight
-                );
-
-                ctx.fillStyle = '#0f172a';
-                ctx.fillText(label, textX, textY);
+    // Hover-connected nodes
+    const { connectedNodeIds, connectedEdgeKeys } = useMemo(() => {
+        if (!hoveredNode || !layoutData) return { connectedNodeIds: new Set<string>(), connectedEdgeKeys: new Set<string>() };
+        const nodeIds = new Set<string>([hoveredNode]);
+        const edgeKeys = new Set<string>();
+        for (const link of layoutData.links) {
+            const s = typeof link.source === 'object' ? link.source.id : link.source;
+            const t = typeof link.target === 'object' ? link.target.id : link.target;
+            if (s === hoveredNode || t === hoveredNode) {
+                nodeIds.add(s); nodeIds.add(t);
+                edgeKeys.add([s, t].sort().join('--'));
             }
-        },
-        [hoveredNode, singleSearchQuery, activeDept, pathData]
-    );
-
-    const linkWidth = useCallback((l: any) => {
-        const val = l.value || 1;
-        let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
-
-        if (pathData) {
-            const s = typeof l.source === 'object' ? l.source.id : l.source;
-            const t = typeof l.target === 'object' ? l.target.id : l.target;
-            const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 4.5 : 0.25;
         }
+        return { connectedNodeIds: nodeIds, connectedEdgeKeys: edgeKeys };
+    }, [hoveredNode, layoutData]);
 
-        const hasActiveSearch = singleSearchQuery.length > 0;
-        const sourceMatch = singleSearchQuery && l.source?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
-        const targetMatch = singleSearchQuery && l.target?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
-        const isRelated = sourceMatch || targetMatch;
-
-        if (hasActiveSearch) return isRelated ? baseWidth : 0.25;
-        return baseWidth;
-    }, [singleSearchQuery, linkBounds, pathData]);
-
-    const linkColor = useCallback((l: any) => {
-        if (pathData) {
-            const s = typeof l.source === 'object' ? l.source.id : l.source;
-            const t = typeof l.target === 'object' ? l.target.id : l.target;
-            const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 'rgba(251, 146, 60, 0.95)' : 'rgba(226, 232, 240, 0.08)';
-        }
-
-        const hasActiveSearch = singleSearchQuery.length > 0;
-        const isMatch = (nodeName?: string) =>
-            singleSearchQuery && nodeName && typeof nodeName === 'string' &&
-            nodeName.toLowerCase().includes(singleSearchQuery.toLowerCase());
-
-        const isRelated = isMatch(l.source?.name) || isMatch(l.target?.name);
-        if (hasActiveSearch) {
-            return isRelated ? 'rgba(148, 163, 184, 0.95)' : 'rgba(226, 232, 240, 0.18)';
-        }
-
-        const s = typeof l.source === 'object' ? l.source.dept : null;
-        const t = typeof l.target === 'object' ? l.target.dept : null;
-        if (s && t && s === t) {
-            return getDeptColor(s).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(s).startsWith('#') ? '88' : '');
-        }
-
-        return 'rgba(148, 163, 184, 0.65)';
-    }, [singleSearchQuery, pathData]);
-
-
-    // Extract hovered node full details
     const hoveredNodeData = useMemo(() => {
         if (!hoveredNode) return null;
         return visibleData.nodes.find(n => n.id === hoveredNode) || null;
@@ -375,6 +260,8 @@ export default function DepartmentNetworkGraph() {
             return (s === hoveredNode || t === hoveredNode) ? count + 1 : count;
         }, 0);
     }, [hoveredNode, visibleData]);
+
+    const hasData = !loading && graphData && graphData.nodes.length > 0 && layoutData;
 
     return (
         <div
@@ -395,34 +282,10 @@ export default function DepartmentNetworkGraph() {
                 boxSizing: 'border-box'
             }}
         >
-            <div
-                style={{
-                    maxWidth: '1300px',
-                    width: '100%',
-                    margin: '0 auto',
-                    padding: '0 2vw',
-                    boxSizing: 'border-box'
-                }}
-            >
-                <header
-                    style={{
-                        display: 'flex',
-                        justifyContent: 'space-between',
-                        alignItems: 'center',
-                        marginBottom: '1.5rem',
-                        flexWrap: 'wrap',
-                        gap: '1rem'
-                    }}
-                >
+            <div style={{ maxWidth: '1300px', width: '100%', margin: '0 auto', padding: '0 2vw', boxSizing: 'border-box' }}>
+                <header style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem', flexWrap: 'wrap', gap: '1rem' }}>
                     <div style={{ textAlign: 'left' }}>
-                        <h2
-                            style={{
-                                fontSize: '1.5rem',
-                                fontFamily: '"Courier New", Courier, monospace',
-                                color: '#1e293b',
-                                fontWeight: 800
-                            }}
-                        >
+                        <h2 style={{ fontSize: '1.5rem', fontFamily: '"Courier New", Courier, monospace', color: '#1e293b', fontWeight: 800 }}>
                             Global Collaboration Network
                         </h2>
                         <p style={{ color: '#94a3b8', fontSize: '0.875rem', marginTop: '0.25rem' }}>
@@ -431,20 +294,17 @@ export default function DepartmentNetworkGraph() {
                     </div>
 
                     <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap' }}>
-                        {/* Dept filter pills */}
                         {['FENS', 'FASS', 'SBS'].map(dept => (
                             <button
                                 key={dept}
                                 onClick={() => setActiveDept(activeDept === dept ? null : dept)}
                                 style={{
                                     display: 'flex', alignItems: 'center', gap: '0.5rem',
-                                    padding: '0.4rem 1rem',
-                                    borderRadius: '8px',
+                                    padding: '0.4rem 1rem', borderRadius: '8px',
                                     border: `1px solid ${activeDept === dept ? getDeptColor(dept) : '#334155'}`,
                                     backgroundColor: activeDept === dept ? getDeptColor(dept) : '#0f172a',
                                     color: activeDept === dept ? '#fff' : getDeptColor(dept),
-                                    fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer',
-                                    transition: 'all 0.2s'
+                                    fontWeight: 600, fontSize: '0.8rem', cursor: 'pointer', transition: 'all 0.2s'
                                 }}
                             >
                                 <span style={{ width: 8, height: 8, borderRadius: '50%', backgroundColor: activeDept === dept ? '#fff' : getDeptColor(dept), display: 'inline-block' }} />
@@ -452,312 +312,153 @@ export default function DepartmentNetworkGraph() {
                             </button>
                         ))}
                         {activeDept && (
-                            <button
-                                onClick={() => setActiveDept(null)}
-                                style={{ padding: '0.4rem 0.8rem', borderRadius: '8px', border: '1px solid #475569', background: 'transparent', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer' }}
-                            >
+                            <button onClick={() => setActiveDept(null)} style={{ padding: '0.4rem 0.8rem', borderRadius: '8px', border: '1px solid #475569', background: 'transparent', color: '#94a3b8', fontSize: '0.75rem', cursor: 'pointer' }}>
                                 Clear ✕
                             </button>
                         )}
 
-                        {/* Dual Author Search */}
-                        <div
-                            style={{
-                                display: 'flex',
-                                gap: '6px',
-                                alignItems: 'center',
-                                background: '#f8fafc',
-                                padding: '8px 12px',
-                                borderRadius: '8px',
-                                border: `1px solid ${pathData ? '#fb923c' : (searchQuery1 && searchQuery2 && !pathData ? '#ef4444' : '#e2e8f0')}`
-                            }}
-                        >
+                        <div style={{ display: 'flex', gap: '6px', alignItems: 'center', background: '#f8fafc', padding: '8px 12px', borderRadius: '8px', border: `1px solid ${pathData ? '#fb923c' : (searchQuery1 && searchQuery2 && !pathData ? '#ef4444' : '#e2e8f0')}` }}>
                             <span style={{ fontSize: '0.9rem' }}>🔍</span>
-                            <input
-                                type="text"
-                                placeholder="Author 1..."
-                                value={searchQuery1}
-                                onChange={(e) => setSearchQuery1(e.target.value)}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: '#1e293b',
-                                    fontSize: '0.875rem',
-                                    outline: 'none',
-                                    width: '110px'
-                                }}
-                            />
-                            {searchQuery1 && (
-                                <button
-                                    onClick={() => setSearchQuery1('')}
-                                    style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
-                                >
-                                    ✕
-                                </button>
-                            )}
+                            <input type="text" placeholder="Author 1..." value={searchQuery1} onChange={(e) => setSearchQuery1(e.target.value)} style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '110px' }} />
+                            {searchQuery1 && <button onClick={() => setSearchQuery1('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>}
                             <span style={{ color: '#94a3b8', fontSize: '0.8rem', fontWeight: 700 }}>↔</span>
                             <span style={{ fontSize: '0.85rem' }}>👤</span>
-                            <input
-                                type="text"
-                                placeholder="Author 2..."
-                                value={searchQuery2}
-                                onChange={(e) => setSearchQuery2(e.target.value)}
-                                style={{
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: '#1e293b',
-                                    fontSize: '0.875rem',
-                                    outline: 'none',
-                                    width: '110px'
-                                }}
-                            />
-                            {searchQuery2 && (
-                                <button
-                                    onClick={() => setSearchQuery2('')}
-                                    style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}
-                                >
-                                    ✕
-                                </button>
-                            )}
+                            <input type="text" placeholder="Author 2..." value={searchQuery2} onChange={(e) => setSearchQuery2(e.target.value)} style={{ background: 'transparent', border: 'none', color: '#1e293b', fontSize: '0.875rem', outline: 'none', width: '110px' }} />
+                            {searchQuery2 && <button onClick={() => setSearchQuery2('')} style={{ background: 'transparent', border: 'none', color: '#94a3b8', cursor: 'pointer', padding: 0, fontSize: '0.8rem' }}>✕</button>}
                         </div>
                         {searchQuery1 && searchQuery2 && !pathData && (
-                            <div style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                ⚠ No path found
-                            </div>
+                            <div style={{ background: '#fef2f2', color: '#dc2626', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>⚠ No path found</div>
                         )}
                         {pathData && (
-                            <div style={{ background: '#fff7ed', color: '#ea580c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>
-                                🔗 Path: {pathData.pathNodeIds.size} nodes
-                            </div>
+                            <div style={{ background: '#fff7ed', color: '#ea580c', padding: '4px 12px', borderRadius: '6px', fontSize: '0.75rem', fontWeight: 600, display: 'flex', alignItems: 'center', gap: '4px' }}>🔗 Path: {pathData.pathNodeIds.size} nodes</div>
                         )}
                     </div>
                 </header>
 
-                <div
-                    style={{
-                        width: '100%',
-                        height: dimensions.height,
-                        position: 'relative',
-                        overflow: 'hidden',
-                        background: '#f8fafc',
-                        borderRadius: '12px',
-                        border: '2px solid #e2e8f0',
-                        boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)'
-                    }}
-                >
-                    {loading ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                            <div style={{ textAlign: 'center' }}>
-                                <div style={{ fontSize: '2rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⟳</div>
-                                <div>Building global network...</div>
-                                <div style={{ fontSize: '0.75rem', marginTop: '0.5rem', color: '#475569' }}>Connecting all researchers based on shared publications</div>
+                {loading ? (
+                    <div style={{ height: 650, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', borderRadius: 12, border: '2px solid #e2e8f0', color: '#94a3b8' }}>
+                        <div style={{ textAlign: 'center' }}>
+                            <div style={{ fontSize: '2rem', marginBottom: '1rem' }}>⟳</div>
+                            <div>Building global network...</div>
+                        </div>
+                    </div>
+                ) : !graphData || graphData.nodes.length === 0 ? (
+                    <div style={{ height: 650, display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#f8fafc', borderRadius: 12, border: '2px solid #e2e8f0', color: '#94a3b8' }}>
+                        No collaboration data available.
+                    </div>
+                ) : layoutData ? (
+                    <div style={{ width: '100%', position: 'relative', background: '#f8fafc', borderRadius: '12px', border: '2px solid #e2e8f0', overflow: 'hidden', boxShadow: 'inset 0 2px 8px rgba(0,0,0,0.2)' }}>
+                        {/* Summary Overlay */}
+                        <div style={{ position: 'absolute', top: 20, right: 20, zIndex: 2, background: 'rgba(255, 255, 255, 0.95)', padding: '1.5rem', borderRadius: 12, border: '1px solid #e2e8f0', width: '280px', boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)', pointerEvents: 'none' }}>
+                            <h3 style={{ fontSize: '0.85rem', color: '#1e293b', fontWeight: 800, borderBottom: '2px solid #3b82f6', paddingBottom: '0.5rem', margin: '0 0 1rem 0' }}>NETWORK SUMMARY</h3>
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                <div><div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>Total Faculty</div><div style={{ color: '#3b82f6', fontSize: '1.25rem', fontWeight: 'bold' }}>{totalStats.total}</div></div>
+                                <div><div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>Total Links</div><div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>{totalStats.links.toLocaleString()}</div></div>
+                                <div style={{ display: 'flex', gap: '1rem' }}>
+                                    <div><div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FENS</div><div style={{ color: getDeptColor('FENS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fens}</div></div>
+                                    <div><div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FASS</div><div style={{ color: getDeptColor('FASS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fass}</div></div>
+                                    <div><div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>SBS</div><div style={{ color: getDeptColor('SBS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.sbs}</div></div>
+                                </div>
                             </div>
                         </div>
-                    ) : !graphData || graphData.nodes.length === 0 ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
-                            No collaboration data available.
+
+                        {/* Node Hover Box */}
+                        <div style={{ position: 'absolute', top: 250, right: 20, zIndex: 2, background: 'rgba(255, 255, 255, 0.95)', padding: '1rem', borderRadius: 12, border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6'}`, width: '220px', boxShadow: '0 8px 12px -3px rgba(0, 0, 0, 0.3)', opacity: hoveredNodeData ? 1 : 0, transition: 'opacity 0.2s ease', pointerEvents: 'none' }}>
+                            <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>{hoveredNodeData?.dept ? `${hoveredNodeData.dept} AUTHOR` : 'SELECTED AUTHOR'}</div>
+                            <div style={{ color: '#1e293b', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>{hoveredNodeData?.name || 'None'}</div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}><span style={{ color: '#94a3b8' }}>Joint Papers:</span><span style={{ fontWeight: 600, color: '#1e293b' }}>{hoveredNode ? nodeJointPapers[hoveredNode] || 0 : 0}</span></div>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}><span style={{ color: '#94a3b8' }}>Collaborators:</span><span style={{ fontWeight: 600, color: '#1e293b' }}>{hoveredCollaborators}</span></div>
                         </div>
-                    ) : (
-                        <>
-                            {/* Summary Overlay Top Right */}
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    top: 20,
-                                    right: -10,
-                                    zIndex: 10,
-                                    background: 'rgba(255, 255, 255, 0.95)',
-                                    padding: '1.5rem',
-                                    borderRadius: 12,
-                                    border: '1px solid #e2e8f0',
-                                    width: '280px',
-                                    boxShadow: '0 10px 15px -3px rgba(0, 0, 0, 0.4)',
-                                    pointerEvents: 'none'
-                                }}
-                            >
-                                <h3
-                                    style={{
-                                        fontSize: '0.85rem',
-                                        color: '#1e293b',
-                                        fontWeight: 800,
-                                        borderBottom: '2px solid #3b82f6',
-                                        paddingBottom: '0.5rem',
-                                        fontFamily: 'var(--font-heading)',
-                                        margin: '0 0 1rem 0'
-                                    }}
-                                >
-                                    NETWORK SUMMARY
-                                </h3>
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                    <div>
-                                        <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Total Faculty
-                                        </div>
-                                        <div style={{ color: '#3b82f6', fontSize: '1.25rem', fontWeight: 'bold' }}>
-                                            {totalStats.total}
-                                        </div>
-                                    </div>
-                                    <div>
-                                        <div style={{ color: '#64748b', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>
-                                            Total Links
-                                        </div>
-                                        <div style={{ color: '#10b981', fontSize: '1.1rem', fontWeight: 'bold' }}>
-                                            {totalStats.links.toLocaleString()}
-                                        </div>
-                                    </div>
-                                    <div style={{ display: 'flex', gap: '1rem' }}>
-                                        <div>
-                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FENS</div>
-                                            <div style={{ color: getDeptColor('FENS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fens}</div>
-                                        </div>
-                                        <div>
-                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>FASS</div>
-                                            <div style={{ color: getDeptColor('FASS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.fass}</div>
-                                        </div>
-                                        <div>
-                                            <div style={{ color: '#94a3b8', fontSize: '0.65rem', fontWeight: 600, textTransform: 'uppercase' }}>SBS</div>
-                                            <div style={{ color: getDeptColor('SBS'), fontSize: '0.9rem', fontWeight: 'bold' }}>{totalStats.sbs}</div>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
 
-                            {/* Node Hover Box (Absolute center or follow cursor? Let's fix to right block like before) */}
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    top: 250,
-                                    right: 20,
-                                    zIndex: 10,
-                                    background: 'rgba(255, 255, 255, 0.95)',
-                                    padding: '1rem',
-                                    borderRadius: 12,
-                                    border: `1px solid ${hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6'}`,
-                                    width: '220px',
-                                    boxShadow: '0 8px 12px -3px rgba(0, 0, 0, 0.3)',
-                                    opacity: hoveredNodeData ? 1 : 0,
-                                    transition: 'opacity 0.2s ease',
-                                    pointerEvents: 'none'
-                                }}
-                            >
-                                <div style={{ color: hoveredNodeData ? getDeptColor(hoveredNodeData.dept) : '#3b82f6', fontSize: '0.65rem', fontWeight: 800, marginBottom: '0.5rem' }}>
-                                    {hoveredNodeData?.dept ? `${hoveredNodeData.dept} AUTHOR` : 'SELECTED AUTHOR'}
-                                </div>
-                                <div style={{ color: '#0f172a', fontWeight: 'bold', fontSize: '0.9rem', marginBottom: '0.75rem' }}>
-                                    <span style={{ color: '#1e293b' }}>{hoveredNodeData?.name || 'None'}</span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem', marginBottom: '0.25rem' }}>
-                                    <span style={{ color: '#94a3b8' }}>Joint Papers:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        {hoveredNode ? nodeJointPapers[hoveredNode] || 0 : 0}
-                                    </span>
-                                </div>
-                                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '0.75rem' }}>
-                                    <span style={{ color: '#94a3b8' }}>Collaborators:</span>
-                                    <span style={{ fontWeight: 600, color: '#1e293b' }}>
-                                        {hoveredCollaborators}
-                                    </span>
-                                </div>
-                            </div>
+                        {/* Static SVG Graph */}
+                        <svg viewBox={layoutData.viewBox} preserveAspectRatio="xMidYMid meet" className="co-authorship-svg" style={{ width: '100%', height: 'auto', maxHeight: '700px', display: 'block', background: '#f8fafc' }}>
+                            <g className="edges-layer">
+                                {layoutData.links.map((link: any, i: number) => {
+                                    const sourceNode = link.source as any;
+                                    const targetNode = link.target as any;
+                                    const sourceId = typeof sourceNode === 'object' ? sourceNode.id : sourceNode;
+                                    const targetId = typeof targetNode === 'object' ? targetNode.id : targetNode;
+                                    const edgeKey = [sourceId, targetId].sort().join('--');
+                                    const sx = typeof sourceNode === 'object' ? sourceNode.x : 0;
+                                    const sy = typeof sourceNode === 'object' ? sourceNode.y : 0;
+                                    const tx = typeof targetNode === 'object' ? targetNode.x : 0;
+                                    const ty = typeof targetNode === 'object' ? targetNode.y : 0;
 
-                            <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
-                                <ForceGraph2D
-                                    ref={fgRef}
-                                    width={dimensions.width}
-                                    height={dimensions.height}
-                                    graphData={visibleData}
-                                    enableNodeDrag={true}
-                                    enableZoomInteraction={true}
-                                    enablePanInteraction={true}
-                                    cooldownTicks={220}
-                                    onEngineStop={() => {
-                                        try {
-                                            fgRef.current?.zoomToFit(300, 80);
-                                        } catch { }
-                                    }}
-                                    nodeCanvasObject={nodeCanvasObject}
-                                    nodePointerAreaPaint={(node: any, color, ctx, globalScale) => {
-                                        const radius = 6 / globalScale;
-                                        ctx.fillStyle = color;
-                                        ctx.beginPath();
-                                        ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
-                                        ctx.fill();
-                                    }}
-                                    onNodeHover={(node: any) => setHoveredNode(node ? node.id : null)}
-                                    nodeLabel={() => ''}
-                                    onNodeClick={(node: any) => {
-                                        if (node.id) router.push(`/authors/${node.id}`);
-                                    }}
-                                    linkWidth={linkWidth}
-                                    linkColor={linkColor}
-                                    linkDirectionalParticles={(singleSearchQuery || pathData) ? 2 : 0}
-                                    linkDirectionalParticleWidth={2}
-                                    linkDirectionalParticleSpeed={0.005}
-                                />
-                            </div>
+                                    let strokeColor = 'rgba(148, 163, 184, 0.65)';
+                                    let strokeWidth = logScale(link.value, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
+                                    let opacity = 1;
 
-                            {/* Legend */}
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    bottom: 15,
-                                    left: 15,
-                                    background: 'rgba(255, 255, 255, 0.9)',
-                                    padding: '0.75rem',
-                                    borderRadius: 8,
-                                    border: '1px solid #e2e8f0',
-                                    pointerEvents: 'none',
-                                    fontSize: '0.75rem',
-                                    color: '#1e293b',
-                                    fontFamily: 'monospace',
-                                    boxShadow: '0 4px 6px rgb(0 0 0 / 0.3)'
-                                }}
-                            >
-                                <div
-                                    style={{
-                                        fontWeight: 'bold',
-                                        marginBottom: '0.5rem',
-                                        borderBottom: '1px solid #e2e8f0',
-                                        paddingBottom: '0.25rem'
-                                    }}
-                                >
-                                    LEGEND
+                                    if (pathData) {
+                                        if (pathData.pathEdgeKeys.has(edgeKey)) { strokeColor = 'rgba(251, 146, 60, 0.95)'; strokeWidth = 4.5; }
+                                        else { opacity = 0.08; strokeWidth = 0.25; }
+                                    } else if (singleSearchQuery) {
+                                        const sName = typeof sourceNode === 'object' ? sourceNode.name : '';
+                                        const tName = typeof targetNode === 'object' ? targetNode.name : '';
+                                        const sourceMatch = sName?.toLowerCase().includes(singleSearchQuery.toLowerCase());
+                                        const targetMatch = tName?.toLowerCase().includes(singleSearchQuery.toLowerCase());
+                                        if (sourceMatch || targetMatch) { strokeColor = 'rgba(148, 163, 184, 0.95)'; }
+                                        else { opacity = 0.18; strokeWidth = 0.25; }
+                                    } else if (hoveredNode) {
+                                        if (connectedEdgeKeys.has(edgeKey)) { strokeColor = 'rgba(148, 163, 184, 0.95)'; }
+                                        else { opacity = 0.05; }
+                                    } else {
+                                        const sDept = typeof sourceNode === 'object' ? sourceNode.dept : null;
+                                        const tDept = typeof targetNode === 'object' ? targetNode.dept : null;
+                                        if (sDept && tDept && sDept === tDept) { strokeColor = getDeptColor(sDept) + '88'; }
+                                    }
+
+                                    return <line key={`edge-${i}`} className="edge" x1={sx} y1={sy} x2={tx} y2={ty} stroke={strokeColor} strokeWidth={strokeWidth} opacity={opacity} />;
+                                })}
+                            </g>
+                            <g className="nodes-layer">
+                                {layoutData.nodes.map(node => {
+                                    const isOnPath = pathData?.pathNodeIds.has(node.id);
+                                    const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
+                                    const isHovered = hoveredNode === node.id;
+                                    const isConnected = connectedNodeIds.has(node.id);
+                                    const isDeptNode = node.dept === activeDept;
+
+                                    const clusterColor = getDeptColor(node.dept);
+                                    const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
+                                    const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
+                                    const radius = isHovered ? 7 : (isOnPath ? 6.5 : 5);
+                                    const borderW = isHovered ? 2.5 : (isMatch ? 2.0 : 1.2);
+
+                                    let opacity = 1;
+                                    if (pathData) { opacity = isOnPath ? 1 : 0.08; }
+                                    else if (singleSearchQuery) { opacity = isMatch ? 1 : 0.08; }
+                                    else if (activeDept && !isDeptNode) { opacity = 0.3; }
+                                    else if (hoveredNode) { opacity = isConnected ? 1 : 0.12; }
+
+                                    const showLabel = isHovered || isMatch || isOnPath;
+
+                                    return (
+                                        <g key={node.id} className="node-group" opacity={opacity} style={{ cursor: 'pointer' }} onMouseEnter={() => setHoveredNode(node.id)} onMouseLeave={() => setHoveredNode(null)} onClick={() => { if (node.id) router.push(`/authors/${node.id}`); }}>
+                                            <circle cx={node.x} cy={node.y} r={radius} fill={fillColor} stroke={borderColor} strokeWidth={borderW} />
+                                            {showLabel && (
+                                                <text x={node.x} y={(node.y || 0) + radius + 6} textAnchor="middle" fontSize={5} fill="#1e293b" fontFamily="'Courier New', Courier, monospace" fontWeight={600}>
+                                                    {node.name}
+                                                </text>
+                                            )}
+                                        </g>
+                                    );
+                                })}
+                            </g>
+                        </svg>
+
+                        {/* Legend */}
+                        <div style={{ position: 'absolute', bottom: 15, left: 15, background: 'rgba(255, 255, 255, 0.9)', padding: '0.75rem', borderRadius: 8, border: '1px solid #e2e8f0', pointerEvents: 'none', fontSize: '0.75rem', color: '#1e293b', fontFamily: 'monospace', boxShadow: '0 4px 6px rgb(0 0 0 / 0.3)' }}>
+                            <div style={{ fontWeight: 'bold', marginBottom: '0.5rem', borderBottom: '1px solid #e2e8f0', paddingBottom: '0.25rem' }}>LEGEND</div>
+                            {Object.entries(DEPT_LABELS).map(([dept]) => (
+                                <div key={dept} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
+                                    <div style={{ width: 8, height: 8, borderRadius: '50%', background: getDeptColor(dept) }} />
+                                    <span>{dept} (Node)</span>
                                 </div>
-                                {Object.entries(DEPT_LABELS).map(([dept, label]) => (
-                                    <div key={dept} style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                        <div
-                                            style={{
-                                                width: 8,
-                                                height: 8,
-                                                borderRadius: '50%',
-                                                background: getDeptColor(dept)
-                                            }}
-                                        />
-                                        <span>{dept} (Node)</span>
-                                    </div>
-                                ))}
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', marginTop: '6px' }}>
-                                    <div style={{ width: 20, height: 2, background: '#94a3b8' }} />
-                                    <span>Edge width ∝ Shared works</span>
-                                </div>
-                                <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px' }}>
-                                    <div
-                                        style={{
-                                            width: 10,
-                                            height: 10,
-                                            borderRadius: '50%',
-                                            background: '#3b82f6',
-                                            border: '2px solid #fff',
-                                            boxSizing: 'border-box'
-                                        }}
-                                    />
-                                    <span>Hover for profile info</span>
-                                    
-                                </div>
-                            </div>
-                        </>
-                    )}
-                </div>
+                            ))}
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '4px', marginTop: '6px' }}><div style={{ width: 20, height: 2, background: '#94a3b8' }} /><span>Edge width ∝ Shared works</span></div>
+                        </div>
+                    </div>
+                ) : null}
             </div>
         </div>
     );

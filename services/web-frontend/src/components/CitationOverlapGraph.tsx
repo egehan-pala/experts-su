@@ -1,19 +1,10 @@
 'use client';
 
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { API_URL } from '@/lib/config';
-import dynamic from 'next/dynamic';
 import * as d3Force from 'd3-force';
-
-const ForceGraph2D = dynamic(() => import('react-force-graph-2d'), {
-    ssr: false,
-    loading: () => (
-        <div style={{ padding: '2rem', textAlign: 'center', color: '#94a3b8' }}>
-            Loading graph engine...
-        </div>
-    )
-});
+import * as d3 from 'd3';
 
 interface GlobalNode {
     id: string;
@@ -128,25 +119,9 @@ export default function CitationOverlapGraph() {
     const [activeDept, setActiveDept] = useState<string | null>(null);
 
     const router = useRouter();
-    const containerRef = useRef<HTMLDivElement>(null);
-    const fgRef = useRef<any>(null);
-    const [dimensions, setDimensions] = useState({ width: 1200, height: 750 });
+    const svgRef = useRef<SVGSVGElement>(null);
+    const gRef = useRef<SVGGElement>(null);
 
-    // Responsive sizing
-    useEffect(() => {
-        if (!containerRef.current) return;
-        const el = containerRef.current;
-        const ro = new ResizeObserver(() => {
-            setDimensions({
-                width: el.clientWidth || 1200,
-                height: Math.max(600, Math.floor((el.clientWidth || 1200) * 0.6))
-            });
-        });
-        ro.observe(el);
-        return () => ro.disconnect();
-    }, []);
-
-    // Fetch citation overlap network (with retry — first call is slow due to OpenAlex)
     useEffect(() => {
         let cancelled = false;
 
@@ -207,6 +182,99 @@ export default function CitationOverlapGraph() {
         };
     }, [graphData, activeDept]);
 
+    // Pre-computed d3-force layout
+    const layoutData = useMemo(() => {
+        if (!visibleData.nodes.length) return null;
+
+        const nodes: GlobalNode[] = visibleData.nodes.map(n => ({ ...n }));
+        const links = visibleData.links.map(l => ({
+            source: typeof l.source === 'object' ? (l.source as GlobalNode).id : l.source,
+            target: typeof l.target === 'object' ? (l.target as GlobalNode).id : l.target,
+            value: l.value,
+        }));
+
+        const sim = d3Force.forceSimulation(nodes as any)
+            .force('link', d3Force.forceLink(links as any)
+                .id((d: any) => d.id)
+                .distance(75)
+                .strength(0.3)
+            )
+            .force('charge', d3Force.forceManyBody().strength(-400))
+            .force('collide', d3Force.forceCollide().radius(25).strength(0.8))
+            .force('center', d3Force.forceCenter(0, 0))
+            .force('gravityX', d3Force.forceX(0).strength(0.06))
+            .force('gravityY', d3Force.forceY(0).strength(0.06));
+
+        sim.stop();
+        for (let i = 0; i < 300; i++) sim.tick();
+
+        const padding = 80;
+        let minX = Infinity, maxX = -Infinity, minY = Infinity, maxY = -Infinity;
+        for (const n of nodes) {
+            const nx = n.x ?? 0;
+            const ny = n.y ?? 0;
+            if (nx < minX) minX = nx;
+            if (nx > maxX) maxX = nx;
+            if (ny < minY) minY = ny;
+            if (ny > maxY) maxY = ny;
+        }
+        minX -= padding; minY -= padding;
+        maxX += padding; maxY += padding;
+        const width = maxX - minX;
+        const height = maxY - minY;
+
+        const nodeMap = new Map<string, GlobalNode>();
+        for (const n of nodes) nodeMap.set(n.id, n);
+
+        const resolvedLinks = links.map(l => {
+            const sId = typeof l.source === 'object' ? (l.source as any).id : l.source;
+            const tId = typeof l.target === 'object' ? (l.target as any).id : l.target;
+            return {
+                source: nodeMap.get(sId)!,
+                target: nodeMap.get(tId)!,
+                value: l.value,
+            };
+        });
+
+        return {
+            nodes,
+            links: resolvedLinks,
+            viewBox: `${minX} ${minY} ${width} ${height}`,
+            width,
+            height,
+        };
+    }, [visibleData]);
+
+    useEffect(() => {
+        if (!svgRef.current || !gRef.current || !layoutData) return;
+        const svg = d3.select(svgRef.current);
+        const g = d3.select(gRef.current);
+        const zoom = d3.zoom<SVGSVGElement, unknown>()
+            .scaleExtent([0.1, 4])
+            .on('zoom', (event) => {
+                g.attr('transform', event.transform);
+            });
+        svg.call(zoom);
+        svg.on("dblclick.zoom", null);
+    }, [layoutData]);
+
+    // Hover-connected nodes and edges
+    const hoverConnected = useMemo(() => {
+        if (!hoveredNode || !layoutData) return { nodeIds: new Set<string>(), edgeKeys: new Set<string>() };
+        const nodeIds = new Set<string>([hoveredNode]);
+        const edgeKeys = new Set<string>();
+        for (const l of layoutData.links) {
+            const sId = l.source.id;
+            const tId = l.target.id;
+            if (sId === hoveredNode || tId === hoveredNode) {
+                nodeIds.add(sId);
+                nodeIds.add(tId);
+                edgeKeys.add([sId, tId].sort().join('--'));
+            }
+        }
+        return { nodeIds, edgeKeys };
+    }, [hoveredNode, layoutData]);
+
     const totalStats = useMemo(() => {
         if (!visibleData.nodes.length) return { fens: 0, fass: 0, sbs: 0, total: 0, links: 0, totalSharedCitations: 0 };
         const totalSharedCitations = visibleData.links.reduce((sum, l) => sum + (l.value || 0), 0);
@@ -261,151 +329,6 @@ export default function CitationOverlapGraph() {
         return findShortestPath(visibleData.nodes, visibleData.links, searchQuery1, searchQuery2);
     }, [searchQuery1, searchQuery2, visibleData, hasPathSearch]);
 
-    // Force configuration
-    useEffect(() => {
-        if (!fgRef.current || !visibleData?.nodes?.length) return;
-        const fg = fgRef.current;
-
-        fg.d3Force('link', d3Force.forceLink()
-            .id((d: any) => d.id)
-            .distance(300)
-            .strength(0.3)
-        );
-        fg.d3Force('charge', d3Force.forceManyBody().strength(-800));
-        fg.d3Force('collide', d3Force.forceCollide().radius(50).strength(0.8));
-        fg.d3Force('center', d3Force.forceCenter(0, 0));
-        fg.d3Force('gravityX', d3Force.forceX(0).strength(0.06));
-        fg.d3Force('gravityY', d3Force.forceY(0).strength(0.06));
-        fg.d3ReheatSimulation();
-
-        const t = setTimeout(() => {
-            try { fg.zoomToFit(500, 80); } catch { }
-        }, 1200);
-        return () => clearTimeout(t);
-    }, [visibleData]);
-
-    const nodeCanvasObject = useCallback(
-        (obj: any, ctx: CanvasRenderingContext2D, globalScale: number) => {
-            const node = obj as GlobalNode;
-            const isHovered = hoveredNode === node.id;
-            const isOnPath = pathData?.pathNodeIds.has(node.id);
-            const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
-            const hasSearch = singleSearchQuery.length > 0;
-            const isDeptFiltered = !!activeDept;
-            const isDeptNode = node.dept === activeDept;
-
-            let alpha = 1;
-            if (pathData) alpha = isOnPath ? 1 : 0.08;
-            else if (hasSearch) alpha = isMatch ? 1 : 0.08;
-            else if (isDeptFiltered && !isDeptNode) alpha = 0.3;
-
-            const radius = isHovered ? 7 : (isOnPath ? 6.5 : 5);
-            const clusterColor = getDeptColor(node.dept);
-            const fillColor = isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
-            const borderColor = isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
-
-            ctx.beginPath();
-            ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
-            ctx.globalAlpha = alpha;
-            ctx.fillStyle = fillColor;
-            ctx.fill();
-
-            const borderW = isHovered ? 2.5 : (isMatch ? 2.0 : 1.2);
-            ctx.lineWidth = borderW;
-            ctx.strokeStyle = borderColor;
-            ctx.stroke();
-            ctx.globalAlpha = 1;
-
-            const showLabel = alpha > 0.1;
-            if (showLabel) {
-                const label = node.name;
-                const fontSize = 5;
-
-                ctx.font = `600 ${fontSize}px "Courier New", Courier, monospace`;
-                ctx.textAlign = 'center';
-                ctx.textBaseline = 'top';
-
-                const textX = node.x || 0;
-                const textY = (node.y || 0) + radius + 4;
-                const metrics = ctx.measureText(label);
-                const paddingX = 4;
-                const paddingY = 2;
-                const textHeight = fontSize + paddingY * 2;
-
-                if (isHovered || isMatch || isOnPath) {
-                    ctx.fillStyle = 'rgba(255,255,255,0.92)';
-                    ctx.fillRect(
-                        textX - metrics.width / 2 - paddingX,
-                        textY - paddingY,
-                        metrics.width + paddingX * 2,
-                        textHeight
-                    );
-                    ctx.fillStyle = '#0f172a';
-                } else {
-                    ctx.fillStyle = 'rgba(255,255,255,0.7)';
-                    ctx.fillRect(
-                        textX - metrics.width / 2 - paddingX,
-                        textY - paddingY,
-                        metrics.width + paddingX * 2,
-                        textHeight
-                    );
-                    ctx.fillStyle = '#475569';
-                }
-
-                ctx.globalAlpha = alpha;
-                ctx.fillText(label, textX, textY);
-            }
-        },
-        [hoveredNode, singleSearchQuery, activeDept, pathData]
-    );
-
-    const linkWidth = useCallback((l: any) => {
-        const val = l.value || 1;
-        let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
-
-        if (pathData) {
-            const s = typeof l.source === 'object' ? l.source.id : l.source;
-            const t = typeof l.target === 'object' ? l.target.id : l.target;
-            const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 4.5 : 0.25;
-        }
-
-        const hasActiveSearch = singleSearchQuery.length > 0;
-        const sourceMatch = singleSearchQuery && l.source?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
-        const targetMatch = singleSearchQuery && l.target?.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
-        const isRelated = sourceMatch || targetMatch;
-
-        if (hasActiveSearch) return isRelated ? baseWidth : 0.25;
-        return baseWidth;
-    }, [singleSearchQuery, linkBounds, pathData]);
-
-    const linkColor = useCallback((l: any) => {
-        if (pathData) {
-            const s = typeof l.source === 'object' ? l.source.id : l.source;
-            const t = typeof l.target === 'object' ? l.target.id : l.target;
-            const ek = [s, t].sort().join('--');
-            return pathData.pathEdgeKeys.has(ek) ? 'rgba(251, 146, 60, 0.95)' : 'rgba(226, 232, 240, 0.08)';
-        }
-
-        const hasActiveSearch = singleSearchQuery.length > 0;
-        const isMatch = (nodeName?: string) =>
-            singleSearchQuery && nodeName && typeof nodeName === 'string' &&
-            nodeName.toLowerCase().includes(singleSearchQuery.toLowerCase());
-
-        const isRelated = isMatch(l.source?.name) || isMatch(l.target?.name);
-        if (hasActiveSearch) {
-            return isRelated ? 'rgba(148, 163, 184, 0.95)' : 'rgba(226, 232, 240, 0.18)';
-        }
-
-        const s = typeof l.source === 'object' ? l.source.dept : null;
-        const t = typeof l.target === 'object' ? l.target.dept : null;
-        if (s && t && s === t) {
-            return getDeptColor(s).replace(')', ', 0.6)').replace('rgb(', 'rgba(') + (getDeptColor(s).startsWith('#') ? '88' : '');
-        }
-
-        return 'rgba(148, 163, 184, 0.65)';
-    }, [singleSearchQuery, pathData]);
-
     const hoveredNodeData = useMemo(() => {
         if (!hoveredNode) return null;
         return visibleData.nodes.find(n => n.id === hoveredNode) || null;
@@ -420,22 +343,128 @@ export default function CitationOverlapGraph() {
         }, 0);
     }, [hoveredNode, visibleData]);
 
+    // -- Edge style helpers --
+    function getEdgeWidth(link: { source: GlobalNode; target: GlobalNode; value: number }): number {
+        const val = link.value || 1;
+        let baseWidth = logScale(val, linkBounds.minPapers, linkBounds.maxPapers, 0.7, 3.4);
+
+        if (pathData) {
+            const ek = [link.source.id, link.target.id].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? 4.5 : 0.25;
+        }
+
+        const hasActiveSearch = singleSearchQuery.length > 0;
+        const sourceMatch = singleSearchQuery && link.source.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
+        const targetMatch = singleSearchQuery && link.target.name?.toLowerCase().includes(singleSearchQuery.toLowerCase());
+        const isRelated = sourceMatch || targetMatch;
+
+        if (hasActiveSearch) return isRelated ? baseWidth : 0.25;
+
+        if (hoveredNode) {
+            const ek = [link.source.id, link.target.id].sort().join('--');
+            return hoverConnected.edgeKeys.has(ek) ? baseWidth : 0.25;
+        }
+
+        return baseWidth;
+    }
+
+    function getEdgeColor(link: { source: GlobalNode; target: GlobalNode; value: number }): string {
+        if (pathData) {
+            const ek = [link.source.id, link.target.id].sort().join('--');
+            return pathData.pathEdgeKeys.has(ek) ? 'rgba(251, 146, 60, 0.95)' : 'rgba(226, 232, 240, 0.08)';
+        }
+
+        const hasActiveSearch = singleSearchQuery.length > 0;
+        const isMatch = (nodeName?: string) =>
+            singleSearchQuery && nodeName && typeof nodeName === 'string' &&
+            nodeName.toLowerCase().includes(singleSearchQuery.toLowerCase());
+
+        const isRelated = isMatch(link.source.name) || isMatch(link.target.name);
+        if (hasActiveSearch) {
+            return isRelated ? 'rgba(148, 163, 184, 0.95)' : 'rgba(226, 232, 240, 0.18)';
+        }
+
+        if (hoveredNode) {
+            const ek = [link.source.id, link.target.id].sort().join('--');
+            if (hoverConnected.edgeKeys.has(ek)) {
+                const s = link.source.dept;
+                const t = link.target.dept;
+                if (s && t && s === t) {
+                    return getDeptColor(s) + '99';
+                }
+                return 'rgba(148, 163, 184, 0.85)';
+            }
+            return 'rgba(226, 232, 240, 0.10)';
+        }
+
+        const s = link.source.dept;
+        const t = link.target.dept;
+        if (s && t && s === t) {
+            return getDeptColor(s) + '88';
+        }
+        return 'rgba(148, 163, 184, 0.65)';
+    }
+
+    // -- Node style helpers --
+    function getNodeOpacity(node: GlobalNode): number {
+        const isOnPath = pathData?.pathNodeIds.has(node.id);
+        const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
+        const hasSearch = singleSearchQuery.length > 0;
+        const isDeptFiltered = !!activeDept;
+        const isDeptNode = node.dept === activeDept;
+
+        if (pathData) return isOnPath ? 1 : 0.08;
+        if (hasSearch) return isMatch ? 1 : 0.08;
+        if (hoveredNode) {
+            return hoverConnected.nodeIds.has(node.id) ? 1 : 0.12;
+        }
+        if (isDeptFiltered && !isDeptNode) return 0.3;
+        return 1;
+    }
+
+    function getNodeRadius(node: GlobalNode): number {
+        const isHovered = hoveredNode === node.id;
+        const isOnPath = pathData?.pathNodeIds.has(node.id);
+        return isHovered ? 7 : (isOnPath ? 6.5 : 5);
+    }
+
+    function getNodeFill(node: GlobalNode): string {
+        const isHovered = hoveredNode === node.id;
+        const isOnPath = pathData?.pathNodeIds.has(node.id);
+        const clusterColor = getDeptColor(node.dept);
+        return isHovered ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
+    }
+
+    function getNodeStroke(node: GlobalNode): string {
+        const isHovered = hoveredNode === node.id;
+        const isOnPath = pathData?.pathNodeIds.has(node.id);
+        return isHovered ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
+    }
+
+    function getNodeStrokeWidth(node: GlobalNode): number {
+        const isHovered = hoveredNode === node.id;
+        const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
+        return isHovered ? 2.5 : (isMatch ? 2.0 : 1.2);
+    }
+
+    function getTextColor(node: GlobalNode): string {
+        const isHovered = hoveredNode === node.id;
+        const isOnPath = pathData?.pathNodeIds.has(node.id);
+        const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
+        return (isHovered || isMatch || isOnPath) ? '#0f172a' : '#475569';
+    }
+
     return (
         <div
             style={{
                 marginTop: '0',
                 display: 'flex',
                 flexDirection: 'column',
-                width: '100vw',
-                position: 'relative',
-                left: '50%',
-                right: '50%',
-                marginLeft: '-50vw',
-                marginRight: '-50vw',
+                width: '100%',
                 backgroundColor: '#ffffff',
-                borderTop: '1px solid #e2e8f0',
-                borderBottom: '1px solid #e2e8f0',
-                padding: '3rem 0',
+                border: '1px solid #e2e8f0',
+                borderRadius: '12px',
+                padding: '2rem 1rem',
                 boxSizing: 'border-box'
             }}
         >
@@ -556,7 +585,6 @@ export default function CitationOverlapGraph() {
                 <div
                     style={{
                         width: '100%',
-                        height: dimensions.height,
                         position: 'relative',
                         overflow: 'hidden',
                         background: '#f8fafc',
@@ -566,7 +594,7 @@ export default function CitationOverlapGraph() {
                     }}
                 >
                     {loading ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                        <div style={{ height: '600px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
                             <div style={{ textAlign: 'center' }}>
                                 <div style={{ fontSize: '2rem', marginBottom: '1rem', animation: 'spin 1s linear infinite' }}>⟳</div>
                                 <div>Building citation overlap network...</div>
@@ -575,10 +603,10 @@ export default function CitationOverlapGraph() {
                             </div>
                         </div>
                     ) : !graphData || graphData.nodes.length === 0 ? (
-                        <div style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
+                        <div style={{ height: '600px', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8' }}>
                             No citation overlap data available.
                         </div>
-                    ) : (
+                    ) : layoutData ? (
                         <>
                             {/* Summary Overlay Top Right */}
                             <div
@@ -689,41 +717,99 @@ export default function CitationOverlapGraph() {
                                 </div>
                             </div>
 
-                            <div ref={containerRef} style={{ width: '100%', height: '100%' }}>
-                                <ForceGraph2D
-                                    ref={fgRef}
-                                    width={dimensions.width}
-                                    height={dimensions.height}
-                                    graphData={visibleData}
-                                    enableNodeDrag={true}
-                                    enableZoomInteraction={true}
-                                    enablePanInteraction={true}
-                                    cooldownTicks={220}
-                                    onEngineStop={() => {
-                                        try {
-                                            fgRef.current?.zoomToFit(300, 80);
-                                        } catch { }
-                                    }}
-                                    nodeCanvasObject={nodeCanvasObject}
-                                    nodePointerAreaPaint={(node: any, color, ctx, globalScale) => {
-                                        const radius = 6 / globalScale;
-                                        ctx.fillStyle = color;
-                                        ctx.beginPath();
-                                        ctx.arc(node.x || 0, node.y || 0, radius, 0, 2 * Math.PI, false);
-                                        ctx.fill();
-                                    }}
-                                    onNodeHover={(node: any) => setHoveredNode(node ? node.id : null)}
-                                    nodeLabel={() => ''}
-                                    onNodeClick={(node: any) => {
-                                        if (node.id) router.push(`/authors/${node.id}`);
-                                    }}
-                                    linkWidth={linkWidth}
-                                    linkColor={linkColor}
-                                    linkDirectionalParticles={(singleSearchQuery || pathData) ? 2 : 0}
-                                    linkDirectionalParticleWidth={2}
-                                    linkDirectionalParticleSpeed={0.005}
-                                />
-                            </div>
+                            {/* SVG Graph */}
+                            <svg
+                                ref={svgRef}
+                                className="co-authorship-svg"
+                                viewBox={layoutData.viewBox}
+                                style={{
+                                    width: '100%',
+                                    height: 'auto',
+                                    maxHeight: '750px',
+                                    display: 'block',
+                                    cursor: 'grab',
+                                }}
+                                preserveAspectRatio="xMidYMid meet"
+                            >
+                                <style>{`
+                                    .co-authorship-svg text {
+                                        pointer-events: none;
+                                        user-select: none;
+                                    }
+                                    .co-authorship-svg .graph-node {
+                                        cursor: pointer;
+                                        transition: opacity 0.2s ease;
+                                    }
+                                    .co-authorship-svg line {
+                                        transition: stroke-opacity 0.2s ease, stroke-width 0.15s ease;
+                                    }
+                                    .co-authorship-svg:active { cursor: grabbing !important; }
+                                `}</style>
+
+                                <g ref={gRef}>
+                                {/* Edges */}
+                                {layoutData.links.map((link, i) => {
+                                    const sx = link.source.x ?? 0;
+                                    const sy = link.source.y ?? 0;
+                                    const tx = link.target.x ?? 0;
+                                    const ty = link.target.y ?? 0;
+                                    return (
+                                        <line
+                                            key={`edge-${i}`}
+                                            x1={sx}
+                                            y1={sy}
+                                            x2={tx}
+                                            y2={ty}
+                                            stroke={getEdgeColor(link)}
+                                            strokeWidth={getEdgeWidth(link)}
+                                        />
+                                    );
+                                })}
+
+                                {/* Nodes */}
+                                {layoutData.nodes.map(node => {
+                                    const nx = node.x ?? 0;
+                                    const ny = node.y ?? 0;
+                                    const radius = getNodeRadius(node);
+                                    const opacity = getNodeOpacity(node);
+                                    const showLabel = opacity > 0.1;
+
+                                    return (
+                                        <g
+                                            key={node.id}
+                                            className="graph-node"
+                                            opacity={opacity}
+                                            onMouseEnter={() => setHoveredNode(node.id)}
+                                            onMouseLeave={() => setHoveredNode(null)}
+                                            onClick={() => { if (node.id) router.push(`/authors/${node.id}`); }}
+                                        >
+                                            <circle
+                                                cx={nx}
+                                                cy={ny}
+                                                r={radius}
+                                                fill={getNodeFill(node)}
+                                                stroke={getNodeStroke(node)}
+                                                strokeWidth={getNodeStrokeWidth(node)}
+                                            />
+                                            {showLabel && (
+                                                <text
+                                                    x={nx}
+                                                    y={ny + radius + 8}
+                                                    textAnchor="middle"
+                                                    dominantBaseline="hanging"
+                                                    fontSize={5}
+                                                    fontWeight={600}
+                                                    fontFamily='"Courier New", Courier, monospace'
+                                                    fill={getTextColor(node)}
+                                                >
+                                                    {node.name}
+                                                </text>
+                                            )}
+                                        </g>
+                                    );
+                                })}
+                                </g>
+                            </svg>
 
                             {/* Legend */}
                             <div
@@ -784,7 +870,7 @@ export default function CitationOverlapGraph() {
                                 </div>
                             </div>
                         </>
-                    )}
+                    ) : null}
                 </div>
 
                 {/* Top Connected Faculty Table */}

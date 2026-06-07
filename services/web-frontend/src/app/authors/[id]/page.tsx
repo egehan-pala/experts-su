@@ -512,7 +512,9 @@ export default function ProfilePage() {
                 )}
 
                 {activeTab === 'network' && (
-                    <CoAuthorshipGraph authorId={id} authorName={author.name} />
+                    <div style={{ backgroundColor: '#f8fafc' }}>
+                        <CoAuthorshipGraph authorId={id} authorName={author.name} />
+                    </div>
                 )}
 
                 {activeTab === 'global' && (
