@@ -377,6 +377,7 @@ export default function Home() {
             }}>
               <div style={{
                 display: 'flex',
+                justifyContent: 'center',
                 gap: '2.5rem',
                 padding: '0 1.5rem',
                 maxWidth: '1200px',
@@ -445,6 +446,7 @@ export default function Home() {
                 }}>
                   <div style={{
                     display: 'flex',
+                    justifyContent: 'center',
                     gap: '2.5rem',
                     padding: '0 1.5rem',
                     maxWidth: '1200px',
@@ -455,17 +457,8 @@ export default function Home() {
                   }}>
                   <style>{`
                     .overview-subtab .subtab-label {
-                      max-width: 0;
-                      opacity: 0;
-                      overflow: hidden;
-                      transition: all 0.3s ease;
                       display: inline-block;
                       white-space: nowrap;
-                    }
-                    .overview-subtab:hover .subtab-label,
-                    .overview-subtab.active .subtab-label {
-                      max-width: 300px;
-                      opacity: 1;
                       margin-left: 0.6rem;
                     }
                   `}</style>
@@ -547,100 +540,37 @@ export default function Home() {
                 {overviewTab === 'sdgs' ? (
                   <SDGSection />
                 ) : overviewTab === 'networks' ? (
-                  <div style={{ display: 'flex', gap: '2rem', alignItems: 'flex-start' }}>
-                    {/* Left Sidebar Menu */}
-                    <div style={{
-                      width: '280px',
-                      flexShrink: 0,
-                      display: 'flex',
-                      flexDirection: 'column',
-                      gap: '0.5rem',
-                      background: '#f8fafc',
-                      padding: '1rem',
-                      borderRadius: '12px',
-                      border: '1px solid #e2e8f0',
-                      position: 'sticky',
-                      top: '20px'
-                    }}>
-                      <h3 style={{ fontSize: '0.8rem', fontWeight: 700, color: '#64748b', textTransform: 'uppercase', marginBottom: '0.5rem', paddingLeft: '0.5rem' }}>
-                        Graph Types
-                      </h3>
-                      <button
-                        onClick={() => setNetworkSubTab('school')}
-                        style={{
-                          textAlign: 'left',
-                          padding: '0.75rem 1rem',
-                          background: networkSubTab === 'school' ? '#fff' : 'transparent',
-                          border: 'none',
-                          borderRadius: '8px',
-                          color: networkSubTab === 'school' ? '#002855' : '#475569',
-                          fontWeight: networkSubTab === 'school' ? 700 : 500,
-                          cursor: 'pointer',
-                          boxShadow: networkSubTab === 'school' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                          transition: 'all 0.2s ease',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem'
-                        }}
-                      >
-                        <span style={{ color: networkSubTab === 'school' ? '#3b82f6' : '#94a3b8' }}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <circle cx="6" cy="6" r="2" />
-                            <circle cx="18" cy="6" r="2" />
-                            <circle cx="12" cy="18" r="2" />
-                            <line x1="6" y1="8" x2="12" y2="16" />
-                            <line x1="18" y1="8" x2="12" y2="16" />
-                            <line x1="8" y1="6" x2="16" y2="6" />
-                          </svg>
-                        </span>
-                        School Collaboration
-                      </button>
-                      <button
-                        onClick={() => setNetworkSubTab('citation')}
-                        style={{
-                          textAlign: 'left',
-                          padding: '0.75rem 1rem',
-                          background: networkSubTab === 'citation' ? '#fff' : 'transparent',
-                          border: 'none',
-                          borderRadius: '8px',
-                          color: networkSubTab === 'citation' ? '#002855' : '#475569',
-                          fontWeight: networkSubTab === 'citation' ? 700 : 500,
-                          cursor: 'pointer',
-                          boxShadow: networkSubTab === 'citation' ? '0 1px 3px rgba(0,0,0,0.1)' : 'none',
-                          transition: 'all 0.2s ease',
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: '0.75rem'
-                        }}
-                      >
-                        <span style={{ color: networkSubTab === 'citation' ? '#a855f7' : '#94a3b8' }}>
-                          <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                            <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
-                            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
-                            <line x1="8" y1="7" x2="16" y2="7" />
-                            <line x1="8" y1="11" x2="14" y2="11" />
-                          </svg>
-                        </span>
-                        Citation Overlap
-                      </button>
-                    </div>
-
-                    {/* Right Panel Content */}
-                    <div style={{ flex: 1, minWidth: 0 }}>
-                      {networkSubTab === 'school' ? (
-                        <div style={{ width: '100%', backgroundColor: 'transparent' }}>
-                          <DepartmentNetworkGraph />
-                        </div>
-                      ) : (
-                        <div style={{ width: '100%', backgroundColor: 'transparent' }}>
-                          <CitationOverlapGraph />
-                        </div>
-                      )}
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    width: '100vw',
+                    position: 'relative',
+                    left: '50%',
+                    right: '50%',
+                    marginLeft: '-50vw',
+                    marginRight: '-50vw',
+                    padding: '0 0.5rem'
+                  }}>
+                    {/* Graph Content */}
+                    <div style={{ width: '100%', minWidth: 0, backgroundColor: 'transparent' }}>
+                        <DepartmentNetworkGraph />
                     </div>
                   </div>
                 ) : overviewTab === 'world' ? (
-                  <div style={{ display: 'flex', justifyContent: 'center' }}>
-                    <WorldCollaborationMap />
+                  <div style={{
+                    display: 'flex',
+                    flexDirection: 'column',
+                    width: '100vw',
+                    position: 'relative',
+                    left: '50%',
+                    right: '50%',
+                    marginLeft: '-50vw',
+                    marginRight: '-50vw',
+                    padding: '0 4rem'
+                  }}>
+                    <div style={{ width: '100%', minWidth: 0, backgroundColor: 'transparent' }}>
+                        <WorldCollaborationMap />
+                    </div>
                   </div>
                 ) : null}
               </div>
