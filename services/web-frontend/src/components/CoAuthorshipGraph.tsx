@@ -733,7 +733,7 @@ export default function CoAuthorshipGraph({ authorId, authorName }: Props) {
                 ) : null}
 
                 {/* ── Controls Toggle + Panel ─────────────────── */}
-                {hasData && (
+                {rawNetworkData && (
                     <div style={{ marginTop: '1rem' }}>
                         <button
                             onClick={() => setControlsOpen(!controlsOpen)}

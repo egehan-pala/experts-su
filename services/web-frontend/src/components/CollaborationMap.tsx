@@ -42,6 +42,7 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
   const [tooltipPosition, setTooltipPosition] = useState({ x: 0, y: 0 });
   const [sinceYear, setSinceYear] = useState<string>("2022");
   const [debouncedSinceYear, setDebouncedSinceYear] = useState<string>("2022");
+  const [position, setPosition] = useState({ coordinates: [0, 20] as [number, number], zoom: 1 });
 
   // Debounce the year input
   useEffect(() => {
@@ -108,6 +109,10 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
       .range(["#99b3ff", "#0445dd"]); // From light red to Sabancı Red
   }, [allTimeMaxCount]);
 
+  const handleMoveEnd = (pos: { coordinates: [number, number], zoom: number }) => {
+    setPosition(pos);
+  };
+
 
   if (initialLoading) {
     return (
@@ -125,7 +130,7 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
         fontFamily: 'var(--font-sans)',
         overflow: 'hidden'
       }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 5vw', boxSizing: 'border-box' }}>
+        <div style={{ maxWidth: '100%', margin: '0 auto', padding: '0 10%', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2.5rem', borderBottom: '1px solid #334155', paddingBottom: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <span style={{ fontSize: '1.5rem' }}></span>
@@ -158,7 +163,7 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
         fontFamily: 'var(--font-sans)',
         overflow: 'hidden'
       }}>
-        <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 5vw', boxSizing: 'border-box' }}>
+        <div style={{ maxWidth: '100%', margin: '0 auto', padding: '0 10%', boxSizing: 'border-box' }}>
           <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2.5rem', borderBottom: '1px solid #334155', paddingBottom: '1.25rem' }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <span style={{ fontSize: '1.5rem' }}></span>
@@ -212,7 +217,7 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
       fontFamily: 'var(--font-sans)',
       overflow: 'hidden'
     }}>
-      <div style={{ maxWidth: '1200px', margin: '0 auto', padding: '0 5vw', boxSizing: 'border-box' }}>
+      <div style={{ maxWidth: '100%', margin: '0 auto', padding: '0 10%', boxSizing: 'border-box' }}>
         <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '2.5rem', borderBottom: '1px solid #334155', paddingBottom: '1.25rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
             <span style={{ fontSize: '1.5rem' }}></span>
@@ -290,6 +295,28 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
           position: 'relative',
           padding: '1rem'
         }}>
+          <button
+            onClick={() => setPosition({ coordinates: [0, 20], zoom: 1 })}
+            style={{
+              position: 'absolute',
+              top: '1rem',
+              right: '1rem',
+              zIndex: 10,
+              backgroundColor: 'rgba(15, 23, 42, 0.7)',
+              color: '#f8fafc',
+              border: '1px solid #334155',
+              borderRadius: '6px',
+              padding: '0.4rem 0.8rem',
+              fontSize: '0.75rem',
+              cursor: 'pointer',
+              fontWeight: 600,
+              transition: 'all 0.2s',
+            }}
+            onMouseOver={(e) => e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.9)'}
+            onMouseOut={(e) => e.currentTarget.style.backgroundColor = 'rgba(15, 23, 42, 0.7)'}
+          >
+            Recenter Map
+          </button>
           <ComposableMap
             projectionConfig={{
               scale: 140,
@@ -299,7 +326,11 @@ export default function CollaborationMap({ authorId, selectedYear }: Props) {
             height={400}
             style={{ width: "100%", height: "auto" }}
           >
-            <ZoomableGroup>
+            <ZoomableGroup
+              zoom={position.zoom}
+              center={position.coordinates}
+              onMoveEnd={handleMoveEnd}
+            >
               <Geographies geography={geoUrl}>
                 {({ geographies }) =>
                   geographies.map((geo) => {

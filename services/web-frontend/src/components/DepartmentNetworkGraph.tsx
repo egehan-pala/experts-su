@@ -327,6 +327,27 @@ export default function DepartmentNetworkGraph() {
         return { nodeIds, edgeKeys };
     }, [hoveredNode, selectedNode, layoutData]);
 
+    const searchConnections = useMemo(() => {
+        if (!singleSearchQuery || !layoutData) return { matched: new Set<string>(), connected: new Set<string>(), edges: new Set<string>() };
+        const sq = singleSearchQuery.toLowerCase();
+        const matched = new Set<string>();
+        for (const n of layoutData.nodes) {
+            if (n.name.toLowerCase().includes(sq)) matched.add(n.id);
+        }
+        const connected = new Set<string>();
+        const edges = new Set<string>();
+        for (const l of layoutData.links) {
+            const s = l.source.id;
+            const t = l.target.id;
+            if (matched.has(s) || matched.has(t)) {
+                connected.add(s);
+                connected.add(t);
+                edges.add([s, t].sort().join('--'));
+            }
+        }
+        return { matched, connected, edges };
+    }, [singleSearchQuery, layoutData]);
+
     const activeNodeData = useMemo(() => {
         const id = selectedNode || hoveredNode;
         if (!id || !layoutData) return null;
@@ -360,11 +381,7 @@ export default function DepartmentNetworkGraph() {
         // Single search mode
         const hasActiveSearch = singleSearchQuery.length > 0;
         if (hasActiveSearch) {
-            const sq = singleSearchQuery.toLowerCase();
-            const sourceMatch = link.source.name?.toLowerCase().includes(sq);
-            const targetMatch = link.target.name?.toLowerCase().includes(sq);
-            const isRelated = sourceMatch || targetMatch;
-            if (isRelated) {
+            if (searchConnections.edges.has(edgeKey)) {
                 return { stroke: 'rgba(148, 163, 184, 0.95)', strokeWidth: baseWidth, opacity: 1 };
             }
             return { stroke: 'rgba(226, 232, 240, 0.18)', strokeWidth: 0.25, opacity: 1 };
@@ -407,28 +424,28 @@ export default function DepartmentNetworkGraph() {
         return { stroke: 'rgba(148, 163, 184, 0.65)', strokeWidth: baseWidth, opacity: 1 };
     }
 
-    // Compute node style
     function getNodeStyle(node: LayoutNode): { fill: string; stroke: string; strokeWidth: number; radius: number; opacity: number; textColor: string } {
         const activeNode = selectedNode || hoveredNode;
         const isSelected = activeNode === node.id;
         const isOnPath = pathData?.pathNodeIds.has(node.id);
-        const isMatch = singleSearchQuery && node.name.toLowerCase().includes(singleSearchQuery.toLowerCase());
         const hasSearch = singleSearchQuery.length > 0;
+        const isSearchMatched = hasSearch && searchConnections.matched.has(node.id);
+        const isSearchConnected = hasSearch && searchConnections.connected.has(node.id);
         const isDeptFiltered = !!activeDept;
         const isDeptNode = node.dept === activeDept;
 
         let alpha = 1;
         if (pathData) alpha = isOnPath ? 1 : 0.08;
-        else if (hasSearch) alpha = isMatch ? 1 : 0.08;
+        else if (hasSearch) alpha = isSearchConnected ? 1 : 0.08;
         else if (activeNode) alpha = hoverConnected.nodeIds.has(node.id) ? 1 : 0.12;
         else if (isDeptFiltered && !isDeptNode) alpha = 0.3;
 
-        const radius = isOnPath ? 11 : (isSelected ? 10 : 8);
+        const radius = isOnPath ? 11 : (isSelected || isSearchMatched ? 10 : 8);
         const clusterColor = getDeptColor(node.dept);
         const fillColor = isSelected ? '#2563eb' : (isOnPath ? '#fb923c' : clusterColor);
-        const borderColor = isSelected ? '#0f172a' : (isOnPath ? '#ea580c' : '#ffffff');
-        const borderW = isSelected ? 2.5 : (isMatch ? 2.0 : 1.2);
-        const textColor = (isSelected || isMatch || isOnPath) ? '#0f172a' : '#475569';
+        const borderColor = isSelected ? '#0f172a' : (isOnPath ? '#ea580c' : (isSearchMatched ? '#3b82f6' : '#ffffff'));
+        const borderW = isSelected || isSearchMatched ? 2.5 : 1.2;
+        const textColor = (isSelected || isSearchConnected || isOnPath) ? '#0f172a' : '#475569';
 
         return { fill: fillColor, stroke: borderColor, strokeWidth: borderW, radius, opacity: alpha, textColor };
     }
