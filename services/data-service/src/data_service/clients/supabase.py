@@ -253,10 +253,10 @@ class Database:
                 primary_topic, topics_json, concepts_json, keywords_json,
                 authorships_json, author_count,
                 referenced_works_count, counts_by_year_json, grants_json,
-                openalex_created_date, openalex_updated_date,
+                openalex_created_date, openalex_updated_date, sdgs_json,
                 created_at, updated_at
             )
-            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, NOW(), NOW())
+            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24, $25, $26, $27, $28, $29, $30, $31, $32, $33, $34, $35, $36, NOW(), NOW())
             ON CONFLICT (id) DO UPDATE SET
                 doi = EXCLUDED.doi, title = EXCLUDED.title, abstract = EXCLUDED.abstract,
                 year = EXCLUDED.year, publication_date = EXCLUDED.publication_date, venue = EXCLUDED.venue, citations = EXCLUDED.citations,
@@ -268,6 +268,7 @@ class Database:
                 authorships_json = EXCLUDED.authorships_json, author_count = EXCLUDED.author_count,
                 referenced_works_count = EXCLUDED.referenced_works_count, counts_by_year_json = EXCLUDED.counts_by_year_json, grants_json = EXCLUDED.grants_json,
                 openalex_created_date = EXCLUDED.openalex_created_date, openalex_updated_date = EXCLUDED.openalex_updated_date,
+                sdgs_json = EXCLUDED.sdgs_json,
                 updated_at = NOW()
         """
         records = []
@@ -308,6 +309,7 @@ class Database:
                 work.get("grants_json"),
                 work.get("openalex_created_date"),
                 work.get("openalex_updated_date"),
+                work.get("sdgs_json"),
             ))
         await self._executemany_batched(query, records, label="publications")
 
